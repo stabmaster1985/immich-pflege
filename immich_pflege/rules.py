@@ -255,14 +255,97 @@ def parse_rules(text: str, known_users: list[str] | None = None) -> list[Rule]:
 
 
 def load_rules(path: Path, known_users: list[str] | None = None) -> list[Rule]:
+    """Fehlende Datei = noch keine Regeln (werden in der Oberfläche angelegt)."""
     if not path.exists():
-        raise RuleError([f"Regeldatei {path} nicht gefunden. Kopiere regeln.example.yaml nach "
-                         f"{path} und passe sie an."])
+        return []
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise RuleError([f"Regeldatei {path} nicht lesbar: {exc}"])
     return parse_rules(text, known_users)
+
+
+EXAMPLE_FILE = Path(__file__).parent / "regeln.example.yaml"
+HEADER = ("# Regeln für immich-pflege – am einfachsten in der Oberfläche (Tab Tags) bearbeiten.\n"
+          "# Aufbau und alle Bedingungen: siehe regeln.example.yaml im Projekt.\n")
+KEY_ORDER = ("name", "tag", "tags", *BEDINGUNGEN, "benutzer", "aktiv")
+
+
+def rule_to_dict(raw: dict[str, Any]) -> dict[str, Any]:
+    """Normalisiert eine Regel für Oberfläche und Speicherung (leere Werte weg, feste Reihenfolge)."""
+    item: dict[str, Any] = {}
+    tags = raw.get("tags") if raw.get("tags") not in (None, "", []) else raw.get("tag")
+    tags = [t for t in (tags if isinstance(tags, list) else [tags]) if t not in (None, "")]
+    for key in KEY_ORDER:
+        if key in ("tag", "tags"):
+            if key == "tag" and len(tags) == 1:
+                item["tag"] = str(tags[0])
+            elif key == "tags" and len(tags) > 1:
+                item["tags"] = [str(t) for t in tags]
+            continue
+        value = raw.get(key)
+        if isinstance(value, list):
+            value = [v for v in value if str(v).strip()]
+            if len(value) == 1:
+                value = value[0]
+        if value in (None, "", []):
+            continue
+        if key == "aktiv":
+            if value is True or str(value).lower() == "true":
+                continue  # Standard
+            value = False if str(value).lower() == "false" else value
+        if isinstance(value, (date, datetime)):
+            value = value.isoformat()[:10]
+        item[key] = value
+    for key, value in raw.items():  # Unbekanntes behalten, damit die Prüfung es meldet
+        if key not in KEY_ORDER and key not in item:
+            item[key] = value
+    return item
+
+
+def dump_rules(items: list[dict[str, Any]]) -> str:
+    body = yaml.safe_dump({"regeln": [rule_to_dict(i) for i in items]}, allow_unicode=True,
+                          sort_keys=False, default_flow_style=False, width=1000)
+    return HEADER + "\n" + body
+
+
+def read_rules_raw(path: Path) -> tuple[str, list[dict[str, Any]] | None, list[str]]:
+    """Text, Regeln als Dicts (None bei Fehlern) und Fehlerliste – für den Editor."""
+    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    try:
+        data = yaml.load(text, Loader=_Loader) if text.strip() else None
+    except yaml.YAMLError:
+        data = None
+    items = data.get("regeln") if isinstance(data, dict) else None
+    try:
+        parse_rules(text)
+    except RuleError as exc:
+        return text, items if isinstance(items, list) else None, exc.errors
+    return text, [rule_to_dict(i) for i in (items or []) if isinstance(i, dict)], []
+
+
+def save_rules(path: Path, *, items: list[dict[str, Any]] | None = None, text: str | None = None,
+               known_users: list[str] | None = None) -> list[Rule]:
+    """Prüft und speichert Regeln (aus Formular oder YAML-Text). Bei Fehlern wird nichts geschrieben."""
+    if text is None:
+        text = dump_rules(items or [])
+    rules = parse_rules(text, known_users)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            path.with_suffix(".yaml.bak").write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(path)
+    except OSError as exc:
+        raise RuleError([f"Regeldatei {path} nicht speicherbar: {exc}"])
+    log.info("Regeldatei %s gespeichert (%d Regeln)", path, len(rules))
+    return rules
+
+
+def example_rules() -> list[dict[str, Any]]:
+    data = yaml.load(EXAMPLE_FILE.read_text(encoding="utf-8"), Loader=_Loader)
+    return [rule_to_dict({**i, "aktiv": False}) for i in data["regeln"]]
 
 
 # ------------------------------------------------------------- Auswertung

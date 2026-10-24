@@ -30,7 +30,7 @@ out = Console()
 err = Console(stderr=True)
 
 # Für Tests austauschbar
-service_factory: Callable[[], Pflege] = lambda: Pflege(Settings.from_env())  # noqa: E731
+service_factory: Callable[[], Pflege] = lambda: Pflege(Settings.load())  # noqa: E731
 
 JsonOpt = typer.Option(False, "--json", help="Ausgabe als JSON")
 CsvOpt = typer.Option(False, "--csv", help="Ausgabe als CSV")
@@ -44,6 +44,10 @@ def _service() -> Pflege:
         err.print(f"[red]Konfiguration:[/red] {exc}")
         raise typer.Exit(2)
     setup_logging(svc.settings.log_file, stream=sys.stderr, stream_level=logging.WARNING)
+    if not svc.settings.configured:
+        err.print("[red]Noch nicht eingerichtet.[/red] Bitte in der Oberfläche unter ⚙ Einstellungen "
+                  "die Immich-Adresse und API-Keys eintragen.")
+        raise typer.Exit(2)
     return svc
 
 
@@ -313,7 +317,7 @@ def tags(
     regel: Optional[list[str]] = typer.Option(None, "--regel", "-r", help="Nur diese Regel(n) (Name)"),
     neu: bool = NeuOpt, json_: bool = JsonOpt, csv_: bool = CsvOpt,
 ):
-    """Massen-Tagging nach /config/regeln.yaml (nur ergänzen, nie entfernen)."""
+    """Massen-Tagging nach den Regeln aus der Oberfläche (nur ergänzen, nie entfernen)."""
     svc = _service()
     if neu:
         with err.status("Lese Bibliothek ein …"):

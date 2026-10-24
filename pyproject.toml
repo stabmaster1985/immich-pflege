@@ -26,7 +26,7 @@ pflege = "immich_pflege.cli:main"
 include = ["immich_pflege*"]
 
 [tool.setuptools.package-data]
-immich_pflege = ["web/static/*"]
+immich_pflege = ["web/static/*", "regeln.example.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -3,13 +3,12 @@ import base64
 import pytest
 from fastapi.testclient import TestClient
 
-from immich_pflege.service import Pflege
 from immich_pflege.web.app import create_app
 
 
 @pytest.fixture
-def web(settings, http):
-    with TestClient(create_app(Pflege(settings, http=http))) as c:
+def web(env, http):
+    with TestClient(create_app(env, http=http)) as c:
         yield c
 
 
@@ -91,9 +90,8 @@ def test_no_location(web):
 
 
 def test_tags_endpoints(web, settings):
-    r = web.get("/api/tags")
-    assert r.status_code == 422 and "nicht gefunden" in r.json()["details"][0]
-    settings.rules_file.parent.mkdir(parents=True)
+    assert web.get("/api/tags").json()["regeln"] == []  # noch keine Regeldatei
+    settings.rules_file.parent.mkdir(parents=True, exist_ok=True)
     settings.rules_file.write_text("regeln:\n  - name: Sony\n    tag: Kamera/Sony\n    hersteller: SONY\n"
                                    "  - name: Shots\n    tag: Screens\n    dateiname: '^Screenshot'\n")
     prev = web.get("/api/tags").json()
@@ -114,22 +112,21 @@ def test_thumbnail_proxy(web, state):
     assert web.get("/thumb/nicht-uuid").status_code == 400
 
 
-def test_immich_down_gives_502(settings):
+def test_immich_down_gives_502(env):
     import httpx
 
     def boom(request):
         raise httpx.ConnectError("weg")
-    svc = Pflege(settings, http=httpx.Client(transport=httpx.MockTransport(boom)))
-    with TestClient(create_app(svc)) as c:
+    with TestClient(create_app(env, http=httpx.Client(transport=httpx.MockTransport(boom)))) as c:
         r = c.get("/api/duplicates")
         assert r.status_code == 502 and "nicht erreichbar" in r.json()["fehler"]
         st = c.get("/api/status").json()
         assert st["server"]["erreichbar"] is False
 
 
-def test_basic_auth(settings, http):
-    settings.web_user, settings.web_password = "frank", "geheim"
-    with TestClient(create_app(Pflege(settings, http=http))) as c:
+def test_basic_auth(env, http):
+    env = {**env, "WEB_USER": "frank", "WEB_PASSWORD": "geheim"}
+    with TestClient(create_app(env, http=http)) as c:
         assert c.get("/healthz").status_code == 200
         r = c.get("/api/status")
         assert r.status_code == 401 and "Basic" in r.headers["www-authenticate"]

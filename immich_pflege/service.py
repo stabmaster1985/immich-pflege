@@ -25,6 +25,35 @@ class ActionError(ValueError):
     """Ungültige Anfrage (z. B. fehlende Bestätigung, unbekannte Gruppe)."""
 
 
+class NotConfigured(ActionError):
+    """Immich-Adresse oder API-Keys fehlen noch."""
+
+    def __init__(self) -> None:
+        super().__init__("Noch nicht eingerichtet – bitte unter Einstellungen Immich-Adresse "
+                         "und mindestens einen API-Key eintragen")
+
+
+def check_server(clients: dict[str, ImmichClient]) -> dict[str, Any]:
+    """Erreichbarkeit, Version und Gültigkeit jedes API-Keys prüfen."""
+    result: dict[str, Any] = {"erreichbar": False, "version": None, "schluessel": {}, "warnungen": []}
+    for name, client in clients.items():
+        try:
+            if result["version"] is None:
+                v = client.server_version()
+                result["version"] = f"{v.get('major')}.{v.get('minor')}.{v.get('patch')}"
+                result["erreichbar"] = True
+                if v.get("major") != 3:
+                    result["warnungen"].append(
+                        f"Immich {result['version']} erkannt – getestet ist das Tool mit 3.x")
+            me = client.me()
+            result["schluessel"][name] = {"ok": True, "konto": me.get("email") or me.get("name")}
+        except ImmichError as exc:
+            result["schluessel"][name] = {"ok": False, "fehler": str(exc)}
+            if exc.status in (401, 403):
+                result["erreichbar"] = True
+    return result
+
+
 class Pflege:
     def __init__(self, settings: Settings, http: httpx.Client | None = None):
         self.settings = settings
@@ -39,12 +68,15 @@ class Pflege:
 
     # ------------------------------------------------------------ Bibliothek
     def library(self, refresh: bool = False) -> Library:
+        if not self.clients:
+            raise NotConfigured()
         with self._lock:
             if refresh:
                 return self.scan()
             if self._lib is None:
                 cached = Library.load(self.settings.cache_file)
-                if cached and set(cached.users) == set(self.clients):
+                if (cached and set(cached.users) == set(self.clients)
+                        and cached.immich_url in ("", self.settings.immich_url)):
                     log.info("Bibliothek aus Zwischenspeicher geladen (Stand %s)", cached.scanned_at)
                     self._lib = cached
                 else:
@@ -52,6 +84,8 @@ class Pflege:
             return self._lib
 
     def scan(self) -> Library:
+        if not self.clients:
+            raise NotConfigured()
         with self._lock:
             self.scanning = True
             try:
@@ -62,6 +96,7 @@ class Pflege:
             finally:
                 self.scanning = False
             self.last_error = None
+            lib.immich_url = self.settings.immich_url
             self._lib = lib
             lib.save(self.settings.cache_file)
             return lib
@@ -75,6 +110,7 @@ class Pflege:
         out: dict[str, Any] = {
             "version": __version__,
             "immich_url": self.settings.immich_url,
+            "eingerichtet": self.settings.configured,
             "benutzer": list(self.clients),
             "pruef_album": self.settings.review_album,
             "ort_max_stunden": self.settings.location_max_hours,
@@ -88,30 +124,15 @@ class Pflege:
         if lib:
             out["bibliothek"] = {"stand": lib.scanned_at, "dauer_s": lib.duration_s, **lib.counts()}
             out["warnungen"] += lib.warnings
-        if check_server:
+        if check_server and self.clients:
             out["server"] = self.check_server()
             out["warnungen"] += out["server"].get("warnungen", [])
         return out
 
     def check_server(self) -> dict[str, Any]:
-        result: dict[str, Any] = {"erreichbar": False, "version": None, "schluessel": {},
-                                  "warnungen": []}
-        for name, client in self.clients.items():
-            try:
-                if result["version"] is None:
-                    v = client.server_version()
-                    result["version"] = f"{v.get('major')}.{v.get('minor')}.{v.get('patch')}"
-                    result["erreichbar"] = True
-                    if v.get("major") != 3:
-                        result["warnungen"].append(
-                            f"Immich {result['version']} erkannt – getestet ist das Tool mit 3.x")
-                me = client.me()
-                result["schluessel"][name] = {"ok": True, "konto": me.get("email") or me.get("name")}
-            except ImmichError as exc:
-                result["schluessel"][name] = {"ok": False, "fehler": str(exc)}
-                if exc.status in (401, 403):
-                    result["erreichbar"] = True
-        return result
+        if not self.clients:
+            raise NotConfigured()
+        return check_server(self.clients)
 
     # --------------------------------------------------------------- Duplikate
     def duplicate_groups(self) -> list[DuplicateGroup]:
@@ -250,4 +271,4 @@ class Pflege:
         raise last or ImmichError("Kein Benutzer konfiguriert")
 
 
-__all__ = ["Pflege", "ActionError", "RuleError", "ImmichError", "CONFIRM_TRASH"]
+__all__ = ["Pflege", "ActionError", "NotConfigured", "check_server", "RuleError", "ImmichError", "CONFIRM_TRASH"]

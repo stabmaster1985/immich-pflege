@@ -22,6 +22,7 @@
       <button role="tab" data-tab="dup" aria-selected="true">Duplikate <span class="count" id="count-dup"></span></button>
       <button role="tab" data-tab="loc" aria-selected="false">Ohne Ort <span class="count" id="count-loc"></span></button>
       <button role="tab" data-tab="tags" aria-selected="false">Tags <span class="count" id="count-tags"></span></button>
+      <button role="tab" data-tab="set" aria-selected="false" class="gear" aria-label="Einstellungen" title="Einstellungen">⚙︎</button>
     </nav>
   </header>
 
@@ -50,13 +51,114 @@
 
     <section id="tab-tags" class="tab" role="tabpanel" hidden>
       <div class="toolbar">
-        <span id="tags-file" class="muted"></span>
-        <button id="tags-reload" class="btn small" type="button">Regeln neu laden</button>
+        <button id="rule-new" class="btn small primary" type="button">+ Neue Regel</button>
+        <span class="row-gap">
+          <button id="rule-examples" class="btn small" type="button">Beispiele</button>
+          <button id="rule-yaml" class="btn small" type="button">YAML</button>
+          <button id="tags-reload" class="btn small" type="button" aria-label="Neu laden" title="Neu laden">↻</button>
+        </span>
       </div>
       <div id="tags-errors"></div>
       <div id="tags-list"></div>
     </section>
+
+    <section id="tab-set" class="tab" role="tabpanel" hidden>
+      <div id="set-welcome"></div>
+      <form id="set-form" autocomplete="off" onsubmit="return false">
+        <fieldset class="card">
+          <legend>Immich</legend>
+          <label class="f">Adresse
+            <input type="url" id="set-url" placeholder="http://immich-server:2283" inputmode="url" autocapitalize="off" spellcheck="false">
+            <small>Im Docker-Netz meist <code>http://immich-server:2283</code></small>
+          </label>
+          <div class="f">Benutzer und API-Keys
+            <small>Pro Immich-Benutzer ein Key: In Immich als dieser Benutzer anmelden → Kontoeinstellungen → API-Schlüssel → Neuer API-Schlüssel.</small>
+          </div>
+          <div id="set-users"></div>
+          <div class="row-gap">
+            <button type="button" id="set-add-user" class="btn small">+ Benutzer</button>
+            <button type="button" id="set-test" class="btn small">Verbindung testen</button>
+          </div>
+          <div id="set-test-result"></div>
+        </fieldset>
+        <fieldset class="card">
+          <legend>Duplikate</legend>
+          <label class="f">Name des Prüf-Albums
+            <input type="text" id="set-album">
+            <small>Wird pro Benutzer angelegt, falls es fehlt.</small>
+          </label>
+        </fieldset>
+        <fieldset class="card">
+          <legend>Fotos ohne Ort</legend>
+          <label class="f">Zeitfenster ± Stunden
+            <input type="number" id="set-hours" min="0.25" max="48" step="0.25" inputmode="decimal">
+          </label>
+          <label class="toggle"><input type="checkbox" id="set-ext"> Auch Medien aus externen Bibliotheken ändern</label>
+        </fieldset>
+        <fieldset class="card">
+          <legend>Zugang zu diesem Tool</legend>
+          <label class="f">Benutzername
+            <input type="text" id="set-web-user" autocapitalize="off" autocomplete="off" placeholder="leer = kein Login">
+          </label>
+          <label class="f">Neues Passwort
+            <input type="password" id="set-web-pw" autocomplete="new-password" placeholder="leer = unverändert">
+          </label>
+          <small id="set-login-hint" class="muted"></small>
+        </fieldset>
+        <p class="muted" id="set-env-hint"></p>
+      </form>
+    </section>
   </main>
+
+  <dialog id="rule-dlg" class="full">
+    <form method="dialog" id="rule-form" autocomplete="off">
+      <h2 id="rule-title">Regel</h2>
+      <div id="rule-errors"></div>
+      <label class="f">Name <input type="text" id="r-name" required></label>
+      <label class="f">Tags <small>mehrere mit Komma trennen, Ebenen mit „/“: Reisen/Italien/2024</small>
+        <input type="text" id="r-tags" required autocapitalize="off"></label>
+      <label class="toggle"><input type="checkbox" id="r-aktiv"> Regel aktiv</label>
+      <h3>Bedingungen <small class="muted">(alle müssen zutreffen)</small></h3>
+      <div class="two">
+        <label class="f">Aufnahme von <input type="date" id="r-von"></label>
+        <label class="f">bis <input type="date" id="r-bis"></label>
+      </div>
+      <div class="two">
+        <label class="f">Bibliothek
+          <select id="r-bibliothek"><option value="">egal</option><option value="upload">nur Uploads</option><option value="extern">nur extern</option></select></label>
+        <label class="f">Typ
+          <select id="r-typ"><option value="">egal</option><option value="foto">Foto</option><option value="video">Video</option></select></label>
+      </div>
+      <label class="f">Album <small>exakter Name; mehrere mit Komma = in allen</small><input type="text" id="r-album"></label>
+      <label class="f">Person <small>exakter Name; mehrere mit Komma = alle im Bild</small><input type="text" id="r-person"></label>
+      <label class="f">Kamerahersteller <small>z. B. Apple, SONY</small><input type="text" id="r-hersteller"></label>
+      <details>
+        <summary>Erweitert: Muster (reguläre Ausdrücke)</summary>
+        <label class="f">Kameramodell <small>z. B. ^iPhone 15</small><input type="text" id="r-modell" autocapitalize="off" spellcheck="false"></label>
+        <label class="f">Dateiname <small>z. B. ^IMG_.*\.HEIC$</small><input type="text" id="r-dateiname" autocapitalize="off" spellcheck="false"></label>
+        <label class="f">Pfad <small>z. B. /Urlaub/</small><input type="text" id="r-pfad" autocapitalize="off" spellcheck="false"></label>
+      </details>
+      <div class="f">Für Benutzer <small>keiner angehakt = alle</small><div id="r-benutzer" class="row-gap"></div></div>
+      <div class="dialog-buttons">
+        <button type="button" id="rule-delete" class="btn danger left">Löschen</button>
+        <button value="cancel" class="btn" type="submit" formnovalidate>Abbrechen</button>
+        <button type="button" id="rule-save" class="btn primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="yaml-dlg" class="full">
+    <form method="dialog">
+      <h2>Regeln als YAML</h2>
+      <p class="muted">Für Fortgeschrittene. Beim Speichern wird geprüft; bei Fehlern bleibt die Datei unverändert.</p>
+      <div id="yaml-errors"></div>
+      <textarea id="yaml-text" spellcheck="false" autocapitalize="off"></textarea>
+      <div class="dialog-buttons">
+        <button value="cancel" class="btn" type="submit">Abbrechen</button>
+        <button type="button" id="yaml-save" class="btn primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
 
   <footer class="actionbar" id="actionbar">
     <div class="ab-info" id="ab-info"></div>

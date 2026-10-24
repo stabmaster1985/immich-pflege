@@ -37,6 +37,7 @@ class Library:
     immich_duplicates: list[ImmichDuplicate] = field(default_factory=list)
     review_albums: dict[str, str | None] = field(default_factory=dict)  # name -> album id
     warnings: list[str] = field(default_factory=list)
+    immich_url: str = ""
 
     def assets_of(self, user: str) -> list[Asset]:
         return [a for a in self.assets.values() if a.owner == user]
@@ -61,6 +62,7 @@ class Library:
             "immich_duplicates": [d.__dict__ for d in self.immich_duplicates],
             "review_albums": self.review_albums,
             "warnings": self.warnings,
+            "immich_url": self.immich_url,
         }
 
     @classmethod
@@ -76,6 +78,7 @@ class Library:
             immich_duplicates=[ImmichDuplicate(**d) for d in data.get("immich_duplicates", [])],
             review_albums=data.get("review_albums", {}),
             warnings=data.get("warnings", []),
+            immich_url=data.get("immich_url", ""),
         )
 
     def save(self, path: Path) -> None:

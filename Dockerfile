@@ -4,8 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    DATA_DIR=/data \
-    CONFIG_DIR=/config
+    DATA_DIR=/data
 
 WORKDIR /app
 COPY pyproject.toml ./
@@ -13,13 +12,11 @@ COPY immich_pflege ./immich_pflege
 RUN pip install . \
  && groupadd --gid 1000 pflege \
  && useradd --uid 1000 --gid pflege --no-create-home --shell /usr/sbin/nologin pflege \
- && mkdir -p /data /config \
- && chown pflege:pflege /data /config
-
-COPY regeln.example.yaml /app/regeln.example.yaml
+ && mkdir -p /data \
+ && chown pflege:pflege /data
 
 USER pflege
-VOLUME ["/data", "/config"]
+VOLUME ["/data"]
 EXPOSE 8090
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

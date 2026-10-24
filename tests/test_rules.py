@@ -3,12 +3,13 @@ from pathlib import Path
 import pytest
 
 from immich_pflege.library import scan_library
-from immich_pflege.rules import Resolver, RuleError, apply, load_rules, parse_rules, preview
+from immich_pflege.rules import (Resolver, RuleError, apply, example_rules, load_rules, parse_rules, preview,
+                                 read_rules_raw, save_rules)
 
 from .helpers import asset, library
 
 EXT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-ROOT = Path(__file__).parent.parent
+EXAMPLE = Path(__file__).parent.parent / "immich_pflege" / "regeln.example.yaml"
 
 
 def errors_of(text, users=("frank", "julia")):
@@ -18,7 +19,7 @@ def errors_of(text, users=("frank", "julia")):
 
 
 def test_example_file_is_valid():
-    rules = load_rules(ROOT / "regeln.example.yaml", ["frank", "julia"])
+    rules = load_rules(EXAMPLE, ["frank", "julia"])
     assert len(rules) == 6
     assert rules[0].tags == ["Reisen/Italien/2024"]
     assert not rules[4].aktiv and rules[4].benutzer == ["julia"]
@@ -60,8 +61,7 @@ regeln:
 
 def test_missing_top_key_and_file(tmp_path):
     assert "regeln:" in errors_of("foo: 1")[0]
-    with pytest.raises(RuleError, match="regeln.example.yaml"):
-        load_rules(tmp_path / "fehlt.yaml")
+    assert load_rules(tmp_path / "fehlt.yaml") == []
 
 
 def test_nested_tag_names_normalized():
@@ -145,3 +145,38 @@ regeln:
     again = preview(rules, lib, Resolver(clients))
     assert all(p.get("neu", 0) == 0 for p in again)
     assert julia_img["_tags"] == {tag["id"]}  # nichts entfernt, nichts doppelt
+
+
+def test_editor_roundtrip(tmp_path):
+    path = tmp_path / "regeln.yaml"
+    items = [
+        {"name": "Italien", "tags": ["Reisen/Italien"], "von": "2024-07-01", "bis": "", "album": [],
+         "benutzer": ["frank"], "aktiv": True, "pfad": None},
+        {"name": "Zwei", "tags": ["A", "B/C"], "typ": "video", "aktiv": False, "person": ["Oma", "Opa"]},
+    ]
+    rules = save_rules(path, items=items, known_users=["frank", "julia"])
+    assert [r.name for r in rules] == ["Italien", "Zwei"]
+    text, back, errors = read_rules_raw(path)
+    assert errors == []
+    assert back[0] == {"name": "Italien", "tag": "Reisen/Italien", "von": "2024-07-01", "benutzer": "frank"}
+    assert back[1] == {"name": "Zwei", "tags": ["A", "B/C"], "person": ["Oma", "Opa"], "typ": "video",
+                       "aktiv": False}
+    assert text.startswith("# Regeln")
+
+
+def test_save_rejects_broken_and_keeps_file(tmp_path):
+    path = tmp_path / "regeln.yaml"
+    save_rules(path, items=[{"name": "ok", "tag": "X", "typ": "foto"}])
+    before = path.read_text()
+    with pytest.raises(RuleError):
+        save_rules(path, items=[{"name": "kaputt", "tag": "X", "typ": "bild"}])
+    with pytest.raises(RuleError):
+        save_rules(path, text="regeln: [")
+    assert path.read_text() == before
+    text, items, errors = read_rules_raw(path)
+    assert items and not errors
+
+
+def test_example_rules_are_inactive():
+    ex = example_rules()
+    assert len(ex) == 6 and all(r["aktiv"] is False for r in ex)

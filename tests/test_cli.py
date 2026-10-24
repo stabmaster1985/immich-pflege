@@ -77,7 +77,7 @@ def test_no_location_and_apply(svc, state):
 
 
 def test_tags_broken_rules(svc, settings):
-    settings.rules_file.parent.mkdir(parents=True)
+    settings.rules_file.parent.mkdir(parents=True, exist_ok=True)
     settings.rules_file.write_text("regeln:\n  - name: x\n    tag: A\n    typ: bild\n")
     r = run("tags")
     assert r.exit_code == 1
@@ -85,7 +85,7 @@ def test_tags_broken_rules(svc, settings):
 
 
 def test_tags_preview_and_apply(svc, settings):
-    settings.rules_file.parent.mkdir(parents=True)
+    settings.rules_file.parent.mkdir(parents=True, exist_ok=True)
     settings.rules_file.write_text("regeln:\n  - name: Sony\n    tag: Kamera/Sony\n    hersteller: sony\n")
     r = run("tags")
     assert r.exit_code == 0, r.output
@@ -96,7 +96,8 @@ def test_tags_preview_and_apply(svc, settings):
     assert json.loads(r.stdout)["regeln"][0]["neu"] == 0
 
 
-def test_config_error(monkeypatch):
-    monkeypatch.setattr(cli, "service_factory", lambda: Pflege(__import__("immich_pflege.config", fromlist=["x"]).Settings.from_env({})))
-    r = run("version")
-    assert r.exit_code == 2 and "IMMICH_URL" in r.output
+def test_not_configured(monkeypatch, tmp_path):
+    from immich_pflege.config import Settings
+    monkeypatch.setattr(cli, "service_factory", lambda: Pflege(Settings.load({"DATA_DIR": str(tmp_path)})))
+    r = run("duplikate")
+    assert r.exit_code == 2 and "Einstellungen" in r.output

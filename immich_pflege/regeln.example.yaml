@@ -1,5 +1,5 @@
 # Regeln für das Massen-Tagging von immich-pflege
-# Kopiere diese Datei nach config/regeln.yaml (im Container: /config/regeln.yaml).
+# Am einfachsten in der Oberfläche (Tab Tags) bearbeiten. Gespeichert wird in data/regeln.yaml.
 #
 # Jede Regel braucht einen Tag und mindestens eine Bedingung.
 # Alle Bedingungen einer Regel müssen gleichzeitig zutreffen (UND).

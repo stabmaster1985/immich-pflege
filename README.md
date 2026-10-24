@@ -6,9 +6,11 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 |---|---|
 | **Duplikate** | Immich-Duplikaterkennung pro Benutzer, dazu identische Prüfsumme sowie gleicher Dateiname mit gleicher Aufnahmezeit, auch benutzerübergreifend und zwischen Upload und externer Bibliothek. Überlappende Treffer werden zu Gruppen zusammengeführt. Ein Behalten-Vorschlag kommt aus einer Punktwertung. Nicht behaltene Kopien kommen ins Album „Duplikat-Prüfung“ oder in den Papierkorb. |
 | **Ohne Ort** | Alle Medien ohne GPS, nach Tag gruppiert, mit Vorschlag: Ort des zeitlich nächsten Fotos mit GPS (beider Benutzer) innerhalb von ±2 h |
-| **Tags** | Massen-Tagging nach Regeln in `config/regeln.yaml`. Tags werden nur ergänzt, nie entfernt. |
+| **Tags** | Massen-Tagging nach Regeln, die du in der Oberfläche anlegst. Tags werden nur ergänzt, nie entfernt. |
 
 Alles startet als **Vorschau**. Änderungen gibt es nur nach ausdrücklicher Aktion.
+
+**Alle Einstellungen und Regeln werden in der Oberfläche gemacht.** Dateien musst du nicht bearbeiten.
 
 ---
 
@@ -26,58 +28,49 @@ Für **jeden** Benutzer (hier frank und julia) einzeln:
 
 > Jeder Benutzer kann nur seine eigenen Medien ändern. Deshalb braucht das Tool je Benutzer einen Schlüssel und verwendet automatisch den des Besitzers.
 
-### 2. Dateien vorbereiten
+### 2. Container starten
 
 ```bash
 git clone https://github.com/stabmaster1985/immich-pflege.git
 cd immich-pflege
-cp .env.example .env              # Schlüssel eintragen
-mkdir -p data config
-cp regeln.example.yaml config/regeln.yaml
-sudo chown -R 1000:1000 data config   # Container läuft als Benutzer 1000, nicht als root
-```
-
-`.env`:
-
-```ini
-IMMICH_URL=http://immich-server:2283
-IMMICH_KEY_FRANK=xxxxxxxx
-IMMICH_KEY_JULIA=yyyyyyyy
-REVIEW_ALBUM=Duplikat-Prüfung
-LOCATION_MAX_HOURS=2
-LOCATION_INCLUDE_EXTERNAL=false
-WEB_USER=frank            # optional: Basic Auth (beide leer = aus)
-WEB_PASSWORD=geheim
-IMMICH_NETWORK=immich_default
-PFLEGE_PORT=8090
-```
-
-Weitere Benutzer: einfach `IMMICH_KEY_<NAME>=…` ergänzen.
-
-### 3. Starten
-
-Der Container hängt sich an das bestehende Netz des Immich-Stacks. Dessen Namen findest du so:
-
-```bash
-docker network ls | grep immich     # meist immich_default
+mkdir -p data && sudo chown 1000:1000 data   # Container läuft als Benutzer 1000, nicht als root
+docker network ls | grep immich              # Netz des Immich-Stacks, meist immich_default
 docker compose up -d --build
 ```
 
-Die Oberfläche läuft dann unter `http://<server>:8090`. Beim ersten Aufruf liest das Tool die Bibliothek ein, was bei großen Bibliotheken ein bis zwei Minuten dauert. Danach liegt sie zwischengespeichert in `data/bibliothek.json`. **Neu einlesen** gibt es als Button in der Oberfläche, per `pflege einlesen` oder über `POST /api/scan`.
+Heißt das Netz nicht `immich_default` oder soll ein anderer Port als 8090 genutzt werden, lege eine `.env` mit `IMMICH_NETWORK=…` bzw. `PFLEGE_PORT=…` an (siehe `.env.example`). Docker Compose ab Version 2.24 ist nötig.
+
+### 3. In der Oberfläche einrichten
+
+`http://<server>:8090` öffnen. Beim ersten Start öffnet sich automatisch **⚙ Einstellungen**:
+
+1. **Adresse** von Immich: im Docker-Netz `http://immich-server:2283` (vorausgefüllt)
+2. **Benutzer und API-Keys:** Name (z. B. `frank`) und Key einfügen, mit **+ Benutzer** weitere ergänzen
+3. **Verbindung testen:** zeigt Immich-Version und für jeden Key das zugehörige Konto
+4. Optional Prüf-Album, Zeitfenster, externe Bibliotheken sowie **Benutzername und Passwort** für den Zugang zum Tool
+5. **Speichern**
+
+Gespeichert wird in `data/einstellungen.json`. Keys werden nie an den Browser zurückgegeben, angezeigt werden nur die letzten 4 Zeichen. Das Passwort wird nur als Hash gespeichert. Ein leeres Key-Feld beim Speichern heißt „bisherigen Key behalten“.
+
+Beim ersten Öffnen eines Tabs liest das Tool die Bibliothek ein, was bei großen Bibliotheken ein bis zwei Minuten dauert. Danach liegt sie zwischengespeichert in `data/bibliothek.json`. **Neu einlesen** gibt es als Button, per `pflege einlesen` oder über `POST /api/scan`.
 
 Logs: `docker logs immich-pflege` und `data/pflege.log`.
 
-> Von außerhalb des Heimnetzes nur über einen Reverse-Proxy mit HTTPS und mit gesetztem `WEB_USER`/`WEB_PASSWORD`. Die API-Keys verlassen nie den Container: Vorschaubilder reicht das Backend durch.
+> Von außerhalb des Heimnetzes nur über einen Reverse-Proxy mit HTTPS und mit gesetztem Login. Die API-Keys verlassen nie den Container: Vorschaubilder reicht das Backend durch.
+
+### Optional: Einstellungen per `.env` festlegen
+
+Wer lieber mit Dateien arbeitet, kann alles auch in einer `.env` vorgeben (`IMMICH_URL`, `IMMICH_KEY_<NAME>`, `REVIEW_ALBUM`, `LOCATION_MAX_HOURS`, `LOCATION_INCLUDE_EXTERNAL`, `WEB_USER`/`WEB_PASSWORD`). Werte aus der `.env` haben Vorrang und erscheinen in der Oberfläche ausgegraut.
 
 ---
 
 ## Oberfläche
 
-Drei Tabs (**Duplikate**, **Ohne Ort**, **Tags**), unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
+Vier Tabs (**Duplikate**, **Ohne Ort**, **Tags**, **⚙ Einstellungen**), unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
 
 - **Duplikate:** Tippe auf ein Bild, damit es bleibt. Hake Gruppen an und wähle dann **Ins Prüf-Album** oder **Papierkorb**. Der Dialog zeigt vorher genau, was passiert. Für den Papierkorb muss zusätzlich ein Häkchen gesetzt werden.
 - **Ohne Ort:** Das Zeitfenster ist einstellbar. Bilder mit 📍-Vorschlag antippen oder pro Tag **Alle**, dann **Ort übernehmen**.
-- **Tags:** Zeigt pro Regel Treffer, schon getaggt und neu, mit Beispielbildern. Fehler in `regeln.yaml` erscheinen mit Zeilennummer.
+- **Tags:** **+ Neue Regel** öffnet ein Formular mit allen Bedingungen. Pro Regel siehst du Treffer, schon getaggt und neu, mit Beispielbildern. Abhaken und **Tags anwenden**. **Beispiele** fügt Beispielregeln ausgeschaltet hinzu. **YAML** zeigt die Regeln als Text für Fortgeschrittene. Fehlerhafte Regeln werden beim Speichern mit verständlicher Meldung abgelehnt, und die alte Fassung bleibt erhalten.
 
 ## Regeln der Duplikat-Bearbeitung
 
@@ -101,25 +94,23 @@ Bei Gleichstand gewinnt die größere Auflösung, dann die größere Datei.
 
 Das Album „Duplikat-Prüfung“ wird pro Benutzer angelegt, falls es fehlt.
 
-## Regeln fürs Tagging (`config/regeln.yaml`)
+## Regeln fürs Tagging
 
-```yaml
-regeln:
-  - name: Italien-Urlaub 2024
-    tag: Reisen/Italien/2024        # verschachtelt mit "/"
-    von: 2024-07-10
-    bis: 2024-07-25
+Regeln legst du in der Oberfläche an. Gespeichert werden sie als `data/regeln.yaml`, damit auch die Kommandozeile sie nutzt. Alle Bedingungen einer Regel müssen zutreffen:
 
-  - name: Systemkamera
-    tags: [Kamera/Sony A7 IV, Quelle/Kamera]
-    hersteller: SONY
-    modell: '^ILCE-7M4$'
-    bibliothek: extern
-    benutzer: frank
-    aktiv: true
-```
+| Feld | Bedeutung |
+|---|---|
+| Tags | ein oder mehrere Tags, verschachtelt mit „/“ (z. B. `Reisen/Italien/2024`) |
+| von / bis | Aufnahmedatum (Ortszeit), jeweils einschließlich |
+| Bibliothek | nur Uploads oder nur extern |
+| Typ | Foto oder Video |
+| Album, Person | exakter Name; mehrere = alle müssen passen |
+| Kamerahersteller | exakt, Groß/klein egal (z. B. `SONY`, `Apple`) |
+| Kameramodell, Dateiname, Pfad | reguläre Ausdrücke, Groß/klein egal |
+| Für Benutzer | keiner angehakt = alle |
+| aktiv | ausgeschaltete Regeln werden nicht angewendet |
 
-Bedingungen werden UND-verknüpft: `pfad`, `dateiname`, `modell` (reguläre Ausdrücke, Groß/klein egal), `von`/`bis` (Datum), `album`, `person`, `hersteller`, `bibliothek` (`extern`|`upload`), `typ` (`foto`|`video`). Optional dazu `benutzer` und `aktiv`. Alle Details stehen in [`regeln.example.yaml`](regeln.example.yaml). Die Datei wird bei jeder Vorschau neu gelesen, ein Neustart ist nicht nötig.
+Das YAML-Format ist in [`immich_pflege/regeln.example.yaml`](immich_pflege/regeln.example.yaml) beschrieben.
 
 ---
 
@@ -129,6 +120,7 @@ Im Container heißt die Kommandozeile `pflege`:
 
 ```bash
 docker exec -it immich-pflege pflege version          # Immich-Version + Schlüssel prüfen
+# (die Kommandozeile nutzt dieselben Einstellungen und Regeln wie die Oberfläche)
 docker exec -it immich-pflege pflege einlesen         # Bibliothek neu einlesen
 
 # Duplikate
@@ -156,7 +148,7 @@ Alle Befehle verstehen `--neu` (vorher neu einlesen) sowie `--json` und `--csv`.
 
 ## JSON-API (n8n)
 
-Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:8090/api/docs`. Bei gesetztem `WEB_USER` braucht jeder Aufruf Basic Auth. In n8n heißt das: *HTTP Request → Authentication: Generic → Basic Auth*.
+Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:8090/api/docs`. Ist in den Einstellungen ein Login gesetzt, braucht jeder Aufruf Basic Auth mit denselben Zugangsdaten. In n8n heißt das: *HTTP Request → Authentication: Generic → Basic Auth*.
 
 | Methode | Pfad | Zweck |
 |---|---|---|
@@ -168,9 +160,12 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:8090/api/doc
 | GET | `/api/no-location` | Medien ohne Ort nach Tagen (`max_hours`, `offset`, `limit`, `only_suggestions`) |
 | POST | `/api/no-location/apply` | Ort übernehmen |
 | GET | `/api/tags` | Regel-Vorschau (`rules=Name`, mehrfach möglich) |
+| GET/PUT | `/api/rules` | Regeln lesen/speichern (`{"regeln": [...]}` oder `{"yaml": "..."}`) |
+| GET/PUT | `/api/settings` | Einstellungen (Keys nur maskiert) |
+| POST | `/api/settings/test` | Verbindung und Keys prüfen, ohne zu speichern |
 | POST | `/api/tags/apply` | Tags anwenden |
 
-Fehler kommen als `{"fehler": "…"}` zurück: 400 bei ungültiger Anfrage, 422 bei kaputter Regeldatei (mit `details`), 502 wenn Immich nicht erreichbar ist.
+Fehler kommen als `{"fehler": "…"}` zurück: 400 bei ungültiger Anfrage, 409 solange das Tool noch nicht eingerichtet ist, 422 bei fehlerhaften Regeln oder Einstellungen (mit `details`), 502 wenn Immich nicht erreichbar ist.
 
 ### Beispiele
 
@@ -227,9 +222,8 @@ Die Tests laufen gegen einen **Mock-Immich** (`tests/mock_immich.py`). Er bildet
 
 ```bash
 .venv/bin/uvicorn tests.mock_immich:demo_app --port 2283 &
-IMMICH_URL=http://127.0.0.1:2283 IMMICH_KEY_FRANK=key-frank IMMICH_KEY_JULIA=key-julia \
-DATA_DIR=./data CONFIG_DIR=./config \
-.venv/bin/uvicorn immich_pflege.web.app:create_app --factory --port 8090
+# in der Oberfläche: Adresse http://127.0.0.1:2283, Keys key-frank / key-julia
+DATA_DIR=./data .venv/bin/uvicorn immich_pflege.web.app:create_app --factory --port 8090
 ```
 
 ### Hinweise zur Immich-API (geprüft gegen die OpenAPI-Spezifikation v3.2.4)

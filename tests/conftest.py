@@ -28,11 +28,12 @@ def clients(state, http) -> dict[str, ImmichClient]:
 
 
 @pytest.fixture
-def settings(tmp_path) -> Settings:
-    return Settings(
-        immich_url="http://immich-server:2283",
-        users={"frank": "key-frank", "julia": "key-julia"},
-        data_dir=tmp_path / "data",
-        config_dir=tmp_path / "config",
-        rules_file=tmp_path / "config" / "regeln.yaml",
-    )
+def env(tmp_path) -> dict[str, str]:
+    """Umgebung wie per .env konfiguriert."""
+    return {"DATA_DIR": str(tmp_path / "data"), "IMMICH_URL": "http://immich-server:2283",
+            "IMMICH_KEY_FRANK": "key-frank", "IMMICH_KEY_JULIA": "key-julia"}
+
+
+@pytest.fixture
+def settings(env) -> Settings:
+    return Settings.load(env)

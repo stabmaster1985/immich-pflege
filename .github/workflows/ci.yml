@@ -33,9 +33,10 @@ jobs:
           tags: immich-pflege:ci
       - name: Container-Smoke-Test
         run: |
-          docker run -d --name pflege -e IMMICH_URL=http://127.0.0.1:9 -e IMMICH_KEY_TEST=x -p 8090:8090 immich-pflege:ci
+          docker run -d --name pflege -p 8090:8090 immich-pflege:ci   # ohne Konfiguration: Einrichtungsmodus
           for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8090/healthz && break; sleep 1; done
           curl -fsS http://127.0.0.1:8090/healthz
+          curl -fsS http://127.0.0.1:8090/api/status | grep -q '"eingerichtet":false'
           docker exec pflege pflege --help
           test "$(docker exec pflege id -u)" != "0"
           docker rm -f pflege

@@ -8,7 +8,8 @@ const S = {
   status: null,
   dup: { groups: [], total: 0, open: 0, keep: {}, sel: new Set(), includeDone: false, loaded: false },
   loc: { days: [], totalDays: 0, sel: new Set(), hours: null, only: false, loaded: false, info: null },
-  tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [] },
+  tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [], items: [], fileErrors: [], users: [], yaml: "" },
+  set: { data: null, loaded: false },
 };
 
 /* ------------------------------------------------------------ Hilfen */
@@ -31,7 +32,7 @@ function h(tag, attrs, ...children) {
 }
 
 class ApiError extends Error {
-  constructor(message, details) { super(message); this.details = details || []; }
+  constructor(message, details, status, setup) { super(message); this.details = details || []; this.status = status; this.setup = !!setup; }
 }
 
 async function api(path, options = {}) {
@@ -46,7 +47,7 @@ async function api(path, options = {}) {
   if (!resp.ok) {
     let msg = (data && (data.fehler || data.detail)) || `Fehler ${resp.status}`;
     if (Array.isArray(msg)) msg = msg.map((d) => d.msg || JSON.stringify(d)).join("; ");
-    throw new ApiError(msg, data && data.details);
+    throw new ApiError(msg, data && data.details, resp.status, data && data.einrichtung);
   }
   return data;
 }
@@ -371,18 +372,26 @@ async function applyLocation(btn) {
 /* -------------------------------------------------------------- Tags */
 const COND_LABEL = { pfad: "Pfad", dateiname: "Dateiname", von: "von", bis: "bis", album: "Album", person: "Person",
   hersteller: "Hersteller", modell: "Modell", bibliothek: "Bibliothek", typ: "Typ", benutzer: "Benutzer" };
+const COND_KEYS = ["von", "bis", "bibliothek", "typ", "album", "person", "hersteller", "modell", "dateiname", "pfad", "benutzer"];
+
+function asList(v) { return v === undefined || v === null || v === "" ? [] : (Array.isArray(v) ? v : [v]); }
+function ruleTags(item) { return asList(item.tags !== undefined ? item.tags : item.tag).map(String); }
 
 async function loadTags() {
   const t = S.tags;
   t.sel.clear();
   $("#tags-list").replaceChildren(h("p", { class: "empty" }, "Lade …"));
   $("#tags-errors").replaceChildren();
-  try {
-    const r = await api("api/tags");
-    t.rules = r.regeln; t.warnings = r.warnungen; t.error = null;
-    $("#tags-file").textContent = r.regeldatei;
-  } catch (e) {
-    t.rules = []; t.error = e;
+  const ed = await api("api/rules");
+  t.items = ed.regeln || []; t.fileErrors = ed.fehler || []; t.users = ed.benutzer || []; t.yaml = ed.yaml || "";
+  t.rules = []; t.warnings = []; t.error = null;
+  if (!t.fileErrors.length && t.items.length) {
+    try {
+      const r = await api("api/tags");
+      t.rules = r.regeln; t.warnings = r.warnungen;
+    } catch (e) {
+      t.error = e;
+    }
   }
   t.loaded = true;
   renderTags();
@@ -391,31 +400,39 @@ async function loadTags() {
 function renderTags() {
   const t = S.tags;
   const boxes = [];
-  if (t.error) {
-    boxes.push(h("div", { class: "banner err" }, h("b", {}, t.error.message),
-      t.error.details.length ? h("ul", {}, t.error.details.map((d) => h("li", {}, d))) : null));
+  if (t.fileErrors.length) {
+    boxes.push(h("div", { class: "banner err" }, h("b", {}, "Die Regeln enthalten Fehler – bitte korrigieren:"),
+      h("ul", {}, t.fileErrors.map((d) => h("li", {}, d)))));
   }
+  if (t.error) boxes.push(h("div", { class: "banner err" }, "Vorschau nicht möglich: " + t.error.message));
   if (t.warnings.length) boxes.push(h("div", { class: "banner warn" }, h("ul", {}, t.warnings.map((w) => h("li", {}, w)))));
   $("#tags-errors").replaceChildren(...boxes);
   const list = $("#tags-list");
   list.replaceChildren();
-  if (!t.rules.length && !t.error) list.append(h("p", { class: "empty" }, "Keine Regeln definiert."));
+  if (!t.items.length && !t.fileErrors.length) {
+    list.append(h("div", { class: "empty" }, h("p", {}, "Noch keine Regeln."),
+      h("p", {}, "Lege mit „+ Neue Regel“ eine an oder übernimm die Beispiele.")));
+  }
   let totalNew = 0;
-  for (const r of t.rules) {
-    totalNew += r.neu || 0;
-    const card = h("article", { class: "card" + (t.sel.has(r.name) ? " selected" : "") });
-    const cond = Object.entries(r.bedingungen).map(([k, v]) => `${COND_LABEL[k] || k}: ${Array.isArray(v) ? v.join(", ") : v}`).join(" · ");
+  t.items.forEach((item, idx) => {
+    const r = t.rules.find((x) => x.name === item.name);
+    const name = item.name || `Regel ${idx + 1}`;
+    const aktiv = item.aktiv !== false;
+    totalNew += (r && r.neu) || 0;
+    const card = h("article", { class: "card" + (t.sel.has(name) ? " selected" : "") });
+    const cond = COND_KEYS.filter((k) => item[k] !== undefined).map((k) => `${COND_LABEL[k]}: ${asList(item[k]).join(", ")}`).join(" · ");
     card.append(
       h("div", { class: "card-head" },
         h("label", {}, h("input", {
-          type: "checkbox", checked: t.sel.has(r.name), disabled: !r.aktiv || !r.neu,
-          onchange: (e) => { e.target.checked ? t.sel.add(r.name) : t.sel.delete(r.name); card.classList.toggle("selected", e.target.checked); updateActionbar(); },
-        }), r.name),
-        r.aktiv ? null : h("span", { class: "chip" }, "inaktiv"),
-        ...r.tags.map((tag) => h("span", { class: "chip accent" }, "🏷 " + tag))),
-      h("div", { class: "cond" }, cond),
+          type: "checkbox", checked: t.sel.has(name), disabled: !r || !r.aktiv || !r.neu,
+          onchange: (e) => { e.target.checked ? t.sel.add(name) : t.sel.delete(name); card.classList.toggle("selected", e.target.checked); updateActionbar(); },
+        }), name),
+        aktiv ? null : h("span", { class: "chip" }, "inaktiv"),
+        ...ruleTags(item).map((tag) => h("span", { class: "chip accent" }, "🏷 " + tag)),
+        h("button", { type: "button", class: "btn small edit", onclick: () => openRule(idx) }, "Bearbeiten")),
+      h("div", { class: "cond" }, cond || "keine Bedingung"),
     );
-    if (r.aktiv) {
+    if (r && r.aktiv) {
       card.append(h("div", { class: "stats" },
         h("span", {}, h("b", {}, r.treffer), " Treffer"),
         h("span", {}, h("b", {}, r.schon_getaggt), " schon getaggt"),
@@ -424,9 +441,119 @@ function renderTags() {
       if (r.beispiele.length) card.append(h("div", { class: "strip" }, r.beispiele.map((m) => thumb(m))));
     }
     list.append(card);
-  }
+  });
   $("#count-tags").textContent = totalNew ? `(${totalNew})` : "";
   updateActionbar();
+}
+
+async function saveRules(items, errorBox) {
+  try {
+    await api("api/rules", { method: "PUT", body: { regeln: items } });
+    return true;
+  } catch (e) {
+    // Zeilennummern und YAML-Tipps betreffen die Datei, nicht das Formular
+    const list = (e.details.length ? e.details : [e.message])
+      .map((d) => d.replace(/ \(Zeile \d+\)/, "").replace(/ Tipp: .*$/, ""));
+    if (errorBox) errorBox.replaceChildren(h("div", { class: "banner err" }, h("ul", {}, list.map((d) => h("li", {}, d)))));
+    else toast(list.join(" · "), true);
+    return false;
+  }
+}
+
+let editIndex = null;
+function openRule(idx) {
+  const t = S.tags;
+  editIndex = idx;
+  const item = idx === null ? { aktiv: true } : t.items[idx];
+  $("#rule-title").textContent = idx === null ? "Neue Regel" : "Regel bearbeiten";
+  $("#rule-errors").replaceChildren();
+  $("#r-name").value = item.name || "";
+  $("#r-tags").value = ruleTags(item).join(", ");
+  $("#r-aktiv").checked = item.aktiv !== false;
+  for (const k of ["von", "bis", "bibliothek", "typ", "hersteller", "modell", "dateiname", "pfad"]) $("#r-" + k).value = item[k] || "";
+  $("#r-album").value = asList(item.album).join(", ");
+  $("#r-person").value = asList(item.person).join(", ");
+  const chosen = asList(item.benutzer).map((u) => String(u).toLowerCase());
+  $("#r-benutzer").replaceChildren(...t.users.map((u) => h("label", { class: "toggle" },
+    h("input", { type: "checkbox", value: u, checked: chosen.includes(u) }), u)));
+  $("#rule-delete").hidden = idx === null;
+  const adv = ["modell", "dateiname", "pfad"].some((k) => item[k]);
+  $("#rule-form details").open = adv;
+  $("#rule-dlg").showModal();
+}
+
+function readRuleForm() {
+  const split = (v) => v.split(",").map((x) => x.trim()).filter(Boolean);
+  const item = { name: $("#r-name").value.trim() };
+  const tags = split($("#r-tags").value);
+  if (tags.length === 1) item.tag = tags[0]; else if (tags.length) item.tags = tags;
+  for (const k of ["von", "bis", "bibliothek", "typ", "hersteller", "modell", "dateiname", "pfad"]) {
+    const v = $("#r-" + k).value.trim();
+    if (v) item[k] = v;
+  }
+  for (const k of ["album", "person"]) {
+    const v = split($("#r-" + k).value);
+    if (v.length) item[k] = v.length === 1 ? v[0] : v;
+  }
+  const users = [...$("#r-benutzer").querySelectorAll("input:checked")].map((i) => i.value);
+  if (users.length) item.benutzer = users.length === 1 ? users[0] : users;
+  if (!$("#r-aktiv").checked) item.aktiv = false;
+  return item;
+}
+
+async function saveRuleFromDialog(btn) {
+  const item = readRuleForm();
+  const items = S.tags.items.slice();
+  if (editIndex === null) items.push(item); else items[editIndex] = item;
+  busy(btn, true);
+  const ok = await saveRules(items, $("#rule-errors"));
+  busy(btn, false);
+  if (!ok) { $("#rule-dlg").scrollTop = 0; return; }
+  $("#rule-dlg").close();
+  toast("Regel gespeichert");
+  await loadTab("tags", true);
+}
+
+async function deleteRule() {
+  const item = S.tags.items[editIndex];
+  $("#rule-dlg").close();
+  const ok = await confirmDialog({ title: "Regel löschen?", body: h("p", {}, `„${item.name}“ wird entfernt. Bereits gesetzte Tags bleiben erhalten.`), okLabel: "Löschen", danger: true });
+  if (!ok) return;
+  const items = S.tags.items.filter((_, i) => i !== editIndex);
+  if (await saveRules(items)) { toast("Regel gelöscht"); await loadTab("tags", true); }
+}
+
+async function addExamples() {
+  const ex = (await api("api/rules/example")).regeln;
+  const names = new Set(S.tags.items.map((i) => i.name));
+  const fresh = ex.filter((e) => !names.has(e.name));
+  if (!fresh.length) { toast("Beispiele sind schon vorhanden"); return; }
+  const ok = await confirmDialog({ title: "Beispielregeln übernehmen?",
+    body: [h("p", {}, `${n(fresh.length, "Beispielregel wird", "Beispielregeln werden")} ausgeschaltet hinzugefügt. Passe sie an und schalte sie dann ein:`),
+      h("ul", {}, fresh.map((e) => h("li", {}, e.name)))], okLabel: "Übernehmen" });
+  if (!ok) return;
+  if (await saveRules([...S.tags.items, ...fresh])) { toast("Beispiele übernommen"); await loadTab("tags", true); }
+}
+
+function openYaml() {
+  $("#yaml-errors").replaceChildren();
+  $("#yaml-text").value = S.tags.yaml || "regeln:\n";
+  $("#yaml-dlg").showModal();
+}
+
+async function saveYaml(btn) {
+  busy(btn, true);
+  try {
+    await api("api/rules", { method: "PUT", body: { yaml: $("#yaml-text").value } });
+    $("#yaml-dlg").close();
+    toast("Regeln gespeichert");
+    await loadTab("tags", true);
+  } catch (e) {
+    const list = e.details.length ? e.details : [e.message];
+    $("#yaml-errors").replaceChildren(h("div", { class: "banner err" }, h("ul", {}, list.map((d) => h("li", {}, d)))));
+  } finally {
+    busy(btn, false);
+  }
 }
 
 async function applyTags(btn) {
@@ -447,6 +574,115 @@ async function applyTags(btn) {
     await loadTags();
   } catch (e) {
     toast(e.message, true);
+  } finally {
+    busy(btn, false);
+  }
+}
+
+/* ------------------------------------------------------ Einstellungen */
+async function loadSettings() {
+  const d = await api("api/settings");
+  S.set.data = d; S.set.loaded = true;
+  const lock = (id, key) => {
+    const el = $(id);
+    el.disabled = d.gesperrt.includes(key);
+    el.title = el.disabled ? "In der .env festgelegt" : "";
+  };
+  $("#set-url").value = d.immich_url; lock("#set-url", "immich_url");
+  $("#set-album").value = d.review_album; lock("#set-album", "review_album");
+  $("#set-hours").value = d.location_max_hours; lock("#set-hours", "location_max_hours");
+  $("#set-ext").checked = d.location_include_external; lock("#set-ext", "location_include_external");
+  $("#set-web-user").value = d.web_user; lock("#set-web-user", "web_user");
+  $("#set-web-pw").value = ""; lock("#set-web-pw", "web_password");
+  $("#set-login-hint").textContent = d.login_aktiv
+    ? "Login ist aktiv. Benutzername leeren und speichern schaltet ihn ab."
+    : "Ohne Login kann jeder im Heimnetz das Tool bedienen. Für Zugriff von außen unbedingt setzen.";
+  $("#set-users").replaceChildren(...(d.benutzer.length ? d.benutzer : [{ name: "", key_gesetzt: false }]).map(userRow));
+  $("#set-add-user").disabled = d.gesperrt.includes("users");
+  $("#set-test-result").replaceChildren();
+  $("#set-env-hint").textContent = d.gesperrt.length
+    ? "Ausgegraute Felder sind in der .env festgelegt und haben Vorrang. Gespeichert wird in " + d.datenordner + "/einstellungen.json."
+    : "Gespeichert wird in " + d.datenordner + "/einstellungen.json.";
+  $("#set-welcome").replaceChildren(...(d.eingerichtet ? [] : [h("div", { class: "banner warn" },
+    h("b", {}, "Willkommen! "), "Trage die Immich-Adresse und für jeden Benutzer einen API-Key ein, teste die Verbindung und speichere.")]));
+}
+
+function userRow(u) {
+  const locked = S.set.data && S.set.data.gesperrt.includes("users");
+  const row = h("div", { class: "user-row", "data-alt": u.name || "" },
+    h("input", { type: "text", class: "u-name", value: u.name || "", placeholder: "Name, z. B. frank", autocapitalize: "off", disabled: locked, "aria-label": "Benutzername" }),
+    h("input", { type: "password", class: "u-key", autocomplete: "off", disabled: locked, "aria-label": "API-Key",
+      placeholder: u.key_gesetzt ? "gespeichert" + (u.key_ende ? " …" + u.key_ende : "") + " – leer = behalten" : "API-Key einfügen" }),
+    h("button", { type: "button", class: "btn small", disabled: locked, "aria-label": "Entfernen", title: "Entfernen", onclick: () => row.remove() }, "✕"));
+  return row;
+}
+
+function readUsers() {
+  return [...document.querySelectorAll("#set-users .user-row")].map((r) => ({
+    name: r.querySelector(".u-name").value.trim().toLowerCase(),
+    key: r.querySelector(".u-key").value.trim(),
+    alt: r.dataset.alt,
+  })).filter((u) => u.name || u.key);
+}
+
+function readSettingsForm() {
+  const d = S.set.data;
+  const body = {};
+  const put = (key, val) => { if (!d.gesperrt.includes(key)) body[key] = val; };
+  put("immich_url", $("#set-url").value.trim());
+  put("review_album", $("#set-album").value.trim());
+  put("location_max_hours", $("#set-hours").value);
+  put("location_include_external", $("#set-ext").checked);
+  if (!d.gesperrt.includes("users")) body.benutzer = readUsers();
+  if (!d.gesperrt.includes("web_user")) {
+    body.web_user = $("#set-web-user").value.trim();
+    if ($("#set-web-pw").value) body.web_password = $("#set-web-pw").value;
+  }
+  return body;
+}
+
+async function testConnection(btn) {
+  const box = $("#set-test-result");
+  const body = {};
+  if (!$("#set-url").disabled) body.immich_url = $("#set-url").value.trim();
+  if (!S.set.data.gesperrt.includes("users")) body.benutzer = readUsers();
+  busy(btn, true);
+  try {
+    const r = await api("api/settings/test", { method: "POST", body });
+    const lines = [h("li", { class: r.erreichbar ? "test-ok" : "test-bad" },
+      r.erreichbar ? `✓ Immich erreichbar${r.version ? " – Version " + r.version : ""}` : `✗ ${r.immich_url} nicht erreichbar`)];
+    for (const [name, k] of Object.entries(r.schluessel)) {
+      lines.push(h("li", { class: k.ok ? "test-ok" : "test-bad" }, k.ok ? `✓ ${name}: ${k.konto}` : `✗ ${name}: ${k.fehler}`));
+    }
+    for (const w of r.warnungen) lines.push(h("li", { class: "test-bad" }, "⚠ " + w));
+    box.replaceChildren(h("ul", {}, lines));
+  } catch (e) {
+    box.replaceChildren(h("div", { class: "banner err" }, (e.details.length ? e.details.join(" · ") : e.message)));
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function saveSettings(btn) {
+  busy(btn, true);
+  try {
+    const before = S.set.data;
+    const r = await api("api/settings", { method: "PUT", body: readSettingsForm() });
+    if (r.neu_anmelden) {
+      toast("Gespeichert – bitte neu anmelden");
+      setTimeout(() => location.reload(), 1200);
+      return;
+    }
+    toast("Einstellungen gespeichert");
+    const accessChanged = before.immich_url !== r.immich_url ||
+      JSON.stringify(before.benutzer) !== JSON.stringify(r.benutzer) || before.review_album !== r.review_album;
+    S.loc.hours = null;
+    await loadSettings();
+    await loadStatus(true);
+    S.dup.loaded = S.loc.loaded = S.tags.loaded = false;
+    if (accessChanged && r.eingerichtet) toast("Gespeichert – Bibliothek wird beim nächsten Öffnen neu eingelesen");
+  } catch (e) {
+    toast(e.details.length ? e.details.join(" · ") : e.message, true);
   } finally {
     busy(btn, false);
   }
@@ -479,6 +715,10 @@ function updateActionbar() {
       updateActionbar();
     } }, allSel ? "Keine" : "Alle"));
     buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !cnt, onclick: (e) => applyLocation(e.currentTarget) }, "Ort übernehmen"));
+  } else if (S.tab === "set") {
+    const locked = S.set.data && S.set.data.gesperrt.length;
+    info.textContent = locked ? "Gesperrte Felder stammen aus der .env" : "Änderungen gelten sofort";
+    buttons.push(h("button", { class: "btn small primary", type: "button", onclick: (e) => saveSettings(e.currentTarget) }, "Speichern"));
   } else {
     const cnt = S.tags.sel.size;
     const total = S.tags.rules.filter((r) => S.tags.sel.has(r.name)).reduce((a, r) => a + (r.neu || 0), 0);
@@ -499,14 +739,21 @@ function loadTab(tab, force = false) {
   return p;
 }
 
+const TAB_TARGET = { dup: "#dup-list", loc: "#loc-list", tags: "#tags-list", set: "#set-welcome" };
+
 async function doLoadTab(tab, force) {
   try {
     if (tab === "dup" && (force || !S.dup.loaded)) await loadDuplicates(true);
     if (tab === "loc" && (force || !S.loc.loaded)) await loadLocation(true);
     if (tab === "tags" && (force || !S.tags.loaded)) await loadTags();
+    if (tab === "set" && (force || !S.set.loaded)) await loadSettings();
+    if (tab !== "set" && S.status && !S.status.bibliothek) loadStatus(false);
   } catch (e) {
-    const target = { dup: "#dup-list", loc: "#loc-list", tags: "#tags-list" }[tab];
-    $(target).replaceChildren(h("div", { class: "banner err" }, "Laden fehlgeschlagen: " + e.message));
+    const box = e.setup
+      ? h("div", { class: "banner warn" }, "Noch nicht eingerichtet. ",
+        h("button", { type: "button", class: "btn small", onclick: () => showTab("set") }, "Zu den Einstellungen"))
+      : h("div", { class: "banner err" }, "Laden fehlgeschlagen: " + e.message);
+    $(TAB_TARGET[tab]).replaceChildren(box);
   }
   updateActionbar();
 }
@@ -517,10 +764,11 @@ function showTab(tab) {
   document.querySelectorAll(".tab").forEach((s) => { s.hidden = s.id !== "tab-" + tab; });
   try { localStorage.setItem("pflege-tab", tab); } catch (_) { /* egal */ }
   updateActionbar();
-  loadTab(tab);
+  return loadTab(tab);
 }
 
 function loadOtherCounts() {
+  if (S.status && !S.status.eingerichtet) return;
   for (const t of ["dup", "loc", "tags"]) if (t !== S.tab) loadTab(t).then(updateActionbar);
 }
 
@@ -536,14 +784,25 @@ $("#loc-hours").addEventListener("change", (e) => {
   if (v > 0 && v <= 48) { S.loc.hours = v; loadTab("loc", true); } else { e.target.value = S.loc.hours; }
 });
 $("#tags-reload").addEventListener("click", () => loadTab("tags", true));
+$("#rule-new").addEventListener("click", () => openRule(null));
+$("#rule-examples").addEventListener("click", () => addExamples().catch((e) => toast(e.message, true)));
+$("#rule-yaml").addEventListener("click", openYaml);
+$("#rule-save").addEventListener("click", (e) => saveRuleFromDialog(e.currentTarget));
+$("#rule-delete").addEventListener("click", deleteRule);
+$("#yaml-save").addEventListener("click", (e) => saveYaml(e.currentTarget));
+$("#set-add-user").addEventListener("click", () => $("#set-users").append(userRow({ name: "", key_gesetzt: false })));
+$("#set-test").addEventListener("click", (e) => testConnection(e.currentTarget));
 
 (async function init() {
   let tab = "dup";
   try { tab = localStorage.getItem("pflege-tab") || "dup"; } catch (_) { /* egal */ }
   await loadStatus(true);
-  showTab(["dup", "loc", "tags"].includes(tab) ? tab : "dup");
+  if (S.status && !S.status.eingerichtet) {
+    await showTab("set");
+    return;
+  }
+  await showTab(["dup", "loc", "tags", "set"].includes(tab) ? tab : "dup");
   // Nach dem ersten Laden (ggf. Einlesen) Status aktualisieren und Zähler der anderen Tabs holen
-  await loadTab(S.tab);
   loadStatus(false);
   loadOtherCounts();
 })();
