@@ -36,7 +36,7 @@ class ApiError extends Error {
 }
 
 async function api(path, options = {}) {
-  const opts = { headers: { Accept: "application/json" }, ...options };
+  const opts = { headers: { Accept: "application/json", "X-Requested-With": "pflege" }, ...options };
   if (opts.body && typeof opts.body !== "string") {
     opts.body = JSON.stringify(opts.body);
     opts.headers["Content-Type"] = "application/json";
@@ -44,6 +44,11 @@ async function api(path, options = {}) {
   const resp = await fetch(path, opts);
   let data = null;
   try { data = await resp.json(); } catch (_) { /* leer */ }
+  if (resp.status === 401 && data && data.anmeldung) {
+    // Sitzung abgelaufen oder abgemeldet: zur Anmeldeseite und danach hierher zurück
+    location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search);
+    throw new ApiError("Anmeldung erforderlich", [], 401);
+  }
   if (!resp.ok) {
     let msg = (data && (data.fehler || data.detail)) || `Fehler ${resp.status}`;
     if (Array.isArray(msg)) msg = msg.map((d) => d.msg || JSON.stringify(d)).join("; ");
@@ -594,6 +599,7 @@ async function loadSettings() {
   $("#set-ext").checked = d.location_include_external; lock("#set-ext", "location_include_external");
   $("#set-web-user").value = d.web_user; lock("#set-web-user", "web_user");
   $("#set-web-pw").value = ""; lock("#set-web-pw", "web_password");
+  $("#set-logout").hidden = !d.login_aktiv;
   $("#set-login-hint").textContent = d.login_aktiv
     ? "Login ist aktiv. Benutzername leeren und speichern schaltet ihn ab."
     : "Ohne Login kann jeder im Heimnetz das Tool bedienen. Für Zugriff von außen unbedingt setzen.";
@@ -682,12 +688,7 @@ async function saveSettings(btn) {
   try {
     const before = S.set.data;
     const r = await api("api/settings", { method: "PUT", body: readSettingsForm() });
-    if (r.neu_anmelden) {
-      toast("Gespeichert – bitte neu anmelden");
-      setTimeout(() => location.reload(), 1200);
-      return;
-    }
-    toast("Einstellungen gespeichert");
+    toast(r.login_geaendert ? "Gespeichert – Login ist aktiv, du bleibst angemeldet" : "Einstellungen gespeichert");
     const accessChanged = before.immich_url !== r.immich_url ||
       JSON.stringify(before.benutzer) !== JSON.stringify(r.benutzer) || before.review_album !== r.review_album;
     S.loc.hours = null;
@@ -876,6 +877,10 @@ $("#rule-delete").addEventListener("click", deleteRule);
 $("#yaml-save").addEventListener("click", (e) => saveYaml(e.currentTarget));
 $("#set-add-user").addEventListener("click", () => $("#set-users").append(userRow({ name: "", key_gesetzt: false })));
 $("#set-test").addEventListener("click", (e) => testConnection(e.currentTarget));
+$("#set-logout").addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" }).catch(() => null);
+  location.href = "/login";
+});
 $("#version-check").addEventListener("click", async (e) => { busy(e.currentTarget, true); await loadVersion(true); busy(e.currentTarget, false); });
 $("#version-update").addEventListener("click", (e) => startUpdate(e.currentTarget));
 

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+  <title>Anmelden – Immich-Pflege</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234250af'/%3E%3Cpath d='M9 17l5 5 9-11' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/app.css">
+  <style>
+    body { padding: 0; min-height: 100dvh; display: flex; align-items: center; justify-content: center; }
+    .login { width: min(100% - 32px, 380px); margin: 24px auto; }
+    .login .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    .login .logo svg { width: 40px; height: 40px; flex: none; }
+    .login h1 { font-size: 1.3rem; }
+    .login .card { padding: 18px; }
+    .login .btn { width: 100%; margin-top: 8px; }
+    .login .toggle { margin: 4px 0 8px; }
+  </style>
+</head>
+<body>
+  <main class="login">
+    <div class="logo">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#4250af"/><path d="M9 17l5 5 9-11" stroke="white" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <h1>Immich-Pflege</h1>
+    </div>
+    <form id="login-form" class="card" autocomplete="on">
+      <div id="login-error" role="alert"></div>
+      <label class="f">Benutzername
+        <input type="text" id="user" name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required autofocus>
+      </label>
+      <label class="f">Passwort
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </label>
+      <label class="toggle"><input type="checkbox" id="remember" checked> Angemeldet bleiben (90 Tage)</label>
+      <button type="submit" id="login-btn" class="btn primary">Anmelden</button>
+    </form>
+  </main>
+  <script>
+    "use strict";
+    const form = document.getElementById("login-form");
+    const errorBox = document.getElementById("login-error");
+    function target() {
+      const next = new URLSearchParams(location.search).get("next") || "/";
+      // nur Pfade auf diesem Server (kein //fremd.example)
+      return next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/";
+    }
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("login-btn");
+      btn.disabled = true;
+      btn.classList.add("busy");
+      errorBox.replaceChildren();
+      try {
+        const resp = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Requested-With": "pflege" },
+          body: JSON.stringify({
+            benutzer: document.getElementById("user").value,
+            passwort: document.getElementById("password").value,
+            angemeldet_bleiben: document.getElementById("remember").checked,
+          }),
+        });
+        if (resp.ok) { location.replace(target()); return; }
+        const data = await resp.json().catch(() => ({}));
+        const box = document.createElement("div");
+        box.className = "banner err";
+        box.textContent = data.fehler || "Anmeldung fehlgeschlagen";
+        errorBox.append(box);
+        document.getElementById("password").select();
+      } catch (_) {
+        errorBox.innerHTML = '<div class="banner err">Server nicht erreichbar</div>';
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove("busy");
+      }
+    });
+  </script>
+</body>
+</html>

@@ -5,17 +5,18 @@ Start: uvicorn immich_pflege.web.app:create_app --factory --host 0.0.0.0 --port 
 
 from __future__ import annotations
 
-import base64
-import binascii
+import asyncio
 import logging
 import re
 import threading
+import time
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any, Literal, Mapping, Optional
 
 import httpx
 from fastapi import Body, FastAPI, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -26,11 +27,13 @@ from ..logsetup import setup_logging
 from ..rules import RuleError, example_rules, read_rules_raw, save_rules
 from ..service import ActionError, ImmichError, NotConfigured, Pflege, check_server
 from ..version import Version
+from .auth import COOKIE, RENEW_BELOW_S, Sessions, basic_credentials
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-OPEN_PATHS = {"/healthz"}
+OPEN_PATHS = {"/healthz", "/login", "/api/login", "/api/logout", "/favicon.ico"}
+OPEN_PREFIXES = ("/static/",)
 
 
 class ScanRequest(BaseModel):
@@ -59,20 +62,15 @@ class TagsApply(BaseModel):
     rules: Optional[list[str]] = None
 
 
+class LoginRequest(BaseModel):
+    benutzer: str
+    passwort: str
+    angemeldet_bleiben: bool = True
+
+
 class RulesSave(BaseModel):
     regeln: Optional[list[dict[str, Any]]] = None
     yaml: Optional[str] = None
-
-
-def _basic_credentials(header: str | None) -> tuple[str, str] | None:
-    if not header or not header.lower().startswith("basic "):
-        return None
-    try:
-        decoded = base64.b64decode(header[6:].strip()).decode("utf-8")
-    except (binascii.Error, UnicodeDecodeError):
-        return None
-    user, _, password = decoded.partition(":")
-    return user, password
 
 
 def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None = None,
@@ -86,6 +84,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
                   redoc_url=None, openapi_url="/api/openapi.json")
     app.state.service = Pflege(first, http=http)
     app.state.version = version or Version("", http=ext_http)
+    sessions = Sessions(first.data_dir)
 
     def configure_version(settings: Settings) -> None:
         v = app.state.version
@@ -109,15 +108,45 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         configure_version(new)
         return new
 
+    def set_session_cookie(response: Response, request: Request, settings: Settings, remember: bool) -> None:
+        value, max_age = sessions.issue(settings, remember)
+        response.set_cookie(COOKIE, value, max_age=max_age, httponly=True, samesite="lax",
+                            secure=request.url.scheme == "https", path="/")
+
+    def client_id(request: Request) -> str:
+        return request.client.host if request.client else "?"
+
     @app.middleware("http")
-    async def basic_auth(request: Request, call_next):
+    async def require_login(request: Request, call_next):
         settings = svc().settings
-        if settings.auth_enabled and request.url.path not in OPEN_PATHS:
-            creds = _basic_credentials(request.headers.get("authorization"))
-            if not creds or not settings.check_login(*creds):
-                return Response("Anmeldung erforderlich", status_code=401,
-                                headers={"WWW-Authenticate": 'Basic realm="immich-pflege", charset="UTF-8"'})
-        return await call_next(request)
+        path = request.url.path
+        if not settings.auth_enabled or path in OPEN_PATHS or path.startswith(OPEN_PREFIXES):
+            return await call_next(request)
+        session = sessions.check(request.cookies.get(COOKIE), settings)
+        if session:
+            response = await call_next(request)
+            if session.get("r") and session["exp"] - time.time() < RENEW_BELOW_S:
+                set_session_cookie(response, request, settings, True)  # gleitend verlängern
+            return response
+        # Basic Auth für n8n, curl & Co.
+        creds = basic_credentials(request.headers.get("authorization"))
+        if creds:
+            client = client_id(request)
+            if sessions.locked(client):
+                return JSONResponse({"fehler": "Zu viele Fehlversuche – bitte kurz warten"}, 429)
+            if settings.check_login(*creds):
+                sessions.succeeded(client)
+                return await call_next(request)
+            sessions.failed(client)
+        # Oberfläche: zur Anmeldeseite; API: 401 (Basic-Challenge nur für fremde Clients,
+        # damit der Browser kein eigenes Anmeldefenster öffnet)
+        if request.method == "GET" and "text/html" in request.headers.get("accept", "") \
+                and not path.startswith("/api/"):
+            target = path + (f"?{request.url.query}" if request.url.query else "")
+            return RedirectResponse(f"/login?next={quote(target)}", status_code=303)
+        headers = {} if request.headers.get("x-requested-with") == "pflege" else \
+            {"WWW-Authenticate": 'Basic realm="immich-pflege", charset="UTF-8"'}
+        return JSONResponse({"fehler": "Anmeldung erforderlich", "anmeldung": True}, 401, headers=headers)
 
     @app.exception_handler(ImmichError)
     async def immich_error(_: Request, exc: ImmichError):
@@ -173,20 +202,58 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         return {"stand": lib.scanned_at, "dauer_s": lib.duration_s, **lib.counts(),
                 "warnungen": lib.warnings}
 
+    # ------------------------------------------------------------ Anmeldung
+    @app.get("/login", include_in_schema=False)
+    def login_page(request: Request):
+        settings = svc().settings
+        if not settings.auth_enabled or sessions.check(request.cookies.get(COOKIE), settings):
+            return RedirectResponse("/", status_code=303)
+        return FileResponse(STATIC / "login.html", headers={"Cache-Control": "no-cache"})
+
+    @app.post("/api/login")
+    async def login(body: LoginRequest, request: Request):
+        settings = svc().settings
+        if not settings.auth_enabled:
+            return {"ok": True}
+        client = client_id(request)
+        wait = sessions.locked(client)
+        if wait:
+            return JSONResponse({"fehler": f"Zu viele Fehlversuche – bitte {wait // 60 + 1} Minuten warten"}, 429)
+        if not settings.check_login(body.benutzer.strip(), body.passwort):
+            sessions.failed(client)
+            await asyncio.sleep(1)  # Raten bremsen
+            log.warning("Fehlgeschlagene Anmeldung von %s", client)
+            return JSONResponse({"fehler": "Benutzername oder Passwort falsch"}, 401)
+        sessions.succeeded(client)
+        response = JSONResponse({"ok": True})
+        set_session_cookie(response, request, settings, body.angemeldet_bleiben)
+        log.info("Anmeldung von %s", client)
+        return response
+
+    @app.post("/api/logout")
+    def logout():
+        response = JSONResponse({"ok": True})
+        response.delete_cookie(COOKIE, path="/")
+        return response
+
     # ------------------------------------------------------- Einstellungen
     @app.get("/api/settings")
     def get_settings():
         return svc().settings.public()
 
     @app.put("/api/settings")
-    def put_settings(body: dict[str, Any] = Body(...)):
+    def put_settings(request: Request, body: dict[str, Any] = Body(...)):
         before = svc().settings
         update_settings(before, body)
         new = reload_settings()
         log.info("Einstellungen gespeichert")
         login_changed = (new.auth_enabled, new.web_user) != (before.auth_enabled, before.web_user) or \
             bool(body.get("web_password"))
-        return {**new.public(), "neu_anmelden": login_changed and new.auth_enabled}
+        response = JSONResponse({**new.public(), "login_geaendert": login_changed and new.auth_enabled})
+        if login_changed and new.auth_enabled:
+            # Wer den Login gerade selbst gesetzt hat, bleibt angemeldet
+            set_session_cookie(response, request, new, True)
+        return response
 
     @app.post("/api/settings/test")
     def test_settings(body: dict[str, Any] = Body(default_factory=dict)):

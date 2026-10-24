@@ -94,7 +94,9 @@ def test_setup_flow_via_gui(fresh, state):
 
 def test_login_via_gui(fresh):
     r = fresh.put("/api/settings", json={"web_user": "frank", "web_password": "geheim123"})
-    assert r.json()["neu_anmelden"] is True
+    assert r.json()["login_geaendert"] is True
+    assert fresh.get("/api/settings").status_code == 200  # wer den Login setzt, bleibt angemeldet
+    fresh.cookies.clear()
     assert fresh.get("/api/settings").status_code == 401
     assert fresh.get("/api/settings", auth=("frank", "geheim123")).status_code == 200
     assert fresh.get("/healthz").status_code == 200

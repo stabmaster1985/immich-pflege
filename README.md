@@ -53,6 +53,8 @@ Die Oberfläche läuft auf Port 2222. Soll ein anderer Port genutzt werden, lege
 
 Gespeichert wird in `data/einstellungen.json`. Keys werden nie an den Browser zurückgegeben, angezeigt werden nur die letzten 4 Zeichen. Das Passwort wird nur als Hash gespeichert. Ein leeres Key-Feld beim Speichern heißt „bisherigen Key behalten“.
 
+**Anmeldung:** Ist ein Login gesetzt, erscheint eine Anmeldeseite. Mit „Angemeldet bleiben“ (vorausgewählt) gilt die Anmeldung 90 Tage und verlängert sich bei Benutzung von selbst, ohne Häkchen endet sie mit dem Browser (höchstens 12 h). Wer den Login in den Einstellungen setzt, bleibt dabei angemeldet. Ein neues Passwort meldet alle Geräte ab. Nach 5 Fehlversuchen ist die Anmeldung 5 Minuten gesperrt. **Abmelden** steht unter ⚙ Einstellungen → Zugang.
+
 Beim ersten Öffnen eines Tabs liest das Tool die Bibliothek ein, was bei großen Bibliotheken ein bis zwei Minuten dauert. Danach liegt sie zwischengespeichert in `data/bibliothek.json`. **Neu einlesen** gibt es als Button, per `pflege einlesen` oder über `POST /api/scan`.
 
 Logs: `docker logs immich-pflege` und `data/pflege.log`.
@@ -171,7 +173,7 @@ Alle Befehle verstehen `--neu` (vorher neu einlesen) sowie `--json` und `--csv`.
 
 ## JSON-API (n8n)
 
-Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/docs`. Ist in den Einstellungen ein Login gesetzt, braucht jeder Aufruf Basic Auth mit denselben Zugangsdaten. In n8n heißt das: *HTTP Request → Authentication: Generic → Basic Auth*.
+Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/docs`. Ist in den Einstellungen ein Login gesetzt, braucht jeder Aufruf Basic Auth mit denselben Zugangsdaten (die Anmeldeseite ist nur für den Browser). In n8n heißt das: *HTTP Request → Authentication: Generic → Basic Auth*.
 
 | Methode | Pfad | Zweck |
 |---|---|---|
