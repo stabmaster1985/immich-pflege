@@ -11,16 +11,18 @@ FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
 _configured = False
 
 
-def setup_logging(log_file: Path | None, level: int = logging.INFO, stdout: bool = True) -> None:
+def setup_logging(log_file: Path | None, level: int = logging.INFO, stream=sys.stdout,
+                  stream_level: int = logging.INFO) -> None:
     global _configured
     if _configured:
         return
     root = logging.getLogger("immich_pflege")
     root.setLevel(level)
     formatter = logging.Formatter(FORMAT)
-    if stdout:
-        handler = logging.StreamHandler(sys.stdout)
+    if stream is not None:
+        handler = logging.StreamHandler(stream)
         handler.setFormatter(formatter)
+        handler.setLevel(stream_level)
         root.addHandler(handler)
     if log_file is not None:
         try:
