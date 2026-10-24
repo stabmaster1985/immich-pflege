@@ -9,8 +9,9 @@ from immich_pflege.models import Asset
 _n = count(1)
 
 
-def asset(owner="frank", name=None, local="2024-07-14T11:00:00.000Z", utc=None, **kw) -> Asset:
+def asset(owner="frank", name=None, local=None, utc=None, **kw) -> Asset:
     i = next(_n)
+    local = local or utc or "2024-07-14T11:00:00.000Z"
     data = dict(
         id=str(uuid.UUID(int=i, version=4)), owner=owner, checksum=kw.pop("checksum", f"cs-{i}"),
         file_name=name or f"IMG_{i:04d}.HEIC", path=kw.pop("path", f"/upload/{owner}/IMG_{i:04d}.HEIC"),
