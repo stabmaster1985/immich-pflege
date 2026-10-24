@@ -25,6 +25,7 @@ from ..config import ConfigError, Settings, normalize_url, update_settings
 from ..logsetup import setup_logging
 from ..rules import RuleError, example_rules, read_rules_raw, save_rules
 from ..service import ActionError, ImmichError, NotConfigured, Pflege, check_server
+from ..version import Version
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
@@ -74,14 +75,24 @@ def _basic_credentials(header: str | None) -> tuple[str, str] | None:
     return user, password
 
 
-def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None = None) -> FastAPI:
-    """``env`` und ``http`` sind nur für Tests (Standard: Umgebung bzw. echter HTTP-Client)."""
+def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None = None,
+               ext_http: httpx.Client | None = None, version: Version | None = None) -> FastAPI:
+    """Parameter nur für Tests: ``env`` (Umgebung), ``http`` (Immich), ``ext_http`` (GitHub/n8n),
+    ``version`` (Versionsquelle)."""
     first = Settings.load(env)
     setup_logging(first.log_file)
 
     app = FastAPI(title="immich-pflege", version=__version__, docs_url="/api/docs",
                   redoc_url=None, openapi_url="/api/openapi.json")
     app.state.service = Pflege(first, http=http)
+    app.state.version = version or Version("", http=ext_http)
+
+    def configure_version(settings: Settings) -> None:
+        v = app.state.version
+        v.repo, v.token = settings.update_repo, settings.update_github_token
+        v.enabled = settings.update_check and bool(settings.update_repo)
+
+    configure_version(first)
     if not first.configured:
         log.info("Noch nicht eingerichtet – bitte in der Oberfläche unter Einstellungen konfigurieren")
 
@@ -95,6 +106,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         if old._lib and new.immich_url == old.settings.immich_url and new.users == old.settings.users:
             fresh._lib = old._lib  # Bibliothek weiterverwenden, wenn sich Immich-Zugang nicht ändert
         app.state.service = fresh
+        configure_version(new)
         return new
 
     @app.middleware("http")
@@ -194,6 +206,44 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
             raise ActionError("Mindestens einen Benutzer mit API-Key eintragen")
         clients = {n: ImmichClient(url + "/api", k, n, http=http, timeout=15) for n, k in users.items()}
         return {"immich_url": url, **check_server(clients)}
+
+    # ---------------------------------------------------------- Version/Update
+    @app.get("/api/version")
+    def api_version():
+        v = app.state.version
+        if v.stale:  # höchstens stündlich, im Hintergrund – die Antwort wartet nicht auf GitHub
+            threading.Thread(target=v.refresh, daemon=True).start()
+        settings = svc().settings
+        return {**v.get(), "update_available": v.update_available,
+                "update_moeglich": bool(settings.update_webhook_url)}
+
+    @app.post("/api/version/check")
+    def api_version_check():
+        app.state.version.refresh(force=True)
+        return api_version()
+
+    @app.post("/api/version/update")
+    def api_version_update():
+        settings = svc().settings
+        if not settings.update_webhook_url:
+            raise ActionError("Kein Update-Webhook eingetragen (Einstellungen → Updates)")
+        info = app.state.version.get()
+        headers = {}
+        if settings.update_webhook_secret:
+            headers[settings.update_webhook_header] = settings.update_webhook_secret
+        payload = {"typ": "update", "von": info["current"].get("commit"),
+                   "auf": (info.get("latest") or {}).get("commit")}
+        try:
+            if ext_http is not None:
+                response = ext_http.post(settings.update_webhook_url, json=payload, headers=headers, timeout=20)
+            else:
+                response = httpx.post(settings.update_webhook_url, json=payload, headers=headers, timeout=20)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            log.error("Update-Webhook fehlgeschlagen: %s", exc)
+            return JSONResponse({"ok": False, "fehler": f"n8n-Webhook nicht erreichbar oder abgelehnt: {exc}"}, 502)
+        log.info("Update über n8n angestoßen (von %s)", payload["von"])
+        return {"ok": True, "status": response.status_code, "von": payload["von"]}
 
     # --------------------------------------------------------------- Regeln
     def rules_view() -> dict[str, Any]:

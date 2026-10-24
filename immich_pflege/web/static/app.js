@@ -597,6 +597,14 @@ async function loadSettings() {
   $("#set-login-hint").textContent = d.login_aktiv
     ? "Login ist aktiv. Benutzername leeren und speichern schaltet ihn ab."
     : "Ohne Login kann jeder im Heimnetz das Tool bedienen. Für Zugriff von außen unbedingt setzen.";
+  $("#set-upd-check").checked = d.update_check; lock("#set-upd-check", "update_check");
+  $("#set-upd-repo").value = d.update_repo; lock("#set-upd-repo", "update_repo");
+  $("#set-upd-token").value = ""; lock("#set-upd-token", "update_github_token");
+  $("#set-upd-token").placeholder = d.update_github_token_gesetzt ? "gespeichert" : "nicht gesetzt";
+  $("#set-upd-url").value = d.update_webhook_url; lock("#set-upd-url", "update_webhook_url");
+  $("#set-upd-header").value = d.update_webhook_header; lock("#set-upd-header", "update_webhook_header");
+  $("#set-upd-secret").value = ""; lock("#set-upd-secret", "update_webhook_secret");
+  $("#set-upd-secret").placeholder = d.update_webhook_secret_gesetzt ? "gespeichert" : "nicht gesetzt";
   $("#set-users").replaceChildren(...(d.benutzer.length ? d.benutzer : [{ name: "", key_gesetzt: false }]).map(userRow));
   $("#set-add-user").disabled = d.gesperrt.includes("users");
   $("#set-test-result").replaceChildren();
@@ -612,7 +620,7 @@ function userRow(u) {
   const row = h("div", { class: "user-row", "data-alt": u.name || "" },
     h("input", { type: "text", class: "u-name", value: u.name || "", placeholder: "Name, z. B. frank", autocapitalize: "off", disabled: locked, "aria-label": "Benutzername" }),
     h("input", { type: "password", class: "u-key", autocomplete: "off", disabled: locked, "aria-label": "API-Key",
-      placeholder: u.key_gesetzt ? "gespeichert" + (u.key_ende ? " …" + u.key_ende : "") + " – leer = behalten" : "API-Key einfügen" }),
+      placeholder: u.key_gesetzt ? "gespeichert" + (u.key_ende ? " …" + u.key_ende : "") : "API-Key einfügen" }),
     h("button", { type: "button", class: "btn small", disabled: locked, "aria-label": "Entfernen", title: "Entfernen", onclick: () => row.remove() }, "✕"));
   return row;
 }
@@ -634,6 +642,12 @@ function readSettingsForm() {
   put("location_max_hours", $("#set-hours").value);
   put("location_include_external", $("#set-ext").checked);
   if (!d.gesperrt.includes("users")) body.benutzer = readUsers();
+  put("update_check", $("#set-upd-check").checked);
+  put("update_repo", $("#set-upd-repo").value.trim());
+  put("update_webhook_url", $("#set-upd-url").value.trim());
+  put("update_webhook_header", $("#set-upd-header").value.trim());
+  if ($("#set-upd-token").value.trim()) put("update_github_token", $("#set-upd-token").value.trim());
+  if ($("#set-upd-secret").value.trim()) put("update_webhook_secret", $("#set-upd-secret").value.trim());
   if (!d.gesperrt.includes("web_user")) {
     body.web_user = $("#set-web-user").value.trim();
     if ($("#set-web-pw").value) body.web_password = $("#set-web-pw").value;
@@ -678,6 +692,7 @@ async function saveSettings(btn) {
       JSON.stringify(before.benutzer) !== JSON.stringify(r.benutzer) || before.review_album !== r.review_album;
     S.loc.hours = null;
     await loadSettings();
+    loadVersion();
     await loadStatus(true);
     S.dup.loaded = S.loc.loaded = S.tags.loaded = false;
     if (accessChanged && r.eingerichtet) toast("Gespeichert – Bibliothek wird beim nächsten Öffnen neu eingelesen");
@@ -686,6 +701,75 @@ async function saveSettings(btn) {
   } finally {
     busy(btn, false);
   }
+}
+
+/* ------------------------------------------------------------ Version */
+const short = (c) => (c ? c.slice(0, 7) : "?");
+
+async function loadVersion(force = false) {
+  let v;
+  try {
+    v = await api(force ? "api/version/check" : "api/version", force ? { method: "POST" } : {});
+  } catch (e) {
+    $("#version-info").textContent = "Version nicht ermittelbar: " + e.message;
+    return null;
+  }
+  S.version = v;
+  $(".tabs button.gear").classList.toggle("dot", !!v.update_available);
+  $(".tabs button.gear").title = v.update_available ? "Einstellungen – Update verfügbar" : "Einstellungen";
+  if (S.tab !== "set" && !force) return v;
+  const cur = v.current || {};
+  const parts = [`Läuft: ${short(cur.commit)}${cur.branch ? " (" + cur.branch + ")" : ""}`];
+  if (cur.updated_at) parts.push("Stand " + fmtDateTime(cur.updated_at));
+  if (!v.enabled) parts.push("Update-Prüfung aus");
+  else if (v.error) parts.push("Prüfung fehlgeschlagen: " + v.error);
+  else if (v.status === "update") parts.push(`${v.behind} neue ${v.behind === 1 ? "Änderung" : "Änderungen"} auf GitHub`);
+  else if (v.status === "current") parts.push("aktuell ✓");
+  else if (v.status === "unknown") parts.push("lokaler Stand ist GitHub unbekannt");
+  $("#version-info").textContent = parts.join(" · ");
+  $("#version-commits").replaceChildren(...(v.commits && v.commits.length
+    ? [h("ul", { class: "commits" }, v.commits.map((c) => h("li", {}, h("code", {}, short(c.commit)), " ", c.message)))] : []));
+  $("#version-check").hidden = !v.enabled;
+  const btn = $("#version-update");
+  btn.hidden = !v.update_moeglich;
+  btn.className = "btn small" + (v.update_available ? " primary" : "");
+  if (!v.update_moeglich) {
+    $("#version-out").textContent = "Für den Update-Knopf: n8n-Workflow n8n/immich-pflege-update.json importieren und unten unter „Updates“ die Webhook-Adresse eintragen.";
+  } else if (!btn.disabled) {
+    $("#version-out").textContent = "";
+  }
+  return v;
+}
+
+async function startUpdate(btn) {
+  const ok = await confirmDialog({ title: "Jetzt aktualisieren?",
+    body: h("p", {}, "n8n holt den neuen Stand von GitHub, baut den Container neu und startet ihn. Das Tool ist dabei 1–3 Minuten nicht erreichbar."),
+    okLabel: "Aktualisieren" });
+  if (!ok) return;
+  const from = ((S.version || {}).current || {}).commit;
+  const out = $("#version-out");
+  btn.disabled = true;
+  out.textContent = "Starte Update …";
+  try {
+    await api("api/version/update", { method: "POST" });
+  } catch (e) {
+    out.textContent = "Update konnte nicht gestartet werden: " + e.message;
+    btn.disabled = false;
+    return;
+  }
+  out.textContent = "Update gestartet – der Container wird neu gebaut und startet neu. Die Seite lädt danach von selbst neu (meist 1–3 Minuten).";
+  const started = Date.now();
+  const poll = async () => {
+    const now = await fetch("api/version", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (now && now.current && now.current.commit && now.current.commit !== from) return location.reload();
+    if (Date.now() - started > 10 * 60 * 1000) {
+      out.textContent = "Noch keine neue Version – bitte in n8n die Ausführung des Workflows prüfen.";
+      btn.disabled = false;
+      return;
+    }
+    setTimeout(poll, 10000);
+  };
+  setTimeout(poll, 15000);
 }
 
 /* ------------------------------------------------------ Aktionsleiste */
@@ -746,7 +830,7 @@ async function doLoadTab(tab, force) {
     if (tab === "dup" && (force || !S.dup.loaded)) await loadDuplicates(true);
     if (tab === "loc" && (force || !S.loc.loaded)) await loadLocation(true);
     if (tab === "tags" && (force || !S.tags.loaded)) await loadTags();
-    if (tab === "set" && (force || !S.set.loaded)) await loadSettings();
+    if (tab === "set" && (force || !S.set.loaded)) { await loadSettings(); loadVersion(); }
     if (tab !== "set" && S.status && !S.status.bibliothek) loadStatus(false);
   } catch (e) {
     const box = e.setup
@@ -792,11 +876,16 @@ $("#rule-delete").addEventListener("click", deleteRule);
 $("#yaml-save").addEventListener("click", (e) => saveYaml(e.currentTarget));
 $("#set-add-user").addEventListener("click", () => $("#set-users").append(userRow({ name: "", key_gesetzt: false })));
 $("#set-test").addEventListener("click", (e) => testConnection(e.currentTarget));
+$("#version-check").addEventListener("click", async (e) => { busy(e.currentTarget, true); await loadVersion(true); busy(e.currentTarget, false); });
+$("#version-update").addEventListener("click", (e) => startUpdate(e.currentTarget));
 
 (async function init() {
   let tab = "dup";
   try { tab = localStorage.getItem("pflege-tab") || "dup"; } catch (_) { /* egal */ }
   await loadStatus(true);
+  loadVersion();
+  setTimeout(loadVersion, 6000); // Ergebnis der Hintergrundprüfung abholen
+  setInterval(loadVersion, 3600 * 1000);
   if (S.status && !S.status.eingerichtet) {
     await showTab("set");
     return;

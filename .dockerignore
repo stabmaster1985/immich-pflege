@@ -1,4 +1,4 @@
-.git
+# .git wird nur in der Build-Stufe „version“ gelesen, nicht ins Image kopiert
 .github
 .venv
 .env

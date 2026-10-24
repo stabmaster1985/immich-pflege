@@ -21,6 +21,8 @@ log = logging.getLogger(__name__)
 
 KEY_PREFIX = "IMMICH_KEY_"
 DEFAULT_URL = "http://immich-server:2283"
+DEFAULT_REPO = "stabmaster1985/immich-pflege"
+REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
 USER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 SETTINGS_FILE = "einstellungen.json"
 
@@ -60,6 +62,20 @@ def parse_hours(value: Any) -> float:
     return hours
 
 
+def parse_repo(value: Any) -> str:
+    repo = str(value or "").strip().removeprefix("https://github.com/").removesuffix(".git").strip("/")
+    if not REPO_RE.match(repo):
+        raise ConfigError(f"GitHub-Repository bitte als besitzer/name angeben (ist: {value!r})")
+    return repo
+
+
+def parse_webhook_url(value: Any) -> str:
+    url = str(value or "").strip()
+    if not re.match(r"^https?://\S+$", url):
+        raise ConfigError(f"Webhook-Adresse muss mit http:// oder https:// beginnen (ist: {value!r})")
+    return url
+
+
 def check_user_name(name: str) -> str:
     name = (name or "").strip().lower()
     if not USER_RE.match(name):
@@ -94,6 +110,12 @@ class Settings:
     web_user: str | None = None
     web_password: str | None = None  # nur aus .env (Klartext)
     web_password_hash: str | None = None  # aus der Oberfläche
+    update_check: bool = True
+    update_repo: str = DEFAULT_REPO
+    update_github_token: str = ""  # nur nötig, solange das Repository privat ist
+    update_webhook_url: str = ""  # n8n-Workflow n8n/immich-pflege-update.json
+    update_webhook_header: str = "X-Update-Key"
+    update_webhook_secret: str = ""
     data_dir: Path = Path("/data")
     rules_file: Path | None = None
     timeout: float = 60.0
@@ -174,7 +196,18 @@ class Settings:
             raise ConfigError("WEB_USER ist in .env gesetzt, WEB_PASSWORD fehlt")
 
         rules = env.get("RULES_FILE")
+        update = dict(
+            update_check=pick("UPDATE_CHECK", "update_check", True, lambda v: _bool(v, True)),
+            update_repo=pick("UPDATE_REPO", "update_repo", DEFAULT_REPO, parse_repo),
+            update_github_token=pick("UPDATE_GITHUB_TOKEN", "update_github_token", "", lambda v: str(v).strip()),
+            update_webhook_url=pick("UPDATE_WEBHOOK_URL", "update_webhook_url", "", parse_webhook_url),
+            update_webhook_header=pick("UPDATE_WEBHOOK_HEADER", "update_webhook_header", "X-Update-Key",
+                                       lambda v: str(v).strip()),
+            update_webhook_secret=pick("UPDATE_WEBHOOK_SECRET", "update_webhook_secret", "",
+                                       lambda v: str(v).strip()),
+        )
         return cls(
+            **update,
             immich_url=pick("IMMICH_URL", "immich_url", DEFAULT_URL, normalize_url),
             users=dict(sorted(users.items())),
             review_album=pick("REVIEW_ALBUM", "review_album", "Duplikat-Prüfung", lambda v: str(v).strip()),
@@ -205,6 +238,12 @@ class Settings:
             "gesperrt": sorted(self.locked),
             "eingerichtet": self.configured,
             "datenordner": str(self.data_dir),
+            "update_check": self.update_check,
+            "update_repo": self.update_repo,
+            "update_github_token_gesetzt": bool(self.update_github_token),
+            "update_webhook_url": self.update_webhook_url,
+            "update_webhook_header": self.update_webhook_header,
+            "update_webhook_secret_gesetzt": bool(self.update_webhook_secret),
         }
 
 
@@ -246,6 +285,18 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
     attempt("review_album", lambda v: _non_empty(v, "Name des Prüf-Albums"))
     attempt("location_max_hours", parse_hours)
     attempt("location_include_external", lambda v: _bool(v, False))
+
+    attempt("update_check", lambda v: _bool(v, True))
+    attempt("update_repo", parse_repo)
+    attempt("update_webhook_url", lambda v: parse_webhook_url(v) if str(v or "").strip() else "")
+    attempt("update_webhook_header", lambda v: _non_empty(v, "Header-Name"))
+    for secret in ("update_github_token", "update_webhook_secret"):
+        # leer = unverändert, null = löschen
+        if secret in changes and not blocked(secret):
+            if changes[secret] is None:
+                stored.pop(secret, None)
+            elif str(changes[secret]).strip():
+                stored[secret] = str(changes[secret]).strip()
 
     if "benutzer" in changes and not blocked("users"):
         old = dict(stored.get("users") or current.users)

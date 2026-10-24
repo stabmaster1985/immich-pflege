@@ -62,6 +62,29 @@ Logs: `docker logs immich-pflege` und `data/pflege.log`.
 
 Wer lieber mit Dateien arbeitet, kann alles auch in einer `.env` vorgeben (`IMMICH_URL`, `IMMICH_KEY_<NAME>`, `REVIEW_ALBUM`, `LOCATION_MAX_HOURS`, `LOCATION_INCLUDE_EXTERNAL`, `WEB_USER`/`WEB_PASSWORD`). Werte aus der `.env` haben Vorrang und erscheinen in der Oberfläche ausgegraut.
 
+### Aktualisieren per n8n
+
+Das läuft wie beim paperless-companion und firefly-dashboard. `n8n/immich-pflege-update.json` ist ein fertiger n8n-Workflow, der das Tool per SSH auf dem Docker-Host aktualisiert. Das ist derselbe Host, auf dem Immich läuft, weil sich das Tool an dessen Docker-Netz hängt. Ablauf:
+
+1. Das Repository unter `~/immich-pflege` holen: beim ersten Lauf klonen (das ersetzt Schritt 2 oben), danach `git pull --rebase --autostash`.
+2. `data/` anlegen und, wenn der SSH-Benutzer root ist, an UID 1000 übergeben.
+3. Prüfen, ob das Immich-Netz existiert (`immich_default` bzw. `IMMICH_NETWORK` aus einer `.env`).
+4. `docker compose up -d --build`, alte Images aufräumen, auf den Healthcheck warten.
+
+`data/` (Einstellungen, Regeln, Zwischenspeicher) und eine eventuelle `.env` sind nicht im Repository und bleiben bei jedem Update erhalten.
+
+**Einrichten:**
+1. In n8n **Import from File** → `n8n/immich-pflege-update.json` wählen.
+2. Im Knoten **Update auf Immich-Host** SSH-Zugangsdaten anlegen: Host ist die IP des LXC bzw. der VM mit Immich, dazu Benutzer und privater Schlüssel. Der Benutzer braucht Docker-Rechte (root oder Gruppe `docker`) sowie `git` auf dem Host.
+3. Im Knoten **Webhook** Header-Auth-Zugangsdaten anlegen (Name `X-Update-Key`, langer Zufallswert) und den Workflow aktivieren.
+4. Im Tool unter **⚙ Einstellungen → Updates** die Production-URL des Webhooks und den Zufallswert als Header-Wert eintragen und speichern.
+
+**Update-Knopf:** Unter **⚙ Einstellungen** zeigt die Karte **Version** den laufenden Commit. Gibt es auf GitHub Neues, erscheinen dort die neuen Commits, am Zahnrad ein roter Punkt und der Knopf **▶ Jetzt aktualisieren**. Nach dem Klick ruft das Tool den n8n-Webhook auf (mit `typ`, `von`, `auf`). Die Seite lädt nach dem Neustart von selbst neu. GitHub wird höchstens einmal pro Stunde gefragt, abschalten lässt sich das unter „Updates“. Die Version schreibt der Docker-Build aus dem `.git`-Verzeichnis in `version.json`.
+
+Alternativ startest du den Workflow per **Test workflow** oder, wenn aktiviert, täglich um 4 Uhr. Der Webhook antwortet sofort mit 202, weil sich das Tool beim Neustart beendet. Das Ergebnis steht in den n8n-Ausführungen. Ein Fehler bricht den Workflow mit der Ausgabe ab.
+
+> Der Workflow aktualisiert den Branch `main`. Für ein privates Repository braucht der Host einen Deploy Key für `git pull` und das Tool unter „Updates“ ein GitHub-Token (Fine-grained, nur dieses Repository, *Contents: Read-only*). Das Vorgehen beschreibt die README des paperless-companion.
+
 ---
 
 ## Oberfläche
@@ -162,6 +185,8 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:8090/api/doc
 | GET | `/api/tags` | Regel-Vorschau (`rules=Name`, mehrfach möglich) |
 | GET/PUT | `/api/rules` | Regeln lesen/speichern (`{"regeln": [...]}` oder `{"yaml": "..."}`) |
 | GET/PUT | `/api/settings` | Einstellungen (Keys nur maskiert) |
+| GET | `/api/version` | laufende Version und ob es auf GitHub Neues gibt |
+| POST | `/api/version/update` | Update über den n8n-Webhook anstoßen |
 | POST | `/api/settings/test` | Verbindung und Keys prüfen, ohne zu speichern |
 | POST | `/api/tags/apply` | Tags anwenden |
 

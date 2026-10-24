@@ -38,5 +38,7 @@ jobs:
           curl -fsS http://127.0.0.1:8090/healthz
           curl -fsS http://127.0.0.1:8090/api/status | grep -q '"eingerichtet":false'
           docker exec pflege pflege --help
+          docker exec pflege cat /app/version.json | grep -q '"commit": "[0-9a-f]\{40\}"'
+          curl -fsS http://127.0.0.1:8090/api/version | grep -q "$(git rev-parse HEAD)"
           test "$(docker exec pflege id -u)" != "0"
           docker rm -f pflege

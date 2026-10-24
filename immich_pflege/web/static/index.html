@@ -64,6 +64,16 @@
 
     <section id="tab-set" class="tab" role="tabpanel" hidden>
       <div id="set-welcome"></div>
+      <section class="card" id="version-card">
+        <h2>Version</h2>
+        <div id="version-info" class="muted">Lade …</div>
+        <div id="version-commits"></div>
+        <div class="row-gap">
+          <button type="button" id="version-check" class="btn small">Jetzt prüfen</button>
+          <button type="button" id="version-update" class="btn small" hidden>▶ Jetzt aktualisieren</button>
+        </div>
+        <div id="version-out" class="muted"></div>
+      </section>
       <form id="set-form" autocomplete="off" onsubmit="return false">
         <fieldset class="card">
           <legend>Immich</legend>
@@ -104,6 +114,23 @@
             <input type="password" id="set-web-pw" autocomplete="new-password" placeholder="leer = unverändert">
           </label>
           <small id="set-login-hint" class="muted"></small>
+        </fieldset>
+        <fieldset class="card">
+          <legend>Updates</legend>
+          <label class="toggle"><input type="checkbox" id="set-upd-check"> Stündlich auf GitHub nach Updates schauen</label>
+          <label class="f">GitHub-Repository
+            <input type="text" id="set-upd-repo" autocapitalize="off" spellcheck="false" placeholder="stabmaster1985/immich-pflege">
+          </label>
+          <label class="f">GitHub-Token <small>nur nötig, solange das Repository privat ist (Contents: Read-only)</small>
+            <input type="password" id="set-upd-token" autocomplete="off">
+          </label>
+          <label class="f">n8n-Webhook für Updates <small>Production-URL des Workflows „Immich-Pflege aktualisieren“</small>
+            <input type="url" id="set-upd-url" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="http://n8n:5678/webhook/immich-pflege-update">
+          </label>
+          <div class="two">
+            <label class="f">Header-Name <input type="text" id="set-upd-header" autocapitalize="off" spellcheck="false"></label>
+            <label class="f">Header-Wert <input type="password" id="set-upd-secret" autocomplete="off"></label>
+          </div>
         </fieldset>
         <p class="muted" id="set-env-hint"></p>
       </form>
