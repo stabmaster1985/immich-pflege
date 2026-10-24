@@ -1,6 +1,6 @@
 """FastAPI-Anwendung: JSON-API (auch für n8n), Vorschaubild-Proxy und Oberfläche.
 
-Start: uvicorn immich_pflege.web.app:create_app --factory --host 0.0.0.0 --port 8090
+Start: uvicorn immich_pflege.web.app:create_app --factory --host 0.0.0.0 --port 2222
 """
 
 from __future__ import annotations

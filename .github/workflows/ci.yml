@@ -33,12 +33,12 @@ jobs:
           tags: immich-pflege:ci
       - name: Container-Smoke-Test
         run: |
-          docker run -d --name pflege -p 8090:8090 immich-pflege:ci   # ohne Konfiguration: Einrichtungsmodus
-          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8090/healthz && break; sleep 1; done
-          curl -fsS http://127.0.0.1:8090/healthz
-          curl -fsS http://127.0.0.1:8090/api/status | grep -q '"eingerichtet":false'
+          docker run -d --name pflege -p 2222:2222 immich-pflege:ci   # ohne Konfiguration: Einrichtungsmodus
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:2222/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:2222/healthz
+          curl -fsS http://127.0.0.1:2222/api/status | grep -q '"eingerichtet":false'
           docker exec pflege pflege --help
           docker exec pflege cat /app/version.json | grep -q '"commit": "[0-9a-f]\{40\}"'
-          curl -fsS http://127.0.0.1:8090/api/version | grep -q "$(git rev-parse HEAD)"
+          curl -fsS http://127.0.0.1:2222/api/version | grep -q "$(git rev-parse HEAD)"
           test "$(docker exec pflege id -u)" != "0"
           docker rm -f pflege

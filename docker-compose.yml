@@ -20,6 +20,6 @@ services:
       UPDATE_WEBHOOK_URL: ${UPDATE_WEBHOOK_URL:-}
       UPDATE_WEBHOOK_SECRET: ${UPDATE_WEBHOOK_SECRET:-}
     ports:
-      - "${PFLEGE_PORT:-8090}:8090"
+      - "${PFLEGE_PORT:-2222}:2222"
     volumes:
       - ./data:/data

@@ -39,11 +39,11 @@ mkdir -p data && sudo chown 1000:1000 data   # Container läuft als Benutzer 100
 docker compose up -d --build
 ```
 
-Soll ein anderer Port als 8090 genutzt werden, lege eine `.env` mit `PFLEGE_PORT=…` an (siehe `.env.example`).
+Die Oberfläche läuft auf Port 2222. Soll ein anderer Port genutzt werden, lege eine `.env` mit `PFLEGE_PORT=…` an (siehe `.env.example`).
 
 ### 3. In der Oberfläche einrichten
 
-`http://<server>:8090` öffnen. Beim ersten Start öffnet sich automatisch **⚙ Einstellungen**:
+`http://<server>:2222` öffnen. Beim ersten Start öffnet sich automatisch **⚙ Einstellungen**:
 
 1. **Adresse** von Immich: IP des Immich-LXC mit Port, z. B. `http://192.168.1.20:2283`. Der Docker-Server muss diesen Port erreichen können.
 2. **Benutzer und API-Keys:** Name (z. B. `frank`) und Key einfügen, mit **+ Benutzer** weitere ergänzen
@@ -171,7 +171,7 @@ Alle Befehle verstehen `--neu` (vorher neu einlesen) sowie `--json` und `--csv`.
 
 ## JSON-API (n8n)
 
-Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:8090/api/docs`. Ist in den Einstellungen ein Login gesetzt, braucht jeder Aufruf Basic Auth mit denselben Zugangsdaten. In n8n heißt das: *HTTP Request → Authentication: Generic → Basic Auth*.
+Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/docs`. Ist in den Einstellungen ein Login gesetzt, braucht jeder Aufruf Basic Auth mit denselben Zugangsdaten. In n8n heißt das: *HTTP Request → Authentication: Generic → Basic Auth*.
 
 | Methode | Pfad | Zweck |
 |---|---|---|
@@ -195,7 +195,7 @@ Fehler kommen als `{"fehler": "…"}` zurück: 400 bei ungültiger Anfrage, 409 
 ### Beispiele
 
 ```bash
-B=http://immich-pflege:8090        # aus dem Docker-Netz, sonst http://<server>:8090
+B=http://immich-pflege:2222        # aus dem Docker-Netz, sonst http://<server>:2222
 AUTH="-u frank:geheim"
 
 curl $AUTH -X POST $B/api/scan
@@ -227,12 +227,12 @@ curl $AUTH -X POST $B/api/tags/apply -H 'Content-Type: application/json' -d '{"r
 ### n8n-Workflow (Idee: jede Nacht)
 
 1. **Schedule Trigger**, täglich 03:00
-2. **HTTP Request** `POST http://immich-pflege:8090/api/scan`, Body `{"wait": true}`, Timeout 600 s
+2. **HTTP Request** `POST http://immich-pflege:2222/api/scan`, Body `{"wait": true}`, Timeout 600 s
 3. **HTTP Request** `POST …/api/tags/apply`, Body `{}`
 4. **HTTP Request** `POST …/api/duplicates/apply`, Body `{"action":"album","all":true}`
 5. **IF** `{{$json.ergebnis.album > 0}}` → Benachrichtigung: „{{$json.ergebnis.album}} Duplikate liegen im Prüf-Album“
 
-n8n erreicht das Tool unter `http://immich-pflege:8090`, wenn n8n im selben Docker-Netz hängt. Sonst geht es über `http://<server>:8090`.
+n8n erreicht das Tool unter `http://immich-pflege:2222`, wenn n8n im selben Docker-Netz hängt. Sonst geht es über `http://<server>:2222`.
 
 ---
 
@@ -248,7 +248,7 @@ Die Tests laufen gegen einen **Mock-Immich** (`tests/mock_immich.py`). Er bildet
 ```bash
 .venv/bin/uvicorn tests.mock_immich:demo_app --port 2283 &
 # in der Oberfläche: Adresse http://127.0.0.1:2283, Keys key-frank / key-julia
-DATA_DIR=./data .venv/bin/uvicorn immich_pflege.web.app:create_app --factory --port 8090
+DATA_DIR=./data .venv/bin/uvicorn immich_pflege.web.app:create_app --factory --port 2222
 ```
 
 ### Hinweise zur Immich-API (geprüft gegen die OpenAPI-Spezifikation v3.2.4)
