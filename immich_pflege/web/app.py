@@ -231,7 +231,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
             raise ActionError("Kein Update-Webhook eingetragen (Einstellungen → Updates)")
         info = app.state.version.get()
         headers = {}
-        if settings.update_webhook_secret:
+        if settings.update_webhook_header and settings.update_webhook_secret:
             headers[settings.update_webhook_header] = settings.update_webhook_secret
         payload = {"typ": "update", "von": info["current"].get("commit"),
                    "auf": (info.get("latest") or {}).get("commit")}

@@ -604,7 +604,7 @@ async function loadSettings() {
   $("#set-upd-url").value = d.update_webhook_url; lock("#set-upd-url", "update_webhook_url");
   $("#set-upd-header").value = d.update_webhook_header; lock("#set-upd-header", "update_webhook_header");
   $("#set-upd-secret").value = ""; lock("#set-upd-secret", "update_webhook_secret");
-  $("#set-upd-secret").placeholder = d.update_webhook_secret_gesetzt ? "gespeichert" : "nicht gesetzt";
+  $("#set-upd-secret").placeholder = !d.update_webhook_header ? "ohne Auth" : (d.update_webhook_secret_gesetzt ? "gespeichert" : "nicht gesetzt");
   $("#set-users").replaceChildren(...(d.benutzer.length ? d.benutzer : [{ name: "", key_gesetzt: false }]).map(userRow));
   $("#set-add-user").disabled = d.gesperrt.includes("users");
   $("#set-test-result").replaceChildren();

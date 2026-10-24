@@ -206,6 +206,8 @@ class Settings:
             update_webhook_secret=pick("UPDATE_WEBHOOK_SECRET", "update_webhook_secret", "",
                                        lambda v: str(v).strip()),
         )
+        if "update_webhook_header" not in locked and stored.get("update_webhook_header") == "":
+            update["update_webhook_header"] = ""  # bewusst leer = Webhook ohne Authentifizierung
         return cls(
             **update,
             immich_url=pick("IMMICH_URL", "immich_url", DEFAULT_URL, normalize_url),
@@ -289,7 +291,10 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
     attempt("update_check", lambda v: _bool(v, True))
     attempt("update_repo", parse_repo)
     attempt("update_webhook_url", lambda v: parse_webhook_url(v) if str(v or "").strip() else "")
-    attempt("update_webhook_header", lambda v: _non_empty(v, "Header-Name"))
+    attempt("update_webhook_header", lambda v: str(v or "").strip())
+    if stored.get("update_webhook_header") == "" and "update_webhook_secret" not in current.locked:
+        stored.pop("update_webhook_secret", None)  # ohne Header-Name kein Header-Wert
+        changes = {k: v for k, v in changes.items() if k != "update_webhook_secret"}
     for secret in ("update_github_token", "update_webhook_secret"):
         # leer = unverändert, null = löschen
         if secret in changes and not blocked(secret):

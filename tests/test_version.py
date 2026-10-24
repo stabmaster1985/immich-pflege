@@ -104,3 +104,27 @@ def test_update_webhook_down(env, http, vfile):
                                ext_http=ext, version=v)) as c:
         r = c.post("/api/version/update")
         assert r.status_code == 502 and "abgelehnt" in r.json()["fehler"]
+
+
+def test_update_without_auth(env, http, vfile):
+    posted = []
+
+    def handler(request):
+        posted.append(request)
+        return httpx.Response(200)
+    ext = httpx.Client(transport=httpx.MockTransport(handler))
+    v = Version("x/y", enabled=False, files=(vfile,))
+    with TestClient(create_app(env, http=http, ext_http=ext, version=v)) as c:
+        r = c.put("/api/settings", json={"update_webhook_url": "http://n8n:5678/webhook/immich-pflege-update",
+                                         "update_webhook_header": "", "update_webhook_secret": "alt"})
+        assert r.status_code == 200, r.text
+        pub = r.json()
+        assert pub["update_webhook_header"] == "" and not pub["update_webhook_secret_gesetzt"]
+        # bleibt nach erneutem Laden leer (nicht wieder X-Update-Key)
+        assert c.get("/api/settings").json()["update_webhook_header"] == ""
+        assert c.post("/api/version/update").json()["ok"] is True
+        assert "x-update-key" not in {k.lower() for k in posted[0].headers}
+        # Auth wieder einschalten
+        c.put("/api/settings", json={"update_webhook_header": "X-Update-Key", "update_webhook_secret": "neu"})
+        c.post("/api/version/update")
+        assert posted[1].headers["X-Update-Key"] == "neu"
