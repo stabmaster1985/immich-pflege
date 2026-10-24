@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+  <title>Immich-Pflege</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234250af'/%3E%3Cpath d='M9 17l5 5 9-11' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="static/app.css">
+</head>
+<body>
+  <header class="top">
+    <div class="top-row">
+      <h1>Immich-Pflege</h1>
+      <button id="scan-btn" class="btn small" type="button">Neu einlesen</button>
+    </div>
+    <div id="status" class="status">Lade Status …</div>
+    <div id="warnings"></div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="dup" aria-selected="true">Duplikate <span class="count" id="count-dup"></span></button>
+      <button role="tab" data-tab="loc" aria-selected="false">Ohne Ort <span class="count" id="count-loc"></span></button>
+      <button role="tab" data-tab="tags" aria-selected="false">Tags <span class="count" id="count-tags"></span></button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-dup" class="tab" role="tabpanel">
+      <div class="toolbar">
+        <span id="dup-summary" class="muted"></span>
+        <label class="toggle"><input type="checkbox" id="dup-done"> Erledigte zeigen</label>
+      </div>
+      <p class="hint">Tippe auf ein Bild, um es zu behalten. Hake die Gruppen an, die bearbeitet werden sollen.</p>
+      <div id="dup-list"></div>
+      <button id="dup-more" class="btn more" type="button" hidden>Weitere anzeigen</button>
+    </section>
+
+    <section id="tab-loc" class="tab" role="tabpanel" hidden>
+      <div class="toolbar">
+        <label class="field">Fenster ±
+          <input type="number" id="loc-hours" min="0.25" max="48" step="0.25" inputmode="decimal"> h
+        </label>
+        <label class="toggle"><input type="checkbox" id="loc-only"> Nur mit Vorschlag</label>
+      </div>
+      <p id="loc-summary" class="muted"></p>
+      <div id="loc-list"></div>
+      <button id="loc-more" class="btn more" type="button" hidden>Weitere anzeigen</button>
+    </section>
+
+    <section id="tab-tags" class="tab" role="tabpanel" hidden>
+      <div class="toolbar">
+        <span id="tags-file" class="muted"></span>
+        <button id="tags-reload" class="btn small" type="button">Regeln neu laden</button>
+      </div>
+      <div id="tags-errors"></div>
+      <div id="tags-list"></div>
+    </section>
+  </main>
+
+  <footer class="actionbar" id="actionbar">
+    <div class="ab-info" id="ab-info"></div>
+    <div class="ab-buttons" id="ab-buttons"></div>
+  </footer>
+
+  <dialog id="confirm">
+    <form method="dialog">
+      <h2 id="confirm-title"></h2>
+      <div id="confirm-body"></div>
+      <label id="confirm-check-wrap" class="check-confirm" hidden>
+        <input type="checkbox" id="confirm-check"> <span id="confirm-check-label"></span>
+      </label>
+      <div class="dialog-buttons">
+        <button value="cancel" class="btn" type="submit">Abbrechen</button>
+        <button value="ok" id="confirm-ok" class="btn primary" type="submit">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="static/app.js"></script>
+</body>
+</html>
