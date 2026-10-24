@@ -1,0 +1,54 @@
+# Regeln für das Massen-Tagging von immich-pflege
+# Kopiere diese Datei nach config/regeln.yaml (im Container: /config/regeln.yaml).
+#
+# Jede Regel braucht einen Tag und mindestens eine Bedingung.
+# Alle Bedingungen einer Regel müssen gleichzeitig zutreffen (UND).
+# Tags werden nur ergänzt, nie entfernt. Verschachtelte Tags mit "/": Reisen/Italien/2024
+#
+# Bedingungen:
+#   pfad:        regulärer Ausdruck auf den Originalpfad (Groß/klein egal)
+#   dateiname:   regulärer Ausdruck auf den Dateinamen (Groß/klein egal)
+#   von / bis:   Aufnahmedatum (Ortszeit), JJJJ-MM-TT, jeweils einschließlich
+#   album:       Albumname (exakt, Groß/klein egal); Liste = in ALLEN Alben
+#   person:      Name einer erkannten Person (exakt); Liste = ALLE Personen im Bild
+#   hersteller:  Kamerahersteller laut EXIF (exakt, Groß/klein egal), z. B. Apple, SONY
+#   modell:      regulärer Ausdruck auf das Kameramodell
+#   bibliothek:  extern | upload
+#   typ:         foto | video
+# Optional:
+#   benutzer:    frank | julia | [frank, julia]  (ohne Angabe: alle Benutzer)
+#   aktiv:       false schaltet die Regel ab
+#
+# Tipp: reguläre Ausdrücke in einfache Anführungszeichen setzen, Punkte als \. schreiben.
+
+regeln:
+  - name: Italien-Urlaub 2024
+    tag: Reisen/Italien/2024
+    von: 2024-07-10
+    bis: 2024-07-25
+
+  - name: Systemkamera
+    tag: Kamera/Sony A7 IV
+    hersteller: SONY
+    modell: '^ILCE-7M4$'
+
+  - name: Externe Bibliothek Scans
+    tag: Quelle/Scan
+    bibliothek: extern
+    pfad: '/scans/'
+
+  - name: Screenshots
+    tags: [Sonstiges/Screenshot]
+    dateiname: '^(Screenshot|IMG_\d+\.PNG$)'
+    typ: foto
+
+  - name: Videos von Julia
+    tag: Medien/Video
+    typ: video
+    benutzer: julia
+    aktiv: false
+
+  - name: Oma auf Familienfotos
+    tag: Familie/Oma
+    person: Oma
+    album: Familie
