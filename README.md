@@ -39,7 +39,7 @@ mkdir -p data && sudo chown 1000:1000 data   # Container läuft als Benutzer 100
 docker compose up -d --build
 ```
 
-Soll ein anderer Port als 8090 genutzt werden, lege eine `.env` mit `PFLEGE_PORT=…` an (siehe `.env.example`). Docker Compose ab Version 2.24 ist nötig.
+Soll ein anderer Port als 8090 genutzt werden, lege eine `.env` mit `PFLEGE_PORT=…` an (siehe `.env.example`).
 
 ### 3. In der Oberfläche einrichten
 
@@ -61,7 +61,7 @@ Logs: `docker logs immich-pflege` und `data/pflege.log`.
 
 ### Optional: Einstellungen per `.env` festlegen
 
-Wer lieber mit Dateien arbeitet, kann alles auch in einer `.env` vorgeben (`IMMICH_URL`, `IMMICH_KEY_<NAME>`, `REVIEW_ALBUM`, `LOCATION_MAX_HOURS`, `LOCATION_INCLUDE_EXTERNAL`, `WEB_USER`/`WEB_PASSWORD`). Werte aus der `.env` haben Vorrang und erscheinen in der Oberfläche ausgegraut.
+Wer lieber mit Dateien arbeitet, kann die meisten Werte auch in einer `.env` vorgeben (`IMMICH_URL`, `REVIEW_ALBUM`, `LOCATION_MAX_HOURS`, `LOCATION_INCLUDE_EXTERNAL`, `WEB_USER`/`WEB_PASSWORD`, `UPDATE_*`). API-Keys (`IMMICH_KEY_<NAME>`) gehen per `docker-compose.override.yml`, siehe `.env.example`. Werte aus der `.env` haben Vorrang und erscheinen in der Oberfläche ausgegraut.
 
 ### Aktualisieren per n8n
 

@@ -111,3 +111,21 @@ def test_rules_editor_api(fresh):
     assert r.status_code == 422 and "unbekannte(r) Benutzer julia" in r.json()["details"][0]
     r = fresh.put("/api/rules", json={"yaml": "regeln:\n  - name: roh\n    tag: B\n    typ: video\n"})
     assert r.json()["regeln"] == [{"name": "roh", "tag": "B", "typ": "video"}]
+
+
+def test_empty_env_values_from_compose_do_not_lock(tmp_path):
+    # docker-compose reicht nicht gesetzte Variablen als leere Strings durch
+    keys = ("IMMICH_URL", "REVIEW_ALBUM", "LOCATION_MAX_HOURS", "LOCATION_INCLUDE_EXTERNAL", "WEB_USER",
+            "WEB_PASSWORD", "UPDATE_CHECK", "UPDATE_WEBHOOK_URL", "UPDATE_WEBHOOK_SECRET")
+    s = Settings.load({"DATA_DIR": str(tmp_path), **{k: "" for k in keys}})
+    assert s.locked == set() and not s.auth_enabled and s.update_check
+
+
+def test_compose_file_works_with_older_compose():
+    import yaml
+    from pathlib import Path
+    compose = yaml.safe_load((Path(__file__).parent.parent / "docker-compose.yml").read_text())
+    svc = compose["services"]["immich-pflege"]
+    # env_file mit "required: false" kennt Compose erst ab 2.24 – Fehler auf dem Docker-Server
+    assert "env_file" not in svc
+    assert "networks" not in compose  # Immich läuft auf eigenem LXC, kein gemeinsames Docker-Netz
