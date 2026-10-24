@@ -1,6 +1,7 @@
-# immich-pflege – hängt sich an das bestehende Docker-Netz des Immich-Stacks.
+# immich-pflege – läuft auf dem Docker-Server und spricht Immich über das Netzwerk an
+# (Immich-Adresse wird in der Oberfläche eingetragen, z. B. http://192.168.1.20:2283).
 # Alle Einstellungen werden in der Oberfläche gemacht (Zahnrad-Tab) und in ./data gespeichert.
-# Eine .env ist optional; Name des Immich-Netzes prüfen mit:  docker network ls | grep immich
+# Eine .env ist optional.
 services:
   immich-pflege:
     build: .
@@ -14,10 +15,3 @@ services:
       - "${PFLEGE_PORT:-8090}:8090"
     volumes:
       - ./data:/data
-    networks:
-      - immich
-
-networks:
-  immich:
-    name: ${IMMICH_NETWORK:-immich_default}
-    external: true

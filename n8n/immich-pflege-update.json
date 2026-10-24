@@ -56,11 +56,11 @@
     {
       "parameters": {
         "authentication": "privateKey",
-        "command": "set -eu\nDIR=\"$HOME/immich-pflege\"\nREPO=\"https://github.com/stabmaster1985/immich-pflege.git\"\nBRANCH=\"main\"\n\nif [ ! -d \"$DIR/.git\" ]; then\n  if [ -d \"$DIR\" ] && [ -n \"$(ls -A \"$DIR\")\" ]; then\n    echo \"FEHLER: $DIR existiert, ist aber kein Git-Repository.\"; exit 1\n  fi\n  echo \"== Erstinstallation: klone $REPO nach $DIR\"\n  git clone --branch \"$BRANCH\" \"$REPO\" \"$DIR\"\nfi\ncd \"$DIR\"\n\nORIGIN=\"$(git remote get-url origin)\"\ncase \"$ORIGIN\" in\n  *immich-pflege*) ;;\n  *) echo \"FEHLER: origin ist $ORIGIN – erwartet wird $REPO.\"; exit 1 ;;\nesac\n\n# Daten (Einstellungen, Regeln, Zwischenspeicher) liegen in ./data – der Container läuft als UID 1000\nmkdir -p data\nif [ \"$(id -u)\" = \"0\" ]; then chown 1000:1000 data; fi\n\n# Immich muss auf diesem Host laufen: das Tool hängt sich an dessen Docker-Netz\nNET=\"$(sed -n 's/^IMMICH_NETWORK=//p' .env 2>/dev/null | tail -n 1)\"\nNET=\"${NET:-immich_default}\"\nif ! docker network inspect \"$NET\" >/dev/null 2>&1; then\n  echo \"FEHLER: Docker-Netz $NET fehlt. Läuft Immich auf diesem Host? Sonst IMMICH_NETWORK in $DIR/.env setzen.\"\n  docker network ls; exit 1\nfi\n\nBEFORE=\"$(git rev-parse --short HEAD)\"\necho \"== Vorher:  $(git log -1 --format='%h %s')\"\ngit pull --rebase --autostash origin \"$BRANCH\"\nAFTER=\"$(git rev-parse --short HEAD)\"\necho \"== Nachher: $(git log -1 --format='%h %s')\"\nif [ \"$BEFORE\" != \"$AFTER\" ]; then\n  echo \"== Neue Commits:\"; git log --oneline \"$BEFORE..$AFTER\"\nfi\n\nif docker compose version >/dev/null 2>&1; then DC=\"docker compose\"; else DC=\"docker-compose\"; fi\necho \"== Baue und starte neu\"\n$DC up -d --build --remove-orphans\ndocker image prune -f >/dev/null\n\n# Auf den Healthcheck des Containers warten (max. 60 s)\nSTATUS=\"\"\nfor i in $(seq 1 30); do\n  STATUS=\"$(docker inspect -f '{{.State.Health.Status}}' immich-pflege 2>/dev/null || echo fehlt)\"\n  [ \"$STATUS\" = \"healthy\" ] && break\n  sleep 2\ndone\n$DC ps\nif [ \"$STATUS\" != \"healthy\" ]; then\n  echo \"FEHLER: Container ist nicht gesund (Status: $STATUS).\"; $DC logs --tail 50; exit 1\nfi\necho \"== Fertig: $AFTER läuft\"",
+        "command": "set -eu\nDIR=\"$HOME/immich-pflege\"\nREPO=\"https://github.com/stabmaster1985/immich-pflege.git\"\nBRANCH=\"main\"\n\nif [ ! -d \"$DIR/.git\" ]; then\n  if [ -d \"$DIR\" ] && [ -n \"$(ls -A \"$DIR\")\" ]; then\n    echo \"FEHLER: $DIR existiert, ist aber kein Git-Repository.\"; exit 1\n  fi\n  echo \"== Erstinstallation: klone $REPO nach $DIR\"\n  git clone --branch \"$BRANCH\" \"$REPO\" \"$DIR\"\nfi\ncd \"$DIR\"\n\nORIGIN=\"$(git remote get-url origin)\"\ncase \"$ORIGIN\" in\n  *immich-pflege*) ;;\n  *) echo \"FEHLER: origin ist $ORIGIN – erwartet wird $REPO.\"; exit 1 ;;\nesac\n\n# Daten (Einstellungen, Regeln, Zwischenspeicher) liegen in ./data – der Container läuft als UID 1000\nmkdir -p data\nif [ \"$(id -u)\" = \"0\" ]; then chown 1000:1000 data; fi\n\nBEFORE=\"$(git rev-parse --short HEAD)\"\necho \"== Vorher:  $(git log -1 --format='%h %s')\"\ngit pull --rebase --autostash origin \"$BRANCH\"\nAFTER=\"$(git rev-parse --short HEAD)\"\necho \"== Nachher: $(git log -1 --format='%h %s')\"\nif [ \"$BEFORE\" != \"$AFTER\" ]; then\n  echo \"== Neue Commits:\"; git log --oneline \"$BEFORE..$AFTER\"\nfi\n\nif docker compose version >/dev/null 2>&1; then DC=\"docker compose\"; else DC=\"docker-compose\"; fi\necho \"== Baue und starte neu\"\n$DC up -d --build --remove-orphans\ndocker image prune -f >/dev/null\n\n# Auf den Healthcheck des Containers warten (max. 60 s)\nSTATUS=\"\"\nfor i in $(seq 1 30); do\n  STATUS=\"$(docker inspect -f '{{.State.Health.Status}}' immich-pflege 2>/dev/null || echo fehlt)\"\n  [ \"$STATUS\" = \"healthy\" ] && break\n  sleep 2\ndone\n$DC ps\nif [ \"$STATUS\" != \"healthy\" ]; then\n  echo \"FEHLER: Container ist nicht gesund (Status: $STATUS).\"; $DC logs --tail 50; exit 1\nfi\necho \"== Fertig: $AFTER läuft\"",
         "cwd": "/"
       },
       "id": "a4",
-      "name": "Update auf Immich-Host",
+      "name": "Update auf Docker-Host",
       "type": "n8n-nodes-base.ssh",
       "typeVersion": 1,
       "position": [
@@ -149,7 +149,7 @@
       "main": [
         [
           {
-            "node": "Update auf Immich-Host",
+            "node": "Update auf Docker-Host",
             "type": "main",
             "index": 0
           }
@@ -160,7 +160,7 @@
       "main": [
         [
           {
-            "node": "Update auf Immich-Host",
+            "node": "Update auf Docker-Host",
             "type": "main",
             "index": 0
           }
@@ -171,7 +171,7 @@
       "main": [
         [
           {
-            "node": "Update auf Immich-Host",
+            "node": "Update auf Docker-Host",
             "type": "main",
             "index": 0
           }
@@ -196,7 +196,7 @@
         ]
       ]
     },
-    "Update auf Immich-Host": {
+    "Update auf Docker-Host": {
       "main": [
         [
           {

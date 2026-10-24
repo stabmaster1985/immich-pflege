@@ -20,7 +20,7 @@ from typing import Any, Mapping
 log = logging.getLogger(__name__)
 
 KEY_PREFIX = "IMMICH_KEY_"
-DEFAULT_URL = "http://immich-server:2283"
+DEFAULT_URL = ""  # wird in der Oberfläche eingetragen, z. B. http://192.168.1.20:2283
 DEFAULT_REPO = "stabmaster1985/immich-pflege"
 REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
 USER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")

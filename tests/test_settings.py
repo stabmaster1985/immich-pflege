@@ -9,7 +9,7 @@ from immich_pflege.web.app import create_app
 
 def test_defaults_without_anything(tmp_path):
     s = Settings.load({"DATA_DIR": str(tmp_path)})
-    assert not s.configured and s.immich_url == "http://immich-server:2283"
+    assert not s.configured and s.immich_url == ""
     assert s.rules_file == tmp_path / "regeln.yaml" and s.locked == set()
 
 
@@ -63,6 +63,8 @@ def fresh(tmp_path, http):
 
 
 def test_setup_flow_via_gui(fresh, state):
+    r = fresh.post("/api/settings/test", json={"benutzer": [{"name": "frank", "key": "key-frank"}]})
+    assert r.status_code == 400 and "Adresse" in r.json()["fehler"]
     st = fresh.get("/api/status").json()
     assert st["eingerichtet"] is False and "server" not in st
     r = fresh.get("/api/duplicates")
@@ -99,7 +101,8 @@ def test_login_via_gui(fresh):
 
 
 def test_rules_editor_api(fresh):
-    fresh.put("/api/settings", json={"benutzer": [{"name": "frank", "key": "key-frank"}]})
+    fresh.put("/api/settings", json={"immich_url": "http://immich-server:2283",
+                                     "benutzer": [{"name": "frank", "key": "key-frank"}]})
     assert fresh.get("/api/rules").json()["regeln"] == []
     ex = fresh.get("/api/rules/example").json()["regeln"]
     r = fresh.put("/api/rules", json={"regeln": ex[:2]})

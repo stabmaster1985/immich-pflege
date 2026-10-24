@@ -30,21 +30,22 @@ Für **jeden** Benutzer (hier frank und julia) einzeln:
 
 ### 2. Container starten
 
+Das Tool läuft auf dem Docker-Server, zum Beispiel neben paperless-companion und firefly-dashboard. Immich kann auf einem eigenen LXC oder einer eigenen VM laufen, das Tool spricht es über das Netzwerk an (Port 2283). Am einfachsten installierst du über den n8n-Workflow (siehe [Aktualisieren per n8n](#aktualisieren-per-n8n)), der beim ersten Lauf alles klont und startet. Von Hand geht es so:
+
 ```bash
 git clone https://github.com/stabmaster1985/immich-pflege.git
 cd immich-pflege
 mkdir -p data && sudo chown 1000:1000 data   # Container läuft als Benutzer 1000, nicht als root
-docker network ls | grep immich              # Netz des Immich-Stacks, meist immich_default
 docker compose up -d --build
 ```
 
-Heißt das Netz nicht `immich_default` oder soll ein anderer Port als 8090 genutzt werden, lege eine `.env` mit `IMMICH_NETWORK=…` bzw. `PFLEGE_PORT=…` an (siehe `.env.example`). Docker Compose ab Version 2.24 ist nötig.
+Soll ein anderer Port als 8090 genutzt werden, lege eine `.env` mit `PFLEGE_PORT=…` an (siehe `.env.example`). Docker Compose ab Version 2.24 ist nötig.
 
 ### 3. In der Oberfläche einrichten
 
 `http://<server>:8090` öffnen. Beim ersten Start öffnet sich automatisch **⚙ Einstellungen**:
 
-1. **Adresse** von Immich: im Docker-Netz `http://immich-server:2283` (vorausgefüllt)
+1. **Adresse** von Immich: IP des Immich-LXC mit Port, z. B. `http://192.168.1.20:2283`. Der Docker-Server muss diesen Port erreichen können.
 2. **Benutzer und API-Keys:** Name (z. B. `frank`) und Key einfügen, mit **+ Benutzer** weitere ergänzen
 3. **Verbindung testen:** zeigt Immich-Version und für jeden Key das zugehörige Konto
 4. Optional Prüf-Album, Zeitfenster, externe Bibliotheken sowie **Benutzername und Passwort** für den Zugang zum Tool
@@ -64,18 +65,17 @@ Wer lieber mit Dateien arbeitet, kann alles auch in einer `.env` vorgeben (`IMMI
 
 ### Aktualisieren per n8n
 
-Das läuft wie beim paperless-companion und firefly-dashboard. `n8n/immich-pflege-update.json` ist ein fertiger n8n-Workflow, der das Tool per SSH auf dem Docker-Host aktualisiert. Das ist derselbe Host, auf dem Immich läuft, weil sich das Tool an dessen Docker-Netz hängt. Ablauf:
+Das läuft wie beim paperless-companion und firefly-dashboard. `n8n/immich-pflege-update.json` ist ein fertiger n8n-Workflow, der das Tool per SSH auf dem Docker-Server aktualisiert. Ablauf:
 
 1. Das Repository unter `~/immich-pflege` holen: beim ersten Lauf klonen (das ersetzt Schritt 2 oben), danach `git pull --rebase --autostash`.
 2. `data/` anlegen und, wenn der SSH-Benutzer root ist, an UID 1000 übergeben.
-3. Prüfen, ob das Immich-Netz existiert (`immich_default` bzw. `IMMICH_NETWORK` aus einer `.env`).
-4. `docker compose up -d --build`, alte Images aufräumen, auf den Healthcheck warten.
+3. `docker compose up -d --build`, alte Images aufräumen, auf den Healthcheck warten.
 
 `data/` (Einstellungen, Regeln, Zwischenspeicher) und eine eventuelle `.env` sind nicht im Repository und bleiben bei jedem Update erhalten.
 
 **Einrichten:**
 1. In n8n **Import from File** → `n8n/immich-pflege-update.json` wählen.
-2. Im Knoten **Update auf Immich-Host** SSH-Zugangsdaten anlegen: Host ist die IP des LXC bzw. der VM mit Immich, dazu Benutzer und privater Schlüssel. Der Benutzer braucht Docker-Rechte (root oder Gruppe `docker`) sowie `git` auf dem Host.
+2. Im Knoten **Update auf Docker-Host** SSH-Zugangsdaten anlegen: Host ist der Docker-Server (dieselben Zugangsdaten wie bei den anderen Anwendungen), dazu Benutzer und privater Schlüssel. Der Benutzer braucht Docker-Rechte (root oder Gruppe `docker`) sowie `git` auf dem Host.
 3. Im Knoten **Webhook** Header-Auth-Zugangsdaten anlegen (Name `X-Update-Key`, langer Zufallswert) und den Workflow aktivieren.
 4. Im Tool unter **⚙ Einstellungen → Updates** die Production-URL des Webhooks und den Zufallswert als Header-Wert eintragen und speichern.
 

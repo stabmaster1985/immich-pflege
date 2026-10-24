@@ -192,6 +192,8 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     def test_settings(body: dict[str, Any] = Body(default_factory=dict)):
         current = svc().settings
         url = normalize_url(body["immich_url"]) if body.get("immich_url") else current.immich_url
+        if not url:
+            raise ActionError("Bitte zuerst die Adresse von Immich eintragen")
         users: dict[str, str] = {}
         if body.get("benutzer") is not None:
             for entry in body["benutzer"]:
