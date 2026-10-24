@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Abhängigkeiten installieren
+        run: pip install -e ".[test]"
+      - name: Tests
+        run: pytest -v
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Image bauen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: immich-pflege:ci
+      - name: Container-Smoke-Test
+        run: |
+          docker run -d --name pflege -e IMMICH_URL=http://127.0.0.1:9 -e IMMICH_KEY_TEST=x -p 8090:8090 immich-pflege:ci
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8090/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8090/healthz
+          docker exec pflege pflege --help
+          test "$(docker exec pflege id -u)" != "0"
+          docker rm -f pflege

@@ -1,0 +1,240 @@
+# immich-pflege
+
+Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen die API von 3.2.4)**: als Docker-Container mit mobiler Web-Oberfläche, Kommandozeile `pflege` und JSON-API für n8n.
+
+| Funktion | Was passiert |
+|---|---|
+| **Duplikate** | Immich-Duplikaterkennung pro Benutzer, dazu identische Prüfsumme sowie gleicher Dateiname mit gleicher Aufnahmezeit, auch benutzerübergreifend und zwischen Upload und externer Bibliothek. Überlappende Treffer werden zu Gruppen zusammengeführt. Ein Behalten-Vorschlag kommt aus einer Punktwertung. Nicht behaltene Kopien kommen ins Album „Duplikat-Prüfung“ oder in den Papierkorb. |
+| **Ohne Ort** | Alle Medien ohne GPS, nach Tag gruppiert, mit Vorschlag: Ort des zeitlich nächsten Fotos mit GPS (beider Benutzer) innerhalb von ±2 h |
+| **Tags** | Massen-Tagging nach Regeln in `config/regeln.yaml`. Tags werden nur ergänzt, nie entfernt. |
+
+Alles startet als **Vorschau**. Änderungen gibt es nur nach ausdrücklicher Aktion.
+
+---
+
+## Einrichtung
+
+### 1. API-Keys in Immich anlegen
+
+Für **jeden** Benutzer (hier frank und julia) einzeln:
+
+1. In Immich als dieser Benutzer anmelden
+2. Avatar oben rechts → **Kontoeinstellungen** → **API-Schlüssel** → **Neuer API-Schlüssel**
+3. Name z. B. `immich-pflege`. Berechtigungen: am einfachsten **Alle**. Wer die Rechte einschränken will, braucht mindestens:
+   `asset.read`, `asset.view`, `asset.update`, `asset.delete`, `album.read`, `album.create`, `albumAsset.create`, `duplicate.read`, `person.read`, `tag.read`, `tag.create`, `tag.asset`, `user.read`
+4. Den Schlüssel kopieren, er wird nur einmal angezeigt.
+
+> Jeder Benutzer kann nur seine eigenen Medien ändern. Deshalb braucht das Tool je Benutzer einen Schlüssel und verwendet automatisch den des Besitzers.
+
+### 2. Dateien vorbereiten
+
+```bash
+git clone https://github.com/stabmaster1985/immich-pflege.git
+cd immich-pflege
+cp .env.example .env              # Schlüssel eintragen
+mkdir -p data config
+cp regeln.example.yaml config/regeln.yaml
+sudo chown -R 1000:1000 data config   # Container läuft als Benutzer 1000, nicht als root
+```
+
+`.env`:
+
+```ini
+IMMICH_URL=http://immich-server:2283
+IMMICH_KEY_FRANK=xxxxxxxx
+IMMICH_KEY_JULIA=yyyyyyyy
+REVIEW_ALBUM=Duplikat-Prüfung
+LOCATION_MAX_HOURS=2
+LOCATION_INCLUDE_EXTERNAL=false
+WEB_USER=frank            # optional: Basic Auth (beide leer = aus)
+WEB_PASSWORD=geheim
+IMMICH_NETWORK=immich_default
+PFLEGE_PORT=8090
+```
+
+Weitere Benutzer: einfach `IMMICH_KEY_<NAME>=…` ergänzen.
+
+### 3. Starten
+
+Der Container hängt sich an das bestehende Netz des Immich-Stacks. Dessen Namen findest du so:
+
+```bash
+docker network ls | grep immich     # meist immich_default
+docker compose up -d --build
+```
+
+Die Oberfläche läuft dann unter `http://<server>:8090`. Beim ersten Aufruf liest das Tool die Bibliothek ein, was bei großen Bibliotheken ein bis zwei Minuten dauert. Danach liegt sie zwischengespeichert in `data/bibliothek.json`. **Neu einlesen** gibt es als Button in der Oberfläche, per `pflege einlesen` oder über `POST /api/scan`.
+
+Logs: `docker logs immich-pflege` und `data/pflege.log`.
+
+> Von außerhalb des Heimnetzes nur über einen Reverse-Proxy mit HTTPS und mit gesetztem `WEB_USER`/`WEB_PASSWORD`. Die API-Keys verlassen nie den Container: Vorschaubilder reicht das Backend durch.
+
+---
+
+## Oberfläche
+
+Drei Tabs (**Duplikate**, **Ohne Ort**, **Tags**), unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
+
+- **Duplikate:** Tippe auf ein Bild, damit es bleibt. Hake Gruppen an und wähle dann **Ins Prüf-Album** oder **Papierkorb**. Der Dialog zeigt vorher genau, was passiert. Für den Papierkorb muss zusätzlich ein Häkchen gesetzt werden.
+- **Ohne Ort:** Das Zeitfenster ist einstellbar. Bilder mit 📍-Vorschlag antippen oder pro Tag **Alle**, dann **Ort übernehmen**.
+- **Tags:** Zeigt pro Regel Treffer, schon getaggt und neu, mit Beispielbildern. Fehler in `regeln.yaml` erscheinen mit Zeilennummer.
+
+## Regeln der Duplikat-Bearbeitung
+
+**Behalten-Vorschlag.** Jede Stufe schlägt alle niedrigeren zusammen:
+
+| Kriterium | Punkte |
+|---|---|
+| Favorit | 32 |
+| in einem Album (das Prüf-Album zählt nicht) | 16 |
+| hat GPS | 8 |
+| Immich schlägt es vor | 4 |
+| liegt in externer Bibliothek | 2 |
+| höchste Auflösung der Gruppe | 1 |
+
+Bei Gleichstand gewinnt die größere Auflösung, dann die größere Datei.
+
+**Schutzregeln für den Papierkorb:**
+- Medien aus **externen Bibliotheken kommen nie in den Papierkorb**, sondern stattdessen ins Prüf-Album.
+- **Kopien eines anderen Benutzers** als dem der behaltenen Datei kommen nur ins Prüf-Album des Besitzers.
+- Papierkorb heißt Immich-Papierkorb (`force: false`), also wiederherstellbar.
+
+Das Album „Duplikat-Prüfung“ wird pro Benutzer angelegt, falls es fehlt.
+
+## Regeln fürs Tagging (`config/regeln.yaml`)
+
+```yaml
+regeln:
+  - name: Italien-Urlaub 2024
+    tag: Reisen/Italien/2024        # verschachtelt mit "/"
+    von: 2024-07-10
+    bis: 2024-07-25
+
+  - name: Systemkamera
+    tags: [Kamera/Sony A7 IV, Quelle/Kamera]
+    hersteller: SONY
+    modell: '^ILCE-7M4$'
+    bibliothek: extern
+    benutzer: frank
+    aktiv: true
+```
+
+Bedingungen werden UND-verknüpft: `pfad`, `dateiname`, `modell` (reguläre Ausdrücke, Groß/klein egal), `von`/`bis` (Datum), `album`, `person`, `hersteller`, `bibliothek` (`extern`|`upload`), `typ` (`foto`|`video`). Optional dazu `benutzer` und `aktiv`. Alle Details stehen in [`regeln.example.yaml`](regeln.example.yaml). Die Datei wird bei jeder Vorschau neu gelesen, ein Neustart ist nicht nötig.
+
+---
+
+## Kommandozeile
+
+Im Container heißt die Kommandozeile `pflege`:
+
+```bash
+docker exec -it immich-pflege pflege version          # Immich-Version + Schlüssel prüfen
+docker exec -it immich-pflege pflege einlesen         # Bibliothek neu einlesen
+
+# Duplikate
+docker exec -it immich-pflege pflege duplikate                    # Vorschau (Tabelle)
+docker exec -it immich-pflege pflege duplikate --json > dup.json
+docker exec -it immich-pflege pflege duplikate --csv > dup.csv
+docker exec -it immich-pflege pflege duplikate --ins-album        # alle offenen Gruppen
+docker exec -it immich-pflege pflege duplikate --papierkorb       # mit Rückfrage
+docker exec    immich-pflege pflege duplikate --papierkorb --ja   # ohne Rückfrage
+docker exec -it immich-pflege pflege duplikate -g 3fa2c1d9e0b4 --behalten 3fa2c1d9e0b4=<medien-id> --papierkorb
+
+# Fotos ohne Ort
+docker exec -it immich-pflege pflege ohne-ort --stunden 3
+docker exec -it immich-pflege pflege ohne-ort --datum 2024-07-16 --ort-uebernehmen
+docker exec -it immich-pflege pflege ohne-ort --id <medien-id> --ort-uebernehmen
+
+# Tags
+docker exec -it immich-pflege pflege tags                         # Vorschau
+docker exec -it immich-pflege pflege tags --regel "Italien-Urlaub 2024" --anwenden
+```
+
+Alle Befehle verstehen `--neu` (vorher neu einlesen) sowie `--json` und `--csv`.
+
+---
+
+## JSON-API (n8n)
+
+Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:8090/api/docs`. Bei gesetztem `WEB_USER` braucht jeder Aufruf Basic Auth. In n8n heißt das: *HTTP Request → Authentication: Generic → Basic Auth*.
+
+| Methode | Pfad | Zweck |
+|---|---|---|
+| GET | `/healthz` | Lebenszeichen (ohne Anmeldung) |
+| GET | `/api/status` | Version, Stand der Bibliothek, Schlüsselprüfung (`?server=false` ohne Immich-Abfrage) |
+| POST | `/api/scan` | Neu einlesen. `{"wait": false}` startet im Hintergrund (202) |
+| GET | `/api/duplicates` | Gruppen (`offset`, `limit`, `include_done`) |
+| POST | `/api/duplicates/apply` | Aktion auf Gruppen |
+| GET | `/api/no-location` | Medien ohne Ort nach Tagen (`max_hours`, `offset`, `limit`, `only_suggestions`) |
+| POST | `/api/no-location/apply` | Ort übernehmen |
+| GET | `/api/tags` | Regel-Vorschau (`rules=Name`, mehrfach möglich) |
+| POST | `/api/tags/apply` | Tags anwenden |
+
+Fehler kommen als `{"fehler": "…"}` zurück: 400 bei ungültiger Anfrage, 422 bei kaputter Regeldatei (mit `details`), 502 wenn Immich nicht erreichbar ist.
+
+### Beispiele
+
+```bash
+B=http://immich-pflege:8090        # aus dem Docker-Netz, sonst http://<server>:8090
+AUTH="-u frank:geheim"
+
+curl $AUTH -X POST $B/api/scan
+curl $AUTH "$B/api/duplicates?include_done=false&limit=0"
+
+# Vorschau: was würde passieren?
+curl $AUTH -X POST $B/api/duplicates/apply -H 'Content-Type: application/json' \
+  -d '{"action":"papierkorb","all":true,"dry_run":true}'
+
+# Alle offenen Gruppen ins Prüf-Album
+curl $AUTH -X POST $B/api/duplicates/apply -H 'Content-Type: application/json' \
+  -d '{"action":"album","all":true}'
+
+# Papierkorb für bestimmte Gruppen, eine davon mit eigener Wahl – nur mit confirm
+curl $AUTH -X POST $B/api/duplicates/apply -H 'Content-Type: application/json' \
+  -d '{"action":"papierkorb","confirm":"PAPIERKORB",
+       "groups":[{"id":"3fa2c1d9e0b4"},{"id":"9be04d11aa20","keep":"<medien-id>"}]}'
+
+# Ort für alle Vorschläge eines Tages übernehmen
+curl $AUTH "$B/api/no-location?only_suggestions=true&limit=0" \
+  | jq '[.tage[] | select(.datum=="2024-07-16") | .medien[].id]' \
+  | jq '{ids: .}' \
+  | curl $AUTH -X POST $B/api/no-location/apply -H 'Content-Type: application/json' -d @-
+
+curl $AUTH -X POST $B/api/tags/apply -H 'Content-Type: application/json' -d '{}'          # alle aktiven Regeln
+curl $AUTH -X POST $B/api/tags/apply -H 'Content-Type: application/json' -d '{"rules":["Systemkamera"]}'
+```
+
+### n8n-Workflow (Idee: jede Nacht)
+
+1. **Schedule Trigger**, täglich 03:00
+2. **HTTP Request** `POST http://immich-pflege:8090/api/scan`, Body `{"wait": true}`, Timeout 600 s
+3. **HTTP Request** `POST …/api/tags/apply`, Body `{}`
+4. **HTTP Request** `POST …/api/duplicates/apply`, Body `{"action":"album","all":true}`
+5. **IF** `{{$json.ergebnis.album > 0}}` → Benachrichtigung: „{{$json.ergebnis.album}} Duplikate liegen im Prüf-Album“
+
+n8n erreicht das Tool unter `http://immich-pflege:8090`, wenn n8n im selben Docker-Netz hängt. Sonst geht es über `http://<server>:8090`.
+
+---
+
+## Entwicklung
+
+```bash
+python3.12 -m venv .venv && .venv/bin/pip install -e ".[test]"
+.venv/bin/pytest
+```
+
+Die Tests laufen gegen einen **Mock-Immich** (`tests/mock_immich.py`). Er bildet die genutzten Endpunkte im Antwortformat von v3.2.4 nach (Vorlage: `tests/fixtures/asset_response.json`), einschließlich Paging per `nextCursor` und `nextPage`. Zum Ausprobieren der Oberfläche ohne echtes Immich:
+
+```bash
+.venv/bin/uvicorn tests.mock_immich:demo_app --port 2283 &
+IMMICH_URL=http://127.0.0.1:2283 IMMICH_KEY_FRANK=key-frank IMMICH_KEY_JULIA=key-julia \
+DATA_DIR=./data CONFIG_DIR=./config \
+.venv/bin/uvicorn immich_pflege.web.app:create_app --factory --port 8090
+```
+
+### Hinweise zur Immich-API (geprüft gegen die OpenAPI-Spezifikation v3.2.4)
+
+- `PUT /api/assets` (Koordinaten setzen) ist in v3 als *deprecated* markiert, ist aber in 3.2.4 der einzige Weg dafür. Der Aufruf steckt an einer Stelle in `client.py` (`set_location`).
+- In `POST /api/search/metadata` sind seit 3.2.0 die einfachen Filter (`isNotInAlbum`, `albumIds`, `personIds`, `tagIds`, `page`) *deprecated* zugunsten von `filter` und `cursor`. Sie funktionieren weiter. Das Tool liest `nextCursor` und fällt auf `nextPage` zurück.
+- Bulk-Aufrufe gehen in Blöcken zu 500 IDs. Ist Immich nicht 3.x, erscheint eine Warnung.
+- Assets mit `visibility` `hidden` (Live-Photo-Videos) oder `locked` sowie Medien im Papierkorb werden ignoriert. Über Partner-Freigaben sichtbare Medien werden nur ihrem Besitzer zugeordnet.
