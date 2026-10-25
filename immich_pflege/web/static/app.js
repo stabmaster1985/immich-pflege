@@ -1327,17 +1327,32 @@ async function openHelp(topic) {
 
 /* ---------------------------------------------------------- Aufräumen */
 const PAGE_CLN = 30;
-const CLN_BEREICHE = { speicher: "Speicherfresser", serien: "Serienbilder", qualitaet: "Unscharf & dunkel" };
+const CLN_BEREICHE = { speicher: "Speicherfresser", serien: "Serienbilder", qualitaet: "Unscharf & dunkel", zeit: "Falsche Zeit" };
 
 async function loadCleanup(reset) {
   const c = S.cln;
-  if (reset) { c.items = []; c.sel.clear(); c.keep = {}; $("#cln-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
-  const params = new URLSearchParams({ art: c.bereich, offset: c.items.length, limit: PAGE_CLN, ignoriert: c.ignored });
-  if (c.kategorie) params.set("kategorie", c.kategorie);
-  const r = await api("api/cleanup?" + params);
+  if (reset) { c.items = []; c.sel.clear(); c.keep = {}; c.edit = {}; $("#cln-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
+  const isTime = c.bereich === "zeit";
+  const params = new URLSearchParams({ offset: c.items.length, limit: PAGE_CLN, ignoriert: c.ignored });
+  if (c.kategorie) params.set(isTime ? "art" : "kategorie", c.kategorie);
+  if (!isTime) params.set("art", c.bereich);
+  const [r, counts] = await Promise.all([
+    api((isTime ? "api/timefix?" : "api/cleanup?") + params),
+    api(isTime ? "api/cleanup?limit=0" : "api/timefix?limit=0"),
+  ]);
+  const cln = isTime ? counts : r;
+  const time = isTime ? r : counts;
   if (reset) $("#cln-list").replaceChildren();
   c.info = r; c.total = r.gesamt; c.loaded = true;
-  renderCleanupFilters(r);
+  renderCleanupFilters(cln, time);
+  if (isTime) {
+    for (const it of r.eintraege) { c.items.push(it); $("#cln-list").append(renderTimeFix(it)); }
+    if (!c.items.length) $("#cln-list").replaceChildren(h("p", { class: "empty" }, c.ignored ? "Nichts ausgeblendet." : "Keine falschen Zeiten gefunden 🎉"));
+    $("#cln-summary").textContent = `${n(r.gesamt, "Eintrag", "Einträge")}`;
+    $("#cln-more").hidden = c.items.length >= c.total;
+    updateActionbar();
+    return;
+  }
   for (const it of r.eintraege) { c.items.push(it); $("#cln-list").append(renderCleanupItem(it)); }
   if (!c.items.length) {
     const fp = r.fingerabdruck;
@@ -1349,19 +1364,22 @@ async function loadCleanup(reset) {
   }
   $("#cln-summary").textContent = c.ignored ? `${n(r.gesamt, "ausgeblendeter Eintrag", "ausgeblendete Einträge")}`
     : `${n(r.gesamt, "Eintrag", "Einträge")} · ${fmtBig(r.groesse)} würden frei`;
-  const open = Object.values(r.arten).reduce((s, a) => s + a.anzahl, 0);
+  const open = Object.values(r.arten).reduce((s, a) => s + a.anzahl, 0) + Object.values(time.arten).reduce((s, x) => s + x, 0);
   $("#count-cln").textContent = open ? `(${open})` : "";
   $("#cln-more").hidden = c.items.length >= c.total;
   updateActionbar();
 }
 
-function renderCleanupFilters(r) {
+function renderCleanupFilters(r, time) {
   const c = S.cln;
+  const timeCount = Object.values(time.arten).reduce((s, x) => s + x, 0);
   const area = h("select", { onchange: (e) => { c.bereich = e.target.value; c.kategorie = null; loadTab("cln", true); } },
-    ...Object.entries(CLN_BEREICHE).map(([k, v]) => h("option", { value: k },
-      `${v} (${r.arten[k].anzahl}${r.arten[k].groesse ? ", " + fmtBig(r.arten[k].groesse) : ""})`)));
+    ...Object.entries(CLN_BEREICHE).map(([k, v]) => h("option", { value: k }, k === "zeit" ? `${v} (${timeCount})`
+      : `${v} (${r.arten[k].anzahl}${r.arten[k].groesse ? ", " + fmtBig(r.arten[k].groesse) : ""})`)));
   area.value = c.bereich;
-  const cats = Object.entries(r.kategorien).filter(([, v]) => v.art === c.bereich);
+  const cats = c.bereich === "zeit"
+    ? Object.entries(time.arten).map(([k, v]) => [k, { name: time.namen[k], anzahl: v }])
+    : Object.entries(r.kategorien).filter(([, v]) => v.art === c.bereich);
   const cat = h("select", { onchange: (e) => { c.kategorie = e.target.value || null; loadTab("cln", true); } },
     h("option", { value: "" }, "alle"),
     ...cats.map(([k, v]) => h("option", { value: k }, `${v.name} (${v.anzahl})`)));
@@ -1370,7 +1388,65 @@ function renderCleanupFilters(r) {
     h("label", { class: "field grow" }, "Bereich", area),
     cats.length > 1 ? h("label", { class: "field grow" }, "Art", cat) : null,
     h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: c.ignored,
-      onchange: (e) => { c.ignored = e.target.checked; loadTab("cln", true); } }), `behaltene (${r.ausgeblendet})`));
+      onchange: (e) => { c.ignored = e.target.checked; loadTab("cln", true); } }),
+      `behaltene (${c.bereich === "zeit" ? time.ausgeblendet : r.ausgeblendet})`));
+}
+
+function fmtOffset(min) {
+  const h0 = Math.floor(Math.abs(min) / 60), m = Math.abs(min) % 60;
+  return (min > 0 ? "+" : "−") + h0 + " h" + (m ? ` ${m} min` : "");
+}
+
+// Gewählte Korrektur: Vorschlag, eigene Verschiebung (Minuten) oder Zielzeit (nur Einzelmedium)
+function timeChoice(it) {
+  const e = S.cln.edit[it.id];
+  if (e && (e.minuten || e.ziel)) return e;
+  return it.minuten ? { minuten: it.minuten } : null;
+}
+
+function renderTimeFix(it) {
+  const c = S.cln;
+  const card = h("article", { class: "card" + (c.sel.has(it.id) ? " selected" : "") });
+  card.append(h("div", { class: "card-head" },
+    c.ignored ? null : h("input", { type: "checkbox", checked: c.sel.has(it.id), "aria-label": "Auswählen",
+      onchange: (e) => { e.target.checked ? c.sel.add(it.id) : c.sel.delete(it.id); card.classList.toggle("selected", e.target.checked); updateActionbar(); } }),
+    h("span", { class: "chip" }, it.art_text),
+    it.minuten ? h("b", {}, fmtOffset(it.minuten)) : null,
+    h("span", { class: "muted" }, n(it.anzahl, "Medium", "Medien")),
+    h("button", { type: "button", class: "btn small edit", onclick: () => keepCleanup(it, c.ignored) }, c.ignored ? "Wieder zeigen" : "Passt so")),
+    h("div", { class: "muted small" }, it.grund));
+  const strip = h("div", { class: "strip" }, it.medien.map((m) => h("figure", { class: "stage-fig" }, thumb(m),
+    h("figcaption", { title: m.dateiname }, m.neue_zeit ? "→ " + fmtTaken(m.neue_zeit) : fmtTaken(m.aufnahme)))));
+  card.append(strip);
+  if (!c.ignored) {
+    const row = h("div", { class: "row-gap", style: "margin-top:8px" });
+    if (it.anzahl === 1) {
+      const cur = it.medien[0].aufnahme ? it.medien[0].aufnahme.replace(" ", "T").slice(0, 16) : "";
+      const sug = it.medien[0].neue_zeit ? it.medien[0].neue_zeit.replace(" ", "T").slice(0, 16) : cur;
+      row.append(h("label", { class: "field" }, "Richtige Zeit",
+        h("input", { type: "datetime-local", value: sug, onchange: (e) => { c.edit[it.id] = { ziel: e.target.value }; c.sel.add(it.id); updateActionbar(); } })));
+    } else {
+      row.append(h("label", { class: "field" }, "Verschieben um Stunden",
+        h("input", { type: "number", step: "0.5", value: it.minuten / 60, style: "width:6em",
+          onchange: (e) => { c.edit[it.id] = { minuten: Math.round(parseFloat(String(e.target.value).replace(",", ".")) * 60) || 0 }; c.sel.add(it.id); updateActionbar(); } })));
+    }
+    row.append(h("button", { type: "button", class: "btn small primary", onclick: (e) => stageTimeFixes([it], e.currentTarget) }, "Vormerken"));
+    card.append(row);
+  }
+  return card;
+}
+
+async function stageTimeFixes(items, btn) {
+  const chosen = items.filter((it) => timeChoice(it));
+  if (!chosen.length) { toast("Bitte zuerst die richtige Zeit wählen", true); return; }
+  busy(btn, true);
+  try {
+    const r = await api("api/staged/timefix", { method: "POST", body: { eintraege: chosen.map((it) => ({ id: it.id, ...timeChoice(it) })) } });
+    toast(`${n(r.vorgemerkt, "Korrektur", "Korrekturen")} vorgemerkt`);
+    await afterStage("cln");
+  } catch (e) {
+    toast(e.message, true);
+  } finally { busy(btn, false); }
 }
 
 function renderCleanupItem(it) {
@@ -1810,6 +1886,13 @@ function updateActionbar() {
     } else {
       buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !sure, onclick: (e) => applyAllSure(e.currentTarget) }, `Alle sicheren (${sure})`));
     }
+  } else if (S.tab === "cln" && S.cln.bereich === "zeit") {
+    const c = S.cln;
+    const chosen = c.items.filter((it) => c.sel.has(it.id));
+    const list = (chosen.length ? chosen : c.items).filter((it) => timeChoice(it));
+    info.textContent = c.ignored ? "Ausgeblendete Einträge" : chosen.length ? `${chosen.length} gewählt` : "Alle mit Vorschlag:";
+    if (!c.ignored) buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !list.length,
+      onclick: (e) => stageTimeFixes(list, e.currentTarget) }, `Vormerken (${list.length})`));
   } else if (S.tab === "cln") {
     const c = S.cln;
     const chosen = c.items.filter((it) => c.sel.has(it.id));

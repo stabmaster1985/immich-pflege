@@ -18,6 +18,8 @@ from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, Ignore
                          clear_immich_duplicates, execute_steps, find_groups, plan_group)
 from .cleanup import ARTEN as CLEANUP_ARTEN, KATEGORIEN as CLEANUP_KATEGORIEN, KeepList, find_items
 from .history import HistoryStore, undo_ops
+from .timefix import (ARTEN as TIME_ARTEN, execute_shifts, find_fixes, fmt_offset, plan_shifts, shifted,
+                      summary as time_summary)
 from .imagehash import HashProgress, HashStore, compute_missing, similar_pairs
 from .library import Library, apply_album_membership, read_albums, scan_library
 from .location import (LEVELS, LocationChange, analyze, execute_location_changes, level_at_least,
@@ -40,6 +42,10 @@ class NotConfigured(ActionError):
     def __init__(self) -> None:
         super().__init__("Noch nicht eingerichtet – bitte unter Einstellungen Immich-Adresse "
                          "und mindestens einen API-Key eintragen")
+
+
+def n_media(count: int) -> str:
+    return f"{count} {'Medium' if count == 1 else 'Medien'}"
 
 
 def check_server(clients: dict[str, ImmichClient]) -> dict[str, Any]:
@@ -84,6 +90,7 @@ class Pflege:
         self._groups_cache: tuple[tuple, list[DuplicateGroup]] | None = None
         self._analysis_cache: tuple[tuple, Any] | None = None
         self._cleanup_cache: tuple[tuple, Any] | None = None
+        self._time_cache: tuple[tuple, Any] | None = None
         self._calc_lock = threading.RLock()  # gleiche Berechnung nicht doppelt (Vorberechnung + Anfrage)
         self.background_albums = False  # Web: Album-Inhalte nach dem Einlesen im Hintergrund lesen
         self._albums_thread: threading.Thread | None = None
@@ -168,6 +175,7 @@ class Pflege:
             self.all_groups()
             self._analysis()
             self.cleanup_items()
+            self.time_fixes()
             if not self.albums_pending():
                 self._trips()
         except Exception as exc:  # nur Vorarbeit – Fehler zeigen sich beim echten Aufruf
@@ -603,6 +611,8 @@ class Pflege:
                             LocationChange.from_dict(ch) for ch in e["daten"]["aenderungen"]])
                     elif e["typ"] == "album":
                         res = execute_plan(lib, self.clients, e["daten"])
+                    elif e["typ"] == "zeit":
+                        res = execute_shifts(lib, self.clients, e["daten"]["aenderungen"])
                     else:
                         res = self.tags_apply([e["daten"]["regel"]], record=False)
                 except (ImmichError, ActionError, RuleError, AlbumError) as exc:
@@ -612,7 +622,8 @@ class Pflege:
                 done.append(e["id"])
                 count = {"duplikat": lambda r: r["album"] + r["papierkorb"],
                          "aufraeumen": lambda r: r["album"] + r["papierkorb"], "ort": lambda r: r["aktualisiert"],
-                         "album": lambda r: r["hinzugefuegt"], "tag": lambda r: r["getaggt"]}[e["typ"]](res)
+                         "album": lambda r: r["hinzugefuegt"], "tag": lambda r: r["getaggt"],
+                         "zeit": lambda r: r["verschoben"]}[e["typ"]](res)
                 self._record(e["typ"], e["titel"], count, res, "oberflaeche")
                 results.append({"id": e["id"], "titel": e["titel"], "ergebnis": res})
             self.staging.remove(done)
@@ -730,6 +741,67 @@ class Pflege:
             raise ActionError("Keine Einträge angegeben")
         self.keep_list().update(ids, remove=undo)
         return {"eintraege": len(ids), "rueckgaengig": undo}
+
+    # -------------------------------------------------------- Aufnahmezeit
+    def time_fixes(self):
+        lib = self.library()
+        key = (id(lib), lib.rev)
+        with self._calc_lock:
+            if not self._time_cache or self._time_cache[0] != key:
+                self._time_cache = (key, find_fixes(lib))
+            fixes = self._time_cache[1]
+        staged = self.staging.asset_ids("zeit")
+        keep = self.keep_list().ids
+        return lib, [f for f in fixes if not ({a.id for a in f.assets} & staged)], keep
+
+    def timefix_view(self, art: str | None = None, ignored: bool = False, offset: int = 0, limit: int = 30) -> dict[str, Any]:
+        if art and art not in TIME_ARTEN:
+            raise ActionError(f"Art muss {', '.join(TIME_ARTEN)} sein")
+        lib, fixes, keep = self.time_fixes()
+        base = [f for f in fixes if (f.id in keep) == ignored]
+        chosen = [f for f in base if not art or f.art == art]
+        page = chosen[offset: offset + limit] if limit > 0 else chosen[offset:]
+        return {"stand": lib.scanned_at, "arten": time_summary(base), "namen": TIME_ARTEN,
+                "ausgeblendet": sum(1 for f in fixes if f.id in keep), "gesamt": len(chosen),
+                "filter": {"art": art, "ignoriert": ignored}, "offset": offset,
+                "eintraege": [f.to_dict() for f in page]}
+
+    def stage_timefix(self, selection: list[dict]) -> dict[str, Any]:
+        """selection: [{id, minuten?}] – ohne minuten gilt der Vorschlag; ``ziel`` (ISO-Zeit) für Einzelmedien."""
+        from datetime import datetime
+
+        if not selection:
+            raise ActionError("Nichts ausgewählt")
+        with self._lock:
+            _, fixes, _ = self.time_fixes()
+            known = {f.id: f for f in fixes}
+            staged = 0
+            for sel in selection:
+                fix = known.get(sel.get("id", ""))
+                if fix is None:
+                    raise ActionError(f"Eintrag {sel.get('id')!r} nicht gefunden – bitte neu laden")
+                minutes = sel.get("minuten")
+                if sel.get("ziel"):
+                    if len(fix.assets) != 1:
+                        raise ActionError("Eine Zielzeit geht nur für ein einzelnes Medium")
+                    try:
+                        target = datetime.fromisoformat(sel["ziel"])
+                    except ValueError as exc:
+                        raise ActionError("Zielzeit bitte als JJJJ-MM-TTTHH:MM") from exc
+                    minutes = round((target - fix.assets[0].local_dt).total_seconds() / 60)
+                if minutes is None:
+                    minutes = fix.minutes
+                if not minutes:
+                    raise ActionError(f"Für „{fix.grund}“ bitte eine Zeit wählen")
+                changes = plan_shifts(fix, int(minutes))
+                title = (f"🕑 {fix.extra.get('kamera') or fix.assets[0].file_name}: "
+                         f"{n_media(len(fix.assets))} um {fmt_offset(int(minutes))}")
+                sample = fix.assets[:: max(1, len(fix.assets) // 6)][:6]
+                media = [{**a.summary(), "neue_zeit": shifted(a, int(minutes))} for a in sample]
+                self.staging.add("zeit", title, {"aenderungen": changes, "alle_medien": [a.id for a in fix.assets]},
+                                 media, len(fix.assets), key=fix.id)
+                staged += 1
+            return {"vorgemerkt": staged}
 
     # ---------------------------------------------------------------- Alben
     def album_ignore_list(self) -> TripIgnoreList:

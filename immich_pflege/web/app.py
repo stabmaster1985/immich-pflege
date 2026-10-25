@@ -115,6 +115,16 @@ class CleanupKeep(BaseModel):
     undo: bool = False
 
 
+class TimeSelection(BaseModel):
+    id: str
+    minuten: Optional[int] = Field(None, ge=-60 * 24 * 365 * 100, le=60 * 24 * 365 * 100)
+    ziel: Optional[str] = None
+
+
+class TimeStage(BaseModel):
+    eintraege: list[TimeSelection]
+
+
 class TripSelection(BaseModel):
     id: str
     album: Optional[str] = None  # weglassen = Vorschlag, null = neues Album, sonst Album-ID
@@ -536,6 +546,15 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/staged/cleanup")
     def stage_cleanup(body: CleanupStage):
         return svc().stage_cleanup(body.action, body.ids, body.kategorie, body.keep)
+
+    @app.get("/api/timefix")
+    def timefix(art: Optional[Literal["zeitversatz", "dateiname", "zukunft", "standard"]] = None,
+                ignoriert: bool = False, offset: int = Query(0, ge=0), limit: int = Query(30, ge=0, le=5000)):
+        return svc().timefix_view(art, ignoriert, offset, limit)
+
+    @app.post("/api/staged/timefix")
+    def stage_timefix(body: TimeStage):
+        return svc().stage_timefix([e.model_dump(exclude_none=True) for e in body.eintraege])
 
     @app.post("/api/cleanup/keep")
     def cleanup_keep(body: CleanupKeep):
