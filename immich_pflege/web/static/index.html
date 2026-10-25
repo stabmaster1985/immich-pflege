@@ -92,6 +92,27 @@
           <div id="set-test-result"></div>
         </fieldset>
         <fieldset class="card">
+          <legend>Automatisch einlesen</legend>
+          <small>Neue Fotos aus Immich erscheinen erst nach dem Einlesen. Das kann das Tool selbst erledigen.</small>
+          <div class="two" style="margin-top:8px">
+            <label class="f">Wann
+              <select id="set-auto">
+                <option value="aus">aus (nur per Knopf)</option>
+                <option value="taeglich">täglich</option>
+                <option value="intervall">alle X Stunden</option>
+              </select>
+            </label>
+            <label class="f" id="set-auto-time-wrap">Uhrzeit
+              <input type="time" id="set-auto-time" step="60">
+            </label>
+            <label class="f" id="set-auto-hours-wrap" hidden>Stunden
+              <input type="number" id="set-auto-hours" min="1" max="168" step="1" inputmode="numeric">
+            </label>
+          </div>
+          <label class="f">Zeitzone <input type="text" id="set-tz" autocapitalize="off" spellcheck="false" placeholder="Europe/Berlin"></label>
+          <small id="set-auto-info" class="muted"></small>
+        </fieldset>
+        <fieldset class="card">
           <legend>Duplikate</legend>
           <label class="f">Name des Prüf-Albums
             <input type="text" id="set-album">

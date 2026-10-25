@@ -133,6 +133,10 @@ async function loadStatus(server = true) {
   const parts = [];
   if (st.bibliothek) parts.push("Stand " + fmtDateTime(st.bibliothek.stand), st.bibliothek.gesamt + " Medien");
   else parts.push("Noch nicht eingelesen");
+  if (st.auto_einlesen && st.auto_einlesen.modus !== "aus" && st.auto_einlesen.naechstes) {
+    const nx = new Date(st.auto_einlesen.naechstes);
+    parts.push("auto " + nx.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }));
+  }
   if (st.server && st.server.version) parts.push("Immich " + st.server.version);
   parts.push(st.benutzer.join(" & "));
   $("#status").textContent = parts.join(" · ");
@@ -603,6 +607,11 @@ async function loadSettings() {
   $("#set-login-hint").textContent = d.login_aktiv
     ? "Login ist aktiv. Benutzername leeren und speichern schaltet ihn ab."
     : "Ohne Login kann jeder im Heimnetz das Tool bedienen. Für Zugriff von außen unbedingt setzen.";
+  $("#set-auto").value = d.auto_scan; lock("#set-auto", "auto_scan");
+  $("#set-auto-time").value = d.auto_scan_time; lock("#set-auto-time", "auto_scan_time");
+  $("#set-auto-hours").value = d.auto_scan_hours; lock("#set-auto-hours", "auto_scan_hours");
+  $("#set-tz").value = d.timezone; lock("#set-tz", "timezone");
+  updateAutoFields();
   $("#set-upd-check").checked = d.update_check; lock("#set-upd-check", "update_check");
   $("#set-upd-repo").value = d.update_repo; lock("#set-upd-repo", "update_repo");
   $("#set-upd-token").value = ""; lock("#set-upd-token", "update_github_token");
@@ -619,6 +628,19 @@ async function loadSettings() {
     : "Gespeichert wird in " + d.datenordner + "/einstellungen.json.";
   $("#set-welcome").replaceChildren(...(d.eingerichtet ? [] : [h("div", { class: "banner warn" },
     h("b", {}, "Willkommen! "), "Trage die Immich-Adresse und für jeden Benutzer einen API-Key ein, teste die Verbindung und speichere.")]));
+}
+
+function updateAutoFields() {
+  const mode = $("#set-auto").value;
+  $("#set-auto-time-wrap").hidden = mode !== "taeglich";
+  $("#set-auto-hours-wrap").hidden = mode !== "intervall";
+  $("#set-tz").closest("label").hidden = mode === "aus";
+  const a = S.status && S.status.auto_einlesen;
+  const parts = [];
+  if (a && a.modus !== "aus" && a.naechstes) parts.push("Nächstes Einlesen: " + fmtDateTime(a.naechstes));
+  if (a && a.letztes) parts.push("zuletzt automatisch: " + fmtDateTime(a.letztes));
+  if (a && a.fehler) parts.push("Fehler: " + a.fehler);
+  $("#set-auto-info").textContent = parts.join(" · ");
 }
 
 function userRow(u) {
@@ -648,6 +670,10 @@ function readSettingsForm() {
   put("location_max_hours", $("#set-hours").value);
   put("location_include_external", $("#set-ext").checked);
   if (!d.gesperrt.includes("users")) body.benutzer = readUsers();
+  put("auto_scan", $("#set-auto").value);
+  put("auto_scan_time", $("#set-auto-time").value);
+  put("auto_scan_hours", $("#set-auto-hours").value);
+  put("timezone", $("#set-tz").value.trim());
   put("update_check", $("#set-upd-check").checked);
   put("update_repo", $("#set-upd-repo").value.trim());
   put("update_webhook_url", $("#set-upd-url").value.trim());
@@ -692,9 +718,9 @@ async function saveSettings(btn) {
     const accessChanged = before.immich_url !== r.immich_url ||
       JSON.stringify(before.benutzer) !== JSON.stringify(r.benutzer) || before.review_album !== r.review_album;
     S.loc.hours = null;
+    await loadStatus(true);
     await loadSettings();
     loadVersion();
-    await loadStatus(true);
     S.dup.loaded = S.loc.loaded = S.tags.loaded = false;
     if (accessChanged && r.eingerichtet) toast("Gespeichert – Bibliothek wird beim nächsten Öffnen neu eingelesen");
   } catch (e) {
@@ -877,6 +903,7 @@ $("#rule-delete").addEventListener("click", deleteRule);
 $("#yaml-save").addEventListener("click", (e) => saveYaml(e.currentTarget));
 $("#set-add-user").addEventListener("click", () => $("#set-users").append(userRow({ name: "", key_gesetzt: false })));
 $("#set-test").addEventListener("click", (e) => testConnection(e.currentTarget));
+$("#set-auto").addEventListener("change", updateAutoFields);
 $("#set-logout").addEventListener("click", async () => {
   await fetch("/api/logout", { method: "POST" }).catch(() => null);
   location.href = "/login";

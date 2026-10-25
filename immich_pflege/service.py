@@ -67,21 +67,24 @@ class Pflege:
         self.last_error: str | None = None
 
     # ------------------------------------------------------------ Bibliothek
-    def library(self, refresh: bool = False) -> Library:
-        if not self.clients:
-            raise NotConfigured()
+    def cached_library(self) -> Library | None:
+        """Bibliothek aus Speicher oder Zwischenspeicher – ohne bei Immich einzulesen."""
         with self._lock:
-            if refresh:
-                return self.scan()
             if self._lib is None:
                 cached = Library.load(self.settings.cache_file)
                 if (cached and set(cached.users) == set(self.clients)
                         and cached.immich_url in ("", self.settings.immich_url)):
                     log.info("Bibliothek aus Zwischenspeicher geladen (Stand %s)", cached.scanned_at)
                     self._lib = cached
-                else:
-                    return self.scan()
             return self._lib
+
+    def library(self, refresh: bool = False) -> Library:
+        if not self.clients:
+            raise NotConfigured()
+        with self._lock:
+            if refresh:
+                return self.scan()
+            return self.cached_library() or self.scan()
 
     def scan(self) -> Library:
         if not self.clients:

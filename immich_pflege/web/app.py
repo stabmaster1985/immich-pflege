@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 import re
 import threading
 import time
@@ -26,6 +27,7 @@ from ..config import ConfigError, Settings, normalize_url, update_settings
 from ..logsetup import setup_logging
 from ..rules import RuleError, example_rules, read_rules_raw, save_rules
 from ..service import ActionError, ImmichError, NotConfigured, Pflege, check_server
+from ..scheduler import AutoScan
 from ..version import Version
 from .auth import COOKIE, RENEW_BELOW_S, Sessions, basic_credentials
 
@@ -74,15 +76,24 @@ class RulesSave(BaseModel):
 
 
 def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None = None,
-               ext_http: httpx.Client | None = None, version: Version | None = None) -> FastAPI:
+               ext_http: httpx.Client | None = None, version: Version | None = None,
+               auto_scan_enabled: bool = True) -> FastAPI:
     """Parameter nur für Tests: ``env`` (Umgebung), ``http`` (Immich), ``ext_http`` (GitHub/n8n),
     ``version`` (Versionsquelle)."""
     first = Settings.load(env)
     setup_logging(first.log_file)
 
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        if auto_scan_enabled:
+            app.state.auto_scan.start()
+        yield
+        app.state.auto_scan.stop()
+
     app = FastAPI(title="immich-pflege", version=__version__, docs_url="/api/docs",
-                  redoc_url=None, openapi_url="/api/openapi.json")
+                  redoc_url=None, openapi_url="/api/openapi.json", lifespan=lifespan)
     app.state.service = Pflege(first, http=http)
+    app.state.auto_scan = AutoScan(lambda: app.state.service)
     app.state.version = version or Version("", http=ext_http)
     sessions = Sessions(first.data_dir)
 
@@ -177,7 +188,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
 
     @app.get("/api/status")
     def status(server: bool = True):
-        return svc().status(check_server=server)
+        return {**svc().status(check_server=server), "auto_einlesen": app.state.auto_scan.info()}
 
     @app.post("/api/scan")
     def scan(body: Optional[ScanRequest] = None):

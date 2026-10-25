@@ -14,6 +14,7 @@ dependencies = [
     "typer>=0.12",
     "rich>=13",
     "PyYAML>=6",
+    "tzdata",  # Zeitzonen auch im schlanken Docker-Image
 ]
 
 [project.optional-dependencies]

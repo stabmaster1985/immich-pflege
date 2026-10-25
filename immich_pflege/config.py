@@ -110,6 +110,10 @@ class Settings:
     web_user: str | None = None
     web_password: str | None = None  # nur aus .env (Klartext)
     web_password_hash: str | None = None  # aus der Oberfläche
+    auto_scan: str = "aus"  # aus | taeglich | intervall
+    auto_scan_time: str = "03:00"
+    auto_scan_hours: int = 6
+    timezone: str = "Europe/Berlin"
     update_check: bool = True
     update_repo: str = DEFAULT_REPO
     update_github_token: str = ""  # nur nötig, solange das Repository privat ist
@@ -197,6 +201,10 @@ class Settings:
 
         rules = env.get("RULES_FILE")
         update = dict(
+            auto_scan=pick("AUTO_SCAN", "auto_scan", "aus", parse_auto_scan),
+            auto_scan_time=pick("AUTO_SCAN_TIME", "auto_scan_time", "03:00", parse_time),
+            auto_scan_hours=pick("AUTO_SCAN_HOURS", "auto_scan_hours", 6, parse_scan_hours),
+            timezone=pick("TZ", "timezone", "Europe/Berlin", parse_timezone),
             update_check=pick("UPDATE_CHECK", "update_check", True, lambda v: _bool(v, True)),
             update_repo=pick("UPDATE_REPO", "update_repo", DEFAULT_REPO, parse_repo),
             update_github_token=pick("UPDATE_GITHUB_TOKEN", "update_github_token", "", lambda v: str(v).strip()),
@@ -240,6 +248,10 @@ class Settings:
             "gesperrt": sorted(self.locked),
             "eingerichtet": self.configured,
             "datenordner": str(self.data_dir),
+            "auto_scan": self.auto_scan,
+            "auto_scan_time": self.auto_scan_time,
+            "auto_scan_hours": self.auto_scan_hours,
+            "timezone": self.timezone,
             "update_check": self.update_check,
             "update_repo": self.update_repo,
             "update_github_token_gesetzt": bool(self.update_github_token),
@@ -288,6 +300,10 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
     attempt("location_max_hours", parse_hours)
     attempt("location_include_external", lambda v: _bool(v, False))
 
+    attempt("auto_scan", parse_auto_scan)
+    attempt("auto_scan_time", parse_time)
+    attempt("auto_scan_hours", parse_scan_hours)
+    attempt("timezone", parse_timezone)
     attempt("update_check", lambda v: _bool(v, True))
     attempt("update_repo", parse_repo)
     attempt("update_webhook_url", lambda v: parse_webhook_url(v) if str(v or "").strip() else "")
@@ -353,6 +369,43 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
         raise ConfigError(f"Einstellungen nicht speicherbar in {current.data_dir}: {exc} "
                           f"(Rechte des data-Ordners prüfen: chown 1000:1000)") from exc
     return stored
+
+
+def parse_auto_scan(value: Any) -> str:
+    v = str(value or "").strip().lower().replace("ä", "ae")
+    if v in ("", "0", "false", "nein", "off"):
+        return "aus"
+    if v not in ("aus", "taeglich", "intervall"):
+        raise ConfigError(f"Automatisch einlesen: 'aus', 'taeglich' oder 'intervall' (ist: {value!r})")
+    return v
+
+
+def parse_time(value: Any) -> str:
+    m = re.match(r"^\s*(\d{1,2})[:.](\d{2})\s*$", str(value or ""))
+    if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+        raise ConfigError(f"Uhrzeit bitte als HH:MM angeben, z. B. 03:00 (ist: {value!r})")
+    return f"{int(m.group(1)):02d}:{m.group(2)}"
+
+
+def parse_scan_hours(value: Any) -> int:
+    try:
+        hours = int(float(str(value).replace(",", ".")))
+    except ValueError as exc:
+        raise ConfigError("Intervall muss eine ganze Zahl von Stunden sein") from exc
+    if not 1 <= hours <= 168:
+        raise ConfigError("Intervall muss zwischen 1 und 168 Stunden liegen")
+    return hours
+
+
+def parse_timezone(value: Any) -> str:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    tz = str(value or "").strip()
+    try:
+        ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ConfigError(f"Unbekannte Zeitzone {value!r} – z. B. Europe/Berlin") from exc
+    return tz
 
 
 def _non_empty(value: Any, label: str) -> str:

@@ -57,6 +57,8 @@ Gespeichert wird in `data/einstellungen.json`. Keys werden nie an den Browser zu
 
 Beim ersten Öffnen eines Tabs liest das Tool die Bibliothek ein, was bei großen Bibliotheken ein bis zwei Minuten dauert. Danach liegt sie zwischengespeichert in `data/bibliothek.json`. **Neu einlesen** gibt es als Button, per `pflege einlesen` oder über `POST /api/scan`.
 
+**Automatisch einlesen:** Neue Fotos erscheinen erst nach dem Einlesen. Unter **⚙ Einstellungen → Automatisch einlesen** stellst du ein, ob das Tool das selbst erledigt: **täglich** zu einer Uhrzeit oder **alle X Stunden**. Die Zeitzone ist Europe/Berlin, wählbar, und berücksichtigt Sommer- und Winterzeit. War der Container zum geplanten Zeitpunkt aus, holt das Tool das Einlesen nach. Das nächste Einlesen steht in den Einstellungen und oben in der Statuszeile („auto 03:00“). Ab Werk ist es aus.
+
 Logs: `docker logs immich-pflege` und `data/pflege.log`.
 
 > Von außerhalb des Heimnetzes nur über einen Reverse-Proxy mit HTTPS und mit gesetztem Login. Die API-Keys verlassen nie den Container: Vorschaubilder reicht das Backend durch.
