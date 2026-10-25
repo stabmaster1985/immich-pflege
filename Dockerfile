@@ -20,13 +20,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DATA_DIR=/data
 
 WORKDIR /app
+# Abhängigkeiten in eigener Schicht: wird nur neu gebaut, wenn sich pyproject.toml ändert.
+# Eine Codeänderung baut damit in Sekunden statt alles neu herunterzuladen.
 COPY pyproject.toml ./
-COPY immich_pflege ./immich_pflege
-RUN pip install . \
+RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml', 'rb'))['project']['dependencies']))" \
+      > /tmp/requirements.txt \
+ && pip install -r /tmp/requirements.txt setuptools \
+ && rm /tmp/requirements.txt \
  && groupadd --gid 1000 pflege \
  && useradd --uid 1000 --gid pflege --no-create-home --shell /usr/sbin/nologin pflege \
  && mkdir -p /data \
  && chown pflege:pflege /data
+COPY immich_pflege ./immich_pflege
+RUN pip install --no-deps --no-build-isolation . && rm -rf build *.egg-info
 COPY --from=version /version.json /app/version.json
 
 USER pflege
