@@ -8,7 +8,7 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 | **Ohne Ort** | Medien ohne GPS bekommen einen Ortsvorschlag mit Sicherheit (sicher, wahrscheinlich, unsicher) aus den GPS-Fotos beider Benutzer, zusammengefasst nach Ort und Serie. Für den Rest gibt es die Ortssuche von Immich. Screenshots werden ausgeblendet. |
 | **Aufräumen** | Speicherfresser (große Videos, Bildschirmaufnahmen, doppelte Live-Photo-Videos), Serienbilder (das schärfste bleibt oder alles stapeln), **Stapeln aus eigenen Alben**, **Alben aufräumen** (doppelte von beiden Benutzern zusammenführen, leere/Mini-Alben), unscharfe und dunkle Fotos, falsche Aufnahmezeiten samt Kamera-Zeitversatz, Papierkorb-Übersicht. |
 | **Alben** | Erkennt Reisen (weg von zu Hause, beide Benutzer zusammen) und schlägt Alben vor. Vorher wird gegen alle vorhandenen Alben beider Benutzer abgeglichen: schon vorhanden, ergänzen oder neu. Neue Alben werden mit dem anderen Benutzer geteilt. |
-| **Tags** | Fertige Vorschläge zum Abhaken (Länder, Kameras, Screenshots, WhatsApp) und Suche mit Immichs KI (Hund, Strand, Quittung …): erstes unpassendes Bild antippen, alles davor wird getaggt. Eigene Regeln für Sonderfälle. Tags werden nur ergänzt, nie entfernt. |
+| **Tags** | Fertige Vorschläge zum Abhaken (Länder, Kameras, Screenshots, WhatsApp) und Suche mit Immichs KI (Hund, Strand, Quittung …): erstes unpassendes Bild antippen, alles davor wird getaggt. Eigene Regeln für Sonderfälle. Tags werden nur ergänzt, nie entfernt. **Archivieren** nimmt Screenshots, WhatsApp-Bilder, Quittungen u. Ä. aus der Zeitleiste, ohne zu löschen. |
 | **Übersicht** | Kennzahlen je Benutzer, offene Aufgaben, Aufnahmen je Jahr, Erledigtes je Monat. Auf Wunsch wöchentlich als Nachricht per ntfy oder Telegram. |
 
 Alles startet als **Vorschau**. In der Oberfläche wird Bestätigtes zuerst nur **vorgemerkt** und verschwindet aus der Übersicht. Unter **✓ Vorgemerkt** prüfst du alles noch einmal und überträgst es dann per Klick an Immich. Jede Übertragung steht im **Verlauf** und lässt sich dort rückgängig machen (außer Orten, siehe Hilfe).
@@ -218,6 +218,7 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/api/suggestions` | Tag-Vorschläge aus den Daten (`ausgeblendet=true` für ausgeblendete) und Begriffe der KI-Suche |
 | GET | `/api/suggestions/smart` | KI-Suche: `begriff` (aus der Liste) oder `suche` (eigener Text), optional `tag` |
 | POST | `/api/staged/suggestions`, `/api/staged/smart` | Vorschläge (`ids`) bzw. KI-Treffer (`tag`, `ids`) vormerken |
+| POST | `/api/staged/archive` | Archivieren vormerken: `vorschlag` (ID) oder `ids`, optional `label` |
 | POST | `/api/suggestions/hide` | „Kein Interesse“: `ids`, mit `undo` zurück |
 | GET | `/api/album-care` | Alben aufräumen: doppelt, fast gleich, leer, mini |
 | POST | `/api/staged/album-care` | vormerken: `id`, `aktion` (`zusammenfuehren`/`loeschen`), `ziel`, `loeschen` |

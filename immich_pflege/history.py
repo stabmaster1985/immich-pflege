@@ -11,6 +11,7 @@ ein kleines Wörterbuch ``{"op": …, "user": …, …}``, ausgeführt mit dem K
 - ``zeit``             {ids, minuten}     Aufnahmezeit zurückverschieben
 - ``stapel_aufloesen`` {stack, ids}       angelegten Stapel wieder auflösen
 - ``album_hinzufuegen`` {album, ids}      wieder ins Album legen
+- ``sichtbarkeit``     {ids, sichtbarkeit}  Archivieren zurücknehmen (timeline)
 - ``album_wiederherstellen`` {name, rollen, medien}  gelöschtes Album neu anlegen (mit Inhalt und Freigaben)
 """
 
@@ -169,6 +170,12 @@ def _undo_one(lib: Library | None, client: ImmichClient, op: dict[str, Any]) -> 
         if lib and op["album"] in lib.albums:
             album = lib.albums[op["album"]]
             album["medien"] = sorted(set(album["medien"]) | set(op["ids"]))
+    elif kind == "sichtbarkeit":
+        client.set_visibility(op["ids"], op["sichtbarkeit"])
+        if lib:
+            for i in op["ids"]:
+                if i in lib.assets:
+                    lib.assets[i].visibility = op["sichtbarkeit"]
     elif kind == "zeit":
         client.shift_time(op["ids"], op["minuten"])
         if lib:

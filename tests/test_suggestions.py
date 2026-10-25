@@ -69,3 +69,23 @@ def test_smart_search_cutoff_and_tag(web, state):
     custom = web.get("/api/suggestions/smart", params={"suche": "dog on the beach", "tag": "Tiere/Strandhund"}).json()
     assert custom["tag"] == "Tiere/Strandhund"
     assert web.get("/api/suggestions/smart").status_code == 400
+
+
+def test_archive_suggestion_and_smart_and_undo(web, state):
+    wa = next(s for s in web.get("/api/suggestions").json()["vorschlaege"] if s["tag"] == "Quelle/WhatsApp")
+    assert wa["archivierbar"] == 12
+    assert web.post("/api/staged/archive", json={"vorschlag": wa["id"]}).json()["vorgemerkt"] == 12
+    assert wa["id"] not in {s["id"] for s in web.get("/api/suggestions").json()["vorschlaege"]}
+    smart = web.get("/api/suggestions/smart", params={"begriff": "Hund"}).json()
+    web.post("/api/staged/archive", json={"ids": [m["id"] for m in smart["medien"][:2]], "label": "Hund"})
+    staged = web.get("/api/staged").json()
+    assert staged["nach_typ"]["archiv"] == 2
+    assert web.post("/api/staged/apply", json={}).json()["uebertragen"] == 2
+    archived = [a for a in state.assets.values() if a["visibility"] == "archive"]
+    assert len(archived) == 14
+    wa_after = next(s for s in web.get("/api/suggestions").json()["vorschlaege"] if s["tag"] == "Quelle/WhatsApp")
+    assert wa_after["archivierbar"] == 0 and wa_after["neu"] == 12  # taggen ginge noch
+    for e in web.get("/api/history").json()["eintraege"]:
+        assert e["typ"] == "archiv"
+        web.post(f"/api/history/{e['id']}/undo")
+    assert not any(a["visibility"] == "archive" for a in state.assets.values())

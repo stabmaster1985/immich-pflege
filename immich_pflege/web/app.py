@@ -156,6 +156,12 @@ class SmartStage(BaseModel):
     begriff: Optional[str] = None
 
 
+class ArchiveStage(BaseModel):
+    vorschlag: Optional[str] = None  # Vorschlag aus den Daten (Screenshots, WhatsApp …)
+    ids: Optional[list[str]] = None  # oder einzelne Medien (z. B. aus der KI-Suche)
+    label: Optional[str] = Field(None, max_length=200)
+
+
 class SuggestionHide(BaseModel):
     ids: list[str]
     undo: bool = False
@@ -612,6 +618,12 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/staged/smart")
     def stage_smart(body: SmartStage):
         return svc().stage_smart(body.tag, body.ids, body.begriff)
+
+    @app.post("/api/staged/archive")
+    def stage_archive(body: ArchiveStage):
+        if body.vorschlag:
+            return svc().stage_archive_suggestion(body.vorschlag)
+        return svc().stage_archive(body.ids or [], body.label)
 
     @app.post("/api/suggestions/hide")
     def suggestions_hide(body: SuggestionHide):

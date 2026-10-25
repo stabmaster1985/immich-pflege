@@ -206,6 +206,14 @@ class ImmichClient:
             n += len(batch)
         return n
 
+    def set_visibility(self, ids: Iterable[str], visibility: str) -> int:
+        """archive = aus der Zeitleiste nehmen (bleibt in Suche und Alben), timeline = zurück."""
+        n = 0
+        for batch in chunked(ids):
+            self.request("PUT", "/assets", json={"ids": batch, "visibility": visibility})
+            n += len(batch)
+        return n
+
     def trash(self, ids: Iterable[str]) -> int:
         n = 0
         for batch in chunked(ids):

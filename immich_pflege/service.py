@@ -608,13 +608,15 @@ class Pflege:
             if not getattr(self, "_sugg_cache", None) or self._sugg_cache[0] != key:
                 pairs = self._suggestion_rules()
                 previews = preview_rules([r for _, r in pairs], lib, Resolver(self.clients)) if pairs else []
-                self._sugg_cache = (key, [{**d, "tag": r.tags[0], **{k: p[k] for k in
-                                           ("treffer", "schon_getaggt", "neu", "beispiele", "benutzer")}}
+                self._sugg_cache = (key, [{**d, "tag": r.tags[0], "archivierbar": len(self._archivable(lib, r)),
+                                           **{k: p[k] for k in ("treffer", "schon_getaggt", "neu", "beispiele", "benutzer")}}
                                           for (d, r), p in zip(pairs, previews)])
             items = self._sugg_cache[1]
         off = self.hidden_suggestions().ids
         staged = {e.get("key") for e in self.staging.of_type("tag")}
-        shown = [s for s in items if (s["id"] in off) == hidden and s["id"] not in staged and (hidden or s["neu"])]
+        staged |= {e.get("key") for e in self.staging.of_type("archiv")}
+        shown = [s for s in items if (s["id"] in off) == hidden and s["id"] not in staged
+                 and (hidden or s["neu"] or (s["art"] == "quelle" and s["archivierbar"]))]
         return {"stand": lib.scanned_at, "vorschlaege": shown, "ausgeblendet": sum(1 for s in items if s["id"] in off),
                 "begriffe": [{"name": n, "tag": t} for n, _, t in BEGRIFFE]}
 
@@ -664,6 +666,51 @@ class Pflege:
         self.staging.add("tag", f"🏷 {label or tag}: {len(chosen)} Medien (KI-Suche) → {tag}",
                          {"medien": by_user, "tags": [tag]}, [lib.assets[i].summary() for i in chosen[:8]], len(chosen))
         return {"vorgemerkt": len(chosen)}
+
+    # ----------------------------------------------------------- Archivieren
+    @staticmethod
+    def _archivable(lib: Library, rule: Rule) -> list[str]:
+        return [a.id for a in lib.assets.values() if a.visibility != "archive" and rule.matches_local(a)]
+
+    def stage_archive_suggestion(self, sugg_id: str) -> dict[str, Any]:
+        """Vorschlag (z. B. Screenshots, WhatsApp) archivieren statt taggen."""
+        pairs = {d["id"]: (d, r) for d, r in self._suggestion_rules()}
+        if sugg_id not in pairs:
+            raise ActionError("Vorschlag nicht (mehr) vorhanden – bitte neu laden")
+        d, rule = pairs[sugg_id]
+        lib = self.library()
+        ids = self._archivable(lib, rule)
+        if not ids:
+            raise ActionError("Alles schon archiviert")
+        return self._stage_archive(lib, ids, d["titel"], key=sugg_id)
+
+    def stage_archive(self, ids: list[str], label: str | None = None) -> dict[str, Any]:
+        lib = self.library()
+        chosen = [i for i in ids if i in lib.assets and lib.assets[i].visibility != "archive"]
+        if not chosen:
+            raise ActionError("Keine Medien ausgewählt (oder schon archiviert)")
+        return self._stage_archive(lib, chosen, label or "Auswahl")
+
+    def _stage_archive(self, lib: Library, ids: list[str], label: str, key: str | None = None) -> dict[str, Any]:
+        by_user: dict[str, list[str]] = {}
+        for i in ids:
+            by_user.setdefault(lib.assets[i].owner, []).append(i)
+        self.staging.add("archiv", f"🗄 {label}: {len(ids)} Medien archivieren (aus der Zeitleiste nehmen)",
+                         {"medien": by_user, "alle_medien": ids}, [lib.assets[i].summary() for i in ids[:8]], len(ids), key=key)
+        return {"vorgemerkt": len(ids)}
+
+    def _archive(self, lib: Library, by_user: dict[str, list[str]]) -> dict[str, Any]:
+        done, undo = 0, []
+        for user, ids in by_user.items():
+            ids = [i for i in ids if i in lib.assets and lib.assets[i].visibility != "archive"]
+            if not ids:
+                continue
+            self.clients[user].set_visibility(ids, "archive")
+            for i in ids:
+                lib.assets[i].visibility = "archive"
+            done += len(ids)
+            undo.append({"op": "sichtbarkeit", "user": user, "ids": ids, "sichtbarkeit": "timeline"})
+        return {"archiviert": done, "rueck": undo}
 
     def hide_suggestions(self, ids: list[str], undo: bool = False) -> dict[str, Any]:
         self.hidden_suggestions().update(ids, remove=undo)
@@ -727,6 +774,8 @@ class Pflege:
                         res = execute_stacks(lib, self.clients, e["daten"])
                     elif e["typ"] == "albenpflege":
                         res = execute_care(lib, self.clients, e["daten"])
+                    elif e["typ"] == "archiv":
+                        res = self._archive(lib, e["daten"]["medien"])
                     else:
                         res = self._apply_staged_tag(e["daten"])
                 except (ImmichError, ActionError, RuleError, AlbumError) as exc:
@@ -738,7 +787,8 @@ class Pflege:
                          "aufraeumen": lambda r: r["album"] + r["papierkorb"], "ort": lambda r: r["aktualisiert"],
                          "album": lambda r: r["hinzugefuegt"], "tag": lambda r: r["getaggt"],
                          "zeit": lambda r: r["verschoben"], "stapel": lambda r: r["medien"],
-                         "albenpflege": lambda r: r["hinzugefuegt"] + r["geloescht"]}[e["typ"]](res)
+                         "albenpflege": lambda r: r["hinzugefuegt"] + r["geloescht"],
+                         "archiv": lambda r: r["archiviert"]}[e["typ"]](res)
                 self._record(e["typ"], e["titel"], count, res, "oberflaeche")
                 results.append({"id": e["id"], "titel": e["titel"], "ergebnis": res})
             self.staging.remove(done)

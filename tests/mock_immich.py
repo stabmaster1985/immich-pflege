@@ -422,6 +422,8 @@ def create_app(state: MockState) -> FastAPI:
                 a["exifInfo"]["longitude"] = body["longitude"]
             if "duplicateId" in body:
                 a["duplicateId"] = body["duplicateId"]
+            if body.get("visibility"):
+                a["visibility"] = body["visibility"]
             if body.get("dateTimeRelative"):
                 for key in ("localDateTime", "fileCreatedAt"):
                     if a[key]:

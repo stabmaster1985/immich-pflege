@@ -898,8 +898,10 @@ function renderSuggestion(s) {
       h("button", { type: "button", class: "btn small edit", onclick: () => hideSuggestion(s, g.hidden) }, g.hidden ? "Wieder zeigen" : "Kein Interesse")),
     h("div", { class: "muted small" }, `${s.grund} · ${s.neu} noch ohne Tag${s.schon_getaggt ? `, ${s.schon_getaggt} schon getaggt` : ""}`),
     s.beispiele.length ? h("div", { class: "strip" }, s.beispiele.map((m) => thumb(m))) : null,
-    g.hidden || !s.neu ? null : h("div", { class: "row-gap", style: "margin-top:8px" },
-      h("button", { type: "button", class: "btn small primary", onclick: (e) => stageSuggestions([s], e.currentTarget) }, `Vormerken (${s.neu})`)));
+    g.hidden ? null : h("div", { class: "row-gap", style: "margin-top:8px" },
+      s.neu ? h("button", { type: "button", class: "btn small primary", onclick: (e) => stageSuggestions([s], e.currentTarget) }, `Taggen (${s.neu})`) : null,
+      s.art === "quelle" && s.archivierbar ? h("button", { type: "button", class: "btn small", title: "Aus der Zeitleiste nehmen – bleibt in Suche und Alben",
+        onclick: (e) => stageArchive({ vorschlag: s.id }, e.currentTarget) }, `Archivieren (${s.archivierbar})`) : null));
 }
 
 async function stageSuggestions(list, btn) {
@@ -909,6 +911,21 @@ async function stageSuggestions(list, btn) {
     toast(`${n(list.length, "Vorschlag", "Vorschläge")} vorgemerkt`);
     S.stage.loaded = false;
     await Promise.all([loadSuggestions(), loadTab("stage", true)]);
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
+
+async function stageArchive(body, btn) {
+  busy(btn, true);
+  try {
+    const r = await api("api/staged/archive", { method: "POST", body });
+    toast(`${n(r.vorgemerkt, "Medium", "Medien")} zum Archivieren vorgemerkt`);
+    S.stage.loaded = false;
+    loadTab("stage", true);
+    await loadSuggestions();
+    if (body.ids && S.sug.smart) {
+      const gone = new Set(body.ids);
+      S.sug.smart.medien = S.sug.smart.medien.filter((m) => !gone.has(m.id)); S.sug.cut = null; renderSmart();
+    }
   } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
 }
 
@@ -1972,7 +1989,7 @@ function yearChart(years) {
   return h("div", {}, h("div", { class: "muted small" }, `meiste Aufnahmen: ${peak.jahr} (${max.toLocaleString("de-DE")})`), wrap, tip);
 }
 
-const DONE_LABEL = { duplikat: "Duplikate", aufraeumen: "Aufgeräumt", stapel: "Gestapelt", albenpflege: "Alben", zeit: "Zeit", ort: "Verortet", album: "In Alben", tag: "Getaggt", papierkorb: "Wiederhergestellt" };
+const DONE_LABEL = { duplikat: "Duplikate", aufraeumen: "Aufgeräumt", archiv: "Archiviert", stapel: "Gestapelt", albenpflege: "Alben", zeit: "Zeit", ort: "Verortet", album: "In Alben", tag: "Getaggt", papierkorb: "Wiederhergestellt" };
 function doneTable(rows) {
   const keys = Object.keys(DONE_LABEL).filter((k) => rows.some((r) => r[k]));
   return h("table", { class: "tbl" },
@@ -2203,7 +2220,7 @@ async function ignoreTrip(t, undo) {
 }
 
 /* -------------------------------------------------------- Vorgemerkt */
-const STAGE_TYPES = [["duplikat", "Duplikate"], ["aufraeumen", "Aufräumen"], ["stapel", "Stapel"], ["albenpflege", "Alben aufräumen"], ["zeit", "Aufnahmezeit"], ["ort", "Orte"], ["album", "Alben"], ["tag", "Tags"]];
+const STAGE_TYPES = [["duplikat", "Duplikate"], ["aufraeumen", "Aufräumen"], ["archiv", "Archivieren"], ["stapel", "Stapel"], ["albenpflege", "Alben aufräumen"], ["zeit", "Aufnahmezeit"], ["ort", "Orte"], ["album", "Alben"], ["tag", "Tags"]];
 const STAGE_ACTION = { papierkorb: "Papierkorb", album: "Prüf-Album", keine: "–" };
 
 // Nach dem Vormerken: Quelle neu laden (Vorgemerktes ist dort weg) und Zähler aktualisieren
@@ -2249,6 +2266,7 @@ async function undoHistory(e, btn) {
       zeit: "Die Aufnahmezeit wird wieder zurückverschoben.",
       aufraeumen: "Medien kommen aus dem Papierkorb zurück bzw. wieder aus dem Prüf-Album heraus.",
       stapel: "Die Stapel werden aufgelöst; aus dem Album genommene Fotos kommen wieder hinein.",
+      archiv: "Die Medien kommen zurück in die Zeitleiste.",
       albenpflege: "Hinzugefügte Fotos kommen wieder heraus, Freigaben werden zurückgenommen, gelöschte Alben mit Inhalt neu angelegt.",
     }[e.typ] || "")],
     okLabel: "Rückgängig",
@@ -2317,7 +2335,7 @@ function renderStaged() {
   updateActionbar();
 }
 
-const STAGE_SOURCE = { duplikat: "dup", aufraeumen: "cln", stapel: "cln", albenpflege: "cln", zeit: "cln", ort: "loc", album: "alb", tag: "tags" };
+const STAGE_SOURCE = { duplikat: "dup", aufraeumen: "cln", archiv: "tags", stapel: "cln", albenpflege: "cln", zeit: "cln", ort: "loc", album: "alb", tag: "tags" };
 
 async function unstage(e, btn) {
   busy(btn, true);
@@ -2466,11 +2484,13 @@ function updateActionbar() {
       buttons.push(h("button", { class: "btn small primary", type: "button", onclick: (e) => applyTags(e.currentTarget) }, "Tags vormerken"));
     } else if (g.smart && g.cut) {
       info.textContent = `KI-Suche: ${n(g.cut, "Medium", "Medien")}`;
-      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !g.tag.trim(), onclick: (e) => stageSmart(e.currentTarget) }, `als „${g.tag}“ vormerken`));
+      buttons.push(h("button", { class: "btn small", type: "button", title: "Aus der Zeitleiste nehmen – bleibt in Suche und Alben",
+        onclick: (e) => stageArchive({ ids: g.smart.medien.slice(0, g.cut).map((m) => m.id), label: g.smart.begriff || g.smart.suche }, e.currentTarget) }, "Archivieren"));
+      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !g.tag.trim(), onclick: (e) => stageSmart(e.currentTarget) }, `als „${g.tag}“ taggen`));
     } else {
       const open = g.hidden ? [] : g.items.filter((s) => s.neu);
       info.textContent = open.length ? "Alle Vorschläge:" : "";
-      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !open.length, onclick: (e) => stageSuggestions(open, e.currentTarget) }, `Vormerken (${open.length})`));
+      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !open.length, onclick: (e) => stageSuggestions(open, e.currentTarget) }, `Alle taggen (${open.length})`));
     }
   }
   $("#ab-buttons").replaceChildren(...buttons);

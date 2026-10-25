@@ -15,6 +15,10 @@ Das Tool schlägt aus euren Daten Tags vor und zählt genau, wie viele Medien no
 
 **Vormerken** übernimmt einen Vorschlag, **Vormerken (n)** unten alle. **Kein Interesse** blendet ihn dauerhaft aus (unter „ausgeblendete“ zurückholbar). Kommen später neue passende Fotos dazu, erscheint der Vorschlag wieder mit der neuen Anzahl.
 
+## Archivieren statt löschen
+
+Screenshots, WhatsApp-Bilder, Quittungen oder Dokumente stören beim Durchblättern, sollen aber nicht weg. Dafür gibt es **Archivieren**: Die Medien verschwinden aus der Zeitleiste, bleiben aber in der Suche, in Alben und im Archiv von Immich. Den Knopf gibt es bei den Vorschlägen **Screenshots** und **WhatsApp-Bilder** und bei der **KI-Suche**, z. B. für alle Treffer zu „Quittung“. **Rückgängig** holt sie zurück in die Zeitleiste.
+
 ## Mit der KI-Suche finden
 
 Immich versteht Bildinhalte (maschinelles Lernen, „Smart Search“). Das Tool nutzt diese Suche für Begriffe wie **Hund, Katze, Strand, Berge, Schnee, Sonnenuntergang, Feuerwerk, Geburtstag, Weihnachten, Essen, Auto, Quittung, Dokument** – oder einen eigenen Begriff (Englisch funktioniert mit Immichs Standardmodell am besten, z. B. „dog on the beach“).
