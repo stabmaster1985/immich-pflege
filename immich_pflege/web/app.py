@@ -26,6 +26,7 @@ from .. import __version__
 from ..client import ImmichClient
 from ..config import ConfigError, Settings, normalize_url, update_settings
 from ..logsetup import setup_logging
+from ..report import ReportError, Reporter, build_text
 from ..rules import RuleError, example_rules, read_rules_raw, save_rules
 from ..service import ActionError, ImmichError, NotConfigured, Pflege, check_server
 from ..scheduler import AutoScan
@@ -125,6 +126,10 @@ class TimeStage(BaseModel):
     eintraege: list[TimeSelection]
 
 
+class TrashRestore(BaseModel):
+    ids: Optional[list[str]] = None  # ohne = alle
+
+
 class TripSelection(BaseModel):
     id: str
     album: Optional[str] = None  # weglassen = Vorschlag, null = neues Album, sonst Album-ID
@@ -178,6 +183,8 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     app.state.service = Pflege(first, http=http)
     app.state.service.background_albums = background_albums
     app.state.auto_scan = AutoScan(lambda: app.state.service)
+    app.state.reporter = Reporter(lambda: app.state.service, http=ext_http)
+    app.state.auto_scan.jobs.append(app.state.reporter.tick)
     app.state.version = version or Version("", http=ext_http)
     sessions = Sessions(first.data_dir)
 
@@ -578,6 +585,30 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/staged/albums")
     def stage_albums(body: AlbumsApply):
         return svc().stage_albums([t.model_dump(exclude_unset=True) for t in body.trips])
+
+    # ------------------------------------------------- Übersicht, Papierkorb
+    @app.get("/api/dashboard")
+    def dashboard():
+        return {**svc().dashboard(), "bericht": app.state.reporter.info()}
+
+    @app.get("/api/trash")
+    def trash():
+        return svc().trash_view()
+
+    @app.post("/api/trash/restore")
+    def trash_restore(body: Optional[TrashRestore] = None):
+        return svc().trash_restore((body or TrashRestore()).ids)
+
+    @app.get("/api/report")
+    def report():
+        return {**app.state.reporter.info(), "text": build_text(svc().dashboard())}
+
+    @app.post("/api/report/test")
+    def report_test():
+        try:
+            return {"gesendet": True, "text": app.state.reporter.send(test=True)}
+        except ReportError as exc:
+            return JSONResponse({"fehler": f"Wochenbericht: {exc}"}, 502)
 
     # -------------------------------------------------------------- Verlauf
     @app.get("/api/history")

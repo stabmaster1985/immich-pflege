@@ -121,6 +121,13 @@ class Settings:
     auto_scan_time: str = "03:00"
     auto_scan_hours: int = 6
     auto_stage_locations: bool = False  # nach dem automatischen Einlesen sichere Orte vormerken
+    report_channel: str = "aus"  # Wochenbericht: aus | ntfy | telegram
+    report_day: int = 0  # 0 = Montag
+    report_time: str = "08:00"
+    report_ntfy_url: str = ""  # z. B. https://ntfy.sh/mein-thema
+    report_ntfy_token: str = ""
+    report_telegram_token: str = ""
+    report_telegram_chat: str = ""
     timezone: str = "Europe/Berlin"
     update_check: bool = True
     update_repo: str = DEFAULT_REPO
@@ -219,6 +226,13 @@ class Settings:
             auto_scan_hours=pick("AUTO_SCAN_HOURS", "auto_scan_hours", 6, parse_scan_hours),
             auto_stage_locations=pick("AUTO_STAGE_LOCATIONS", "auto_stage_locations", False,
                                       lambda v: _bool(v, False)),
+            report_channel=pick("REPORT_CHANNEL", "report_channel", "aus", parse_report_channel),
+            report_day=pick("REPORT_DAY", "report_day", 0, parse_weekday),
+            report_time=pick("REPORT_TIME", "report_time", "08:00", parse_time),
+            report_ntfy_url=pick("REPORT_NTFY_URL", "report_ntfy_url", "", parse_webhook_url),
+            report_ntfy_token=pick("REPORT_NTFY_TOKEN", "report_ntfy_token", "", lambda v: str(v).strip()),
+            report_telegram_token=pick("REPORT_TELEGRAM_TOKEN", "report_telegram_token", "", lambda v: str(v).strip()),
+            report_telegram_chat=pick("REPORT_TELEGRAM_CHAT", "report_telegram_chat", "", lambda v: str(v).strip()),
             timezone=pick("TZ", "timezone", "Europe/Berlin", parse_timezone),
             update_check=pick("UPDATE_CHECK", "update_check", True, lambda v: _bool(v, True)),
             update_repo=pick("UPDATE_REPO", "update_repo", DEFAULT_REPO, parse_repo),
@@ -282,6 +296,13 @@ class Settings:
             "auto_scan_time": self.auto_scan_time,
             "auto_scan_hours": self.auto_scan_hours,
             "auto_stage_locations": self.auto_stage_locations,
+            "report_channel": self.report_channel,
+            "report_day": self.report_day,
+            "report_time": self.report_time,
+            "report_ntfy_url": self.report_ntfy_url,
+            "report_ntfy_token_gesetzt": bool(self.report_ntfy_token),
+            "report_telegram_token_gesetzt": bool(self.report_telegram_token),
+            "report_telegram_chat": self.report_telegram_chat,
             "timezone": self.timezone,
             "update_check": self.update_check,
             "update_repo": self.update_repo,
@@ -342,6 +363,11 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
     attempt("auto_scan_time", parse_time)
     attempt("auto_scan_hours", parse_scan_hours)
     attempt("auto_stage_locations", lambda v: _bool(v, False))
+    attempt("report_channel", parse_report_channel)
+    attempt("report_day", parse_weekday)
+    attempt("report_time", parse_time)
+    attempt("report_ntfy_url", lambda v: parse_webhook_url(v) if str(v or "").strip() else "")
+    attempt("report_telegram_chat", lambda v: str(v or "").strip())
     attempt("timezone", parse_timezone)
     attempt("update_check", lambda v: _bool(v, True))
     attempt("update_repo", parse_repo)
@@ -350,7 +376,7 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
     if stored.get("update_webhook_header") == "" and "update_webhook_secret" not in current.locked:
         stored.pop("update_webhook_secret", None)  # ohne Header-Name kein Header-Wert
         changes = {k: v for k, v in changes.items() if k != "update_webhook_secret"}
-    for secret in ("update_github_token", "update_webhook_secret"):
+    for secret in ("update_github_token", "update_webhook_secret", "report_ntfy_token", "report_telegram_token"):
         # leer = unverändert, null = löschen
         if secret in changes and not blocked(secret):
             if changes[secret] is None:
@@ -459,6 +485,29 @@ def parse_min_km(value: Any) -> int:
 
 def parse_min_media(value: Any) -> int:
     return _int_range(value, 3, 1000, "Mindestzahl Medien für Albumvorschläge")
+
+
+def parse_report_channel(value: Any) -> str:
+    v = str(value or "").strip().lower()
+    if v in ("", "0", "false", "nein", "off"):
+        return "aus"
+    if v not in ("aus", "ntfy", "telegram"):
+        raise ConfigError(f"Wochenbericht: 'aus', 'ntfy' oder 'telegram' (ist: {value!r})")
+    return v
+
+
+def parse_weekday(value: Any) -> int:
+    names = ["mo", "di", "mi", "do", "fr", "sa", "so"]
+    v = str(value).strip().lower()[:2]
+    if v in names:
+        return names.index(v)
+    try:
+        n = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"Wochentag: 0–6 oder Mo–So (ist: {value!r})") from exc
+    if not 0 <= n <= 6:
+        raise ConfigError("Wochentag: 0 (Montag) bis 6 (Sonntag)")
+    return n
 
 
 def parse_auto_scan(value: Any) -> str:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import replace
+from datetime import datetime, timedelta
 import time
 from typing import Any
 
@@ -22,6 +23,7 @@ from .timefix import (ARTEN as TIME_ARTEN, execute_shifts, find_fixes, fmt_offse
                       summary as time_summary)
 from .imagehash import HashProgress, HashStore, compute_missing, similar_pairs
 from .library import Library, apply_album_membership, read_albums, scan_library
+from .models import Asset
 from .location import (LEVELS, LocationChange, analyze, execute_location_changes, level_at_least,
                        month_facets, month_key, month_label, place_facets, place_key, resolve_locations)
 from .rules import Resolver, Rule, RuleError, apply as apply_rules, load_rules, preview as preview_rules
@@ -955,6 +957,90 @@ class Pflege:
             if record:  # sonst trägt der Aufrufer (Vormerkliste) in den Verlauf ein
                 self._record("tag", "🏷 " + ", ".join(r["name"] for r in res), out["getaggt"], out, "api")
             return out
+
+    # ------------------------------------------------------------ Übersicht
+    def dashboard(self) -> dict[str, Any]:
+        """Kennzahlen für die Übersicht und den Wochenbericht (nur aus dem Zwischenspeicher)."""
+        lib = self.library()
+        users: dict[str, dict[str, int]] = {}
+        years: dict[str, dict[str, int]] = {}
+        for a in lib.assets.values():
+            u = users.setdefault(a.owner, {"medien": 0, "fotos": 0, "videos": 0, "extern": 0, "groesse": 0,
+                                           "ohne_gps": 0})
+            u["medien"] += 1
+            u["videos" if a.type == "VIDEO" else "fotos"] += 1
+            u["extern"] += a.is_external
+            u["groesse"] += a.file_size or 0
+            u["ohne_gps"] += not a.has_gps
+            if a.local_dt:
+                y = years.setdefault(str(a.local_dt.year), {"medien": 0, "groesse": 0})
+                y["medien"] += 1
+                y["groesse"] += a.file_size or 0
+        dup = self.duplicates_view(limit=1)
+        loc = self.no_location_view(overview=True)
+        cln = self.cleanup_view(limit=1)
+        tf = self.timefix_view(limit=1)
+        alb = self.albums_view(limit=1) if not self.albums_pending() else None
+        months = self.history.per_month()
+        return {
+            "stand": lib.scanned_at,
+            "benutzer": users,
+            "gesamt": {k: sum(u[k] for u in users.values()) for k in ("medien", "fotos", "videos", "groesse", "ohne_gps")},
+            "jahre": [{"jahr": k, **v} for k, v in sorted(years.items())],
+            "offen": {
+                "duplikate": dup["offen"],
+                "ohne_ort": loc["medien"],
+                "ort_vorschlaege": loc["mit_vorschlag"],
+                "ort_sicher": loc["nach_sicherheit"]["hoch"],
+                "alben": alb["offen"] if alb else None,
+                "aufraeumen": sum(v["anzahl"] for v in cln["arten"].values()),
+                "aufraeumen_groesse": sum(v["groesse"] for v in cln["arten"].values()),
+                "zeit": sum(tf["arten"].values()),
+                "vorgemerkt": self.staging.summary()["anzahl"],
+            },
+            "erledigt": [{"monat": m, **v} for m, v in sorted(months.items())[-12:]],
+        }
+
+    # ------------------------------------------------------------ Papierkorb
+    def trash_view(self) -> dict[str, Any]:
+        if not self.clients:
+            raise NotConfigured()
+        first = next(iter(self.clients.values()))
+        days = first.server_config().get("trashDays")
+        moved = {}  # vom Tool verschoben: Medium -> Zeitpunkt (aus dem Verlauf)
+        for e in self.history.entries:
+            for op in e["rueck"]:
+                if op["op"] == "wiederherstellen" and not e["rueckgaengig"]:
+                    for i in op["ids"]:
+                        moved[i] = e["zeit"]
+        users, items = {}, []
+        for name, client in self.clients.items():
+            own = [Asset.from_api(raw, name) for raw in client.trashed()]
+            users[name] = {"anzahl": len(own), "groesse": sum(a.file_size or 0 for a in own)}
+            items += own
+        items.sort(key=lambda a: moved.get(a.id, ""), reverse=True)
+        out = []
+        for a in items[:200]:
+            d = a.summary()
+            if a.id in moved:
+                d["verschoben"] = moved[a.id]
+                if days:
+                    d["endgueltig"] = (datetime.fromisoformat(moved[a.id]) + timedelta(days=days)).isoformat(timespec="minutes")
+            out.append(d)
+        return {"tage": days, "benutzer": users, "anzahl": len(items),
+                "groesse": sum(u["groesse"] for u in users.values()), "medien": out}
+
+    def trash_restore(self, ids: list[str] | None = None) -> dict[str, Any]:
+        """Aus dem Papierkorb holen (ohne ids: alle). Danach neu einlesen, damit sie wieder auftauchen."""
+        restored = 0
+        for name, client in self.clients.items():
+            own = [raw["id"] for raw in client.trashed()]
+            chosen = [i for i in own if ids is None or i in ids]
+            if chosen:
+                restored += client.restore_trash(chosen)
+        if restored:
+            self.history.add("papierkorb", f"♻️ {restored} Medien aus dem Papierkorb geholt", restored, [], "oberflaeche")
+        return {"wiederhergestellt": restored}
 
     # ------------------------------------------------------------ Verlauf
     def _record(self, typ: str, title: str, count: int, res: dict[str, Any], source: str) -> None:

@@ -52,6 +52,7 @@ class AutoScan:
         self.last_run: datetime | None = None
         self.last_error: str | None = None
         self._last_attempt: datetime | None = None
+        self.jobs: list[Callable[[], None]] = []  # weitere Aufgaben je Takt (z. B. Wochenbericht)
 
     def _last_scan(self) -> datetime | None:
         lib = self._get_service().cached_library()  # liest nie selbst bei Immich ein
@@ -127,7 +128,8 @@ class AutoScan:
 
     def _loop(self) -> None:
         while not self._stop.wait(TICK_S):
-            try:
-                self.tick()
-            except Exception:  # der Zeitplaner darf nie sterben
-                log.exception("Fehler im Zeitplaner")
+            for job in (self.tick, *self.jobs):
+                try:
+                    job()
+                except Exception:  # der Zeitplaner darf nie sterben
+                    log.exception("Fehler im Zeitplaner")

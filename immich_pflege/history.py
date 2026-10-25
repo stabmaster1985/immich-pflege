@@ -28,7 +28,10 @@ from .models import Asset
 log = logging.getLogger(__name__)
 
 KEEP = 500
-NOT_UNDOABLE = {"ort": "Immich kann Koordinaten nur ändern, nicht entfernen – bei Bedarf einen anderen Ort setzen."}
+NOT_UNDOABLE = {
+    "ort": "Immich kann Koordinaten nur ändern, nicht entfernen – bei Bedarf einen anderen Ort setzen.",
+    "papierkorb": "Wieder löschen geht über Duplikate oder Aufräumen.",
+}
 
 
 class HistoryStore:

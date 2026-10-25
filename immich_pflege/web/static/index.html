@@ -19,6 +19,7 @@
     <div id="status" class="status">Lade Status …</div>
     <div id="warnings"></div>
     <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="ovw" aria-selected="false">Übersicht</button>
       <button role="tab" data-tab="dup" aria-selected="true">Duplikate <span class="count" id="count-dup"></span></button>
       <button role="tab" data-tab="loc" aria-selected="false">Ohne Ort <span class="count" id="count-loc"></span></button>
       <button role="tab" data-tab="cln" aria-selected="false">Aufräumen <span class="count" id="count-cln"></span></button>
@@ -30,6 +31,10 @@
   </header>
 
   <main>
+    <section id="tab-ovw" class="tab" role="tabpanel" hidden>
+      <div id="ovw-body"></div>
+    </section>
+
     <section id="tab-dup" class="tab" role="tabpanel">
       <div class="toolbar">
         <span id="dup-summary" class="muted"></span>
@@ -216,6 +221,41 @@
           </label>
           <small id="set-login-hint" class="muted"></small>
           <div class="row-gap" style="margin-top:10px"><button type="button" id="set-logout" class="btn small" hidden>Abmelden</button></div>
+        </fieldset>
+        <fieldset class="card">
+          <legend>Wochenbericht</legend>
+          <label class="f">Kurze Zusammenfassung aufs Handy
+            <select id="set-rep-channel">
+              <option value="aus">aus</option>
+              <option value="ntfy">per ntfy</option>
+              <option value="telegram">per Telegram</option>
+            </select>
+          </label>
+          <div id="set-rep-fields">
+            <div class="two">
+              <label class="f">Wochentag
+                <select id="set-rep-day">
+                  <option value="0">Montag</option><option value="1">Dienstag</option><option value="2">Mittwoch</option>
+                  <option value="3">Donnerstag</option><option value="4">Freitag</option><option value="5">Samstag</option><option value="6">Sonntag</option>
+                </select>
+              </label>
+              <label class="f">Uhrzeit <input type="time" id="set-rep-time" step="60"></label>
+            </div>
+            <div id="set-rep-ntfy">
+              <label class="f">ntfy-Adresse <small>Server und Thema, z. B. https://ntfy.sh/mein-geheimes-thema – in der ntfy-App abonnieren</small>
+                <input type="url" id="set-rep-ntfy-url" inputmode="url" autocapitalize="off" spellcheck="false"></label>
+              <label class="f">Zugangstoken <small>nur bei geschütztem Thema</small>
+                <input type="password" id="set-rep-ntfy-token" autocomplete="off"></label>
+            </div>
+            <div id="set-rep-tg">
+              <label class="f">Bot-Token <small>von @BotFather</small>
+                <input type="password" id="set-rep-tg-token" autocomplete="off"></label>
+              <label class="f">Chat-ID <small>z. B. über @userinfobot</small>
+                <input type="text" id="set-rep-tg-chat" autocapitalize="off" spellcheck="false"></label>
+            </div>
+            <div class="row-gap"><button type="button" id="set-rep-test" class="btn small">Testnachricht senden</button>
+              <small id="set-rep-info" class="muted"></small></div>
+          </div>
         </fieldset>
         <fieldset class="card">
           <legend>Updates</legend>

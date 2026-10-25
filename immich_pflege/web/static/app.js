@@ -7,6 +7,7 @@ const S = {
   status: null,
   dup: { groups: [], total: 0, open: 0, keep: {}, sel: new Set(), includeDone: false, art: null, monat: null, crossUser: false, ignored: false, loaded: false, info: null },
   loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, loaded: false, info: null },
+  ovw: { loaded: false },
   cln: { bereich: "speicher", kategorie: null, ignored: false, items: [], total: 0, sel: new Set(), keep: {}, loaded: false, info: null },
   alb: { trips: [], total: 0, status: null, jahr: null, ignored: false, sel: new Set(), choice: {}, loaded: false, info: null },
   tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [], items: [], fileErrors: [], users: [], yaml: "" },
@@ -1012,6 +1013,16 @@ async function loadSettings() {
   updateAutoFields();
   $("#set-upd-check").checked = d.update_check; lock("#set-upd-check", "update_check");
   $("#set-upd-repo").value = d.update_repo; lock("#set-upd-repo", "update_repo");
+  $("#set-rep-channel").value = d.report_channel; lock("#set-rep-channel", "report_channel");
+  $("#set-rep-day").value = String(d.report_day); lock("#set-rep-day", "report_day");
+  $("#set-rep-time").value = d.report_time; lock("#set-rep-time", "report_time");
+  $("#set-rep-ntfy-url").value = d.report_ntfy_url; lock("#set-rep-ntfy-url", "report_ntfy_url");
+  $("#set-rep-ntfy-token").value = ""; lock("#set-rep-ntfy-token", "report_ntfy_token");
+  $("#set-rep-ntfy-token").placeholder = d.report_ntfy_token_gesetzt ? "gespeichert" : "nicht gesetzt";
+  $("#set-rep-tg-token").value = ""; lock("#set-rep-tg-token", "report_telegram_token");
+  $("#set-rep-tg-token").placeholder = d.report_telegram_token_gesetzt ? "gespeichert" : "nicht gesetzt";
+  $("#set-rep-tg-chat").value = d.report_telegram_chat; lock("#set-rep-tg-chat", "report_telegram_chat");
+  updateReportFields();
   $("#set-upd-token").value = ""; lock("#set-upd-token", "update_github_token");
   $("#set-upd-token").placeholder = d.update_github_token_gesetzt ? "gespeichert" : "nicht gesetzt";
   $("#set-upd-url").value = d.update_webhook_url; lock("#set-upd-url", "update_webhook_url");
@@ -1085,6 +1096,13 @@ function readSettingsForm() {
   put("update_repo", $("#set-upd-repo").value.trim());
   put("update_webhook_url", $("#set-upd-url").value.trim());
   put("update_webhook_header", $("#set-upd-header").value.trim());
+  put("report_channel", $("#set-rep-channel").value);
+  put("report_day", Number($("#set-rep-day").value));
+  put("report_time", $("#set-rep-time").value);
+  put("report_ntfy_url", $("#set-rep-ntfy-url").value.trim());
+  put("report_telegram_chat", $("#set-rep-tg-chat").value.trim());
+  if ($("#set-rep-ntfy-token").value.trim()) put("report_ntfy_token", $("#set-rep-ntfy-token").value.trim());
+  if ($("#set-rep-tg-token").value.trim()) put("report_telegram_token", $("#set-rep-tg-token").value.trim());
   if ($("#set-upd-token").value.trim()) put("update_github_token", $("#set-upd-token").value.trim());
   if ($("#set-upd-secret").value.trim()) put("update_webhook_secret", $("#set-upd-secret").value.trim());
   if (!d.gesperrt.includes("web_user")) {
@@ -1114,6 +1132,25 @@ async function testConnection(btn) {
   } finally {
     busy(btn, false);
   }
+}
+
+function updateReportFields() {
+  const ch = $("#set-rep-channel").value;
+  $("#set-rep-fields").hidden = ch === "aus";
+  $("#set-rep-ntfy").hidden = ch !== "ntfy";
+  $("#set-rep-tg").hidden = ch !== "telegram";
+}
+
+async function sendTestReport(btn) {
+  busy(btn, true);
+  try {
+    await api("api/settings", { method: "PUT", body: readSettingsForm() });  // erst speichern, dann testen
+    await api("api/report/test", { method: "POST" });
+    toast("Testnachricht gesendet – schau aufs Handy");
+    await loadSettings();
+  } catch (e) {
+    toast(e.details && e.details.length ? e.details.join(" · ") : e.message, true);
+  } finally { busy(btn, false); }
 }
 
 async function saveSettings(btn) {
@@ -1355,10 +1392,11 @@ async function openHelp(topic) {
 
 /* ---------------------------------------------------------- Aufräumen */
 const PAGE_CLN = 30;
-const CLN_BEREICHE = { speicher: "Speicherfresser", serien: "Serienbilder", qualitaet: "Unscharf & dunkel", zeit: "Falsche Zeit" };
+const CLN_BEREICHE = { speicher: "Speicherfresser", serien: "Serienbilder", qualitaet: "Unscharf & dunkel", zeit: "Falsche Zeit", papierkorb: "Papierkorb" };
 
 async function loadCleanup(reset) {
   const c = S.cln;
+  if (c.bereich === "papierkorb") return loadTrash();
   if (reset) { c.items = []; c.sel.clear(); c.keep = {}; c.edit = {}; $("#cln-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
   const isTime = c.bereich === "zeit";
   const params = new URLSearchParams({ offset: c.items.length, limit: PAGE_CLN, ignoriert: c.ignored });
@@ -1543,6 +1581,118 @@ async function stageCleanup(action, items, btn) {
     toast(e.message, true);
   } finally { busy(btn, false); }
 }
+
+/* ---------------------------------------------------------- Papierkorb */
+async function loadTrash() {
+  const c = S.cln;
+  c.items = []; c.sel.clear();
+  $("#cln-list").replaceChildren(h("p", { class: "empty" }, "Frage Immich …"));
+  const [t, counts, time] = await Promise.all([api("api/trash"), api("api/cleanup?limit=0"), api("api/timefix?limit=0")]);
+  renderCleanupFilters(counts, time);
+  c.loaded = true; c.items = t.medien; c.info = t;
+  $("#cln-summary").textContent = `${n(t.anzahl, "Medium", "Medien")} · ${fmtBig(t.groesse)}` +
+    (t.tage ? ` · Immich löscht nach ${t.tage} Tagen endgültig` : "");
+  $("#cln-more").hidden = true;
+  if (!t.anzahl) { $("#cln-list").replaceChildren(h("p", { class: "empty" }, "Der Papierkorb ist leer.")); updateActionbar(); return; }
+  const per = Object.entries(t.benutzer).map(([u, v]) => `${u}: ${v.anzahl} (${fmtBig(v.groesse)})`).join(" · ");
+  const grid = h("div", { class: "grid" });
+  for (const m of t.medien) {
+    const el = tile({ class: "tile" + (c.sel.has(m.id) ? " selected" : ""), title: m.pfad,
+      onclick: () => { c.sel.has(m.id) ? c.sel.delete(m.id) : c.sel.add(m.id); el.classList.toggle("selected", c.sel.has(m.id)); updateActionbar(); } },
+    thumb(m),
+    h("div", { class: "meta" }, h("div", { class: "name" }, m.dateiname),
+      h("div", {}, `${m.benutzer} · ${fmtSize(m.groesse)}`),
+      m.verschoben ? h("div", {}, "vom Tool: " + fmtDateTime(m.verschoben)) : null,
+      m.endgueltig ? h("div", { class: "muted" }, "weg ab " + fmtDateTime(m.endgueltig)) : null));
+    grid.append(el);
+  }
+  $("#cln-list").replaceChildren(h("p", { class: "muted small" }, per + (t.anzahl > t.medien.length ? ` – gezeigt: die ${t.medien.length} neuesten` : "")), grid);
+  updateActionbar();
+}
+
+async function restoreTrash(ids, btn) {
+  const ok = await confirmDialog({ title: "Wiederherstellen?",
+    body: h("p", {}, ids ? `${n(ids.length, "Medium kommt", "Medien kommen")} aus dem Papierkorb zurück.` : "Alles im Papierkorb kommt zurück."),
+    okLabel: "Wiederherstellen" });
+  if (!ok) return;
+  busy(btn, true);
+  try {
+    const r = await api("api/trash/restore", { method: "POST", body: { ids } });
+    toast(`${r.wiederhergestellt} wiederhergestellt – nach dem nächsten Einlesen wieder in den Listen`);
+    await loadTrash();
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
+
+/* ----------------------------------------------------------- Übersicht */
+const OPEN_LINKS = [
+  ["duplikate", "Duplikat-Gruppen offen", "dup"],
+  ["ort_vorschlaege", "Fotos verortbar", "loc"],
+  ["alben", "Reisen ohne Album", "alb"],
+  ["aufraeumen", "zum Aufräumen", "cln"],
+  ["zeit", "falsche Aufnahmezeiten", "cln", "zeit"],
+  ["vorgemerkt", "vorgemerkt", "stage"],
+];
+
+async function loadOverview() {
+  const d = await api("api/dashboard");
+  S.ovw.loaded = true;
+  const box = $("#ovw-body");
+  const g = d.gesamt;
+  const stat = (value, label, sub) => h("div", { class: "stat" }, h("div", { class: "stat-v" }, value), h("div", { class: "stat-l" }, label), sub ? h("div", { class: "muted small" }, sub) : null);
+  const tiles = h("div", { class: "stats-grid" },
+    stat(g.medien.toLocaleString("de-DE"), "Medien", `${g.fotos.toLocaleString("de-DE")} Fotos · ${g.videos.toLocaleString("de-DE")} Videos`),
+    stat(fmtBig(g.groesse), "Speicher"),
+    stat(g.ohne_gps.toLocaleString("de-DE"), "ohne Ort", g.medien ? `${Math.round((g.ohne_gps / g.medien) * 100)} %` : null));
+  const users = h("table", { class: "tbl" },
+    h("thead", {}, h("tr", {}, ...["Benutzer", "Medien", "Videos", "extern", "Speicher"].map((x) => h("th", {}, x)))),
+    h("tbody", {}, ...Object.entries(d.benutzer).map(([u, v]) => h("tr", {}, h("td", {}, u),
+      h("td", {}, v.medien.toLocaleString("de-DE")), h("td", {}, v.videos.toLocaleString("de-DE")),
+      h("td", {}, v.extern.toLocaleString("de-DE")), h("td", {}, fmtBig(v.groesse))))));
+  const open = h("div", { class: "open-list" }, ...OPEN_LINKS.filter(([k]) => d.offen[k]).map(([k, label, tab, bereich]) =>
+    h("button", { type: "button", class: "open-item", onclick: () => { if (bereich) { S.cln.bereich = bereich; S.cln.loaded = false; } showTab(tab); } },
+      h("b", {}, d.offen[k].toLocaleString("de-DE")), " " + label + (k === "aufraeumen" ? ` (${fmtBig(d.offen.aufraeumen_groesse)})` : ""), h("span", { class: "muted" }, " ›"))));
+  const rep = d.bericht;
+  box.replaceChildren(
+    tiles,
+    h("h2", { class: "stage-head" }, "Offen"),
+    open.childElementCount ? open : h("p", { class: "muted" }, "Alles aufgeräumt 🎉"),
+    h("h2", { class: "stage-head" }, "Benutzer"), users,
+    h("h2", { class: "stage-head" }, "Aufnahmen je Jahr"), yearChart(d.jahre),
+    d.erledigt.length ? h("h2", { class: "stage-head" }, "Erledigt je Monat") : null,
+    d.erledigt.length ? doneTable(d.erledigt) : null,
+    h("p", { class: "muted small" }, rep.kanal === "aus" ? "Wochenbericht: aus (⚙ Einstellungen)"
+      : `Wochenbericht per ${rep.kanal}: ${rep.tag}s ${rep.uhrzeit}` + (rep.letzter ? ` · zuletzt ${fmtDateTime(rep.letzter)}` : "") + (rep.fehler ? ` · Fehler: ${rep.fehler}` : "")));
+}
+
+// Einfarbiges Säulendiagramm (eine Reihe): Höhe = Anzahl, Tooltip mit Anzahl und Speicher
+function yearChart(years) {
+  if (!years.length) return h("p", { class: "muted" }, "Keine Daten");
+  const max = Math.max(...years.map((y) => y.medien));
+  const wrap = h("div", { class: "ychart", role: "img", "aria-label": "Aufnahmen je Jahr" });
+  const tip = h("div", { class: "ychart-tip", hidden: true });
+  for (const y of years) {
+    const bar = h("div", { class: "ybar", tabindex: "0", "aria-label": `${y.jahr}: ${y.medien} Medien, ${fmtBig(y.groesse)}` },
+      h("div", { class: "ybar-fill", style: `height:${Math.max(2, (y.medien / max) * 100)}%` }),
+      h("div", { class: "ybar-x" }, years.length > 12 ? "’" + y.jahr.slice(2) : y.jahr));
+    const show = () => { tip.hidden = false; tip.textContent = `${y.jahr}: ${y.medien.toLocaleString("de-DE")} Medien · ${fmtBig(y.groesse)}`; };
+    bar.addEventListener("mouseenter", show); bar.addEventListener("focus", show);
+    bar.addEventListener("click", show);
+    bar.addEventListener("mouseleave", () => { tip.hidden = true; });
+    wrap.append(bar);
+  }
+  const peak = years.find((y) => y.medien === max);
+  return h("div", {}, h("div", { class: "muted small" }, `meiste Aufnahmen: ${peak.jahr} (${max.toLocaleString("de-DE")})`), wrap, tip);
+}
+
+const DONE_LABEL = { duplikat: "Duplikate", aufraeumen: "Aufgeräumt", zeit: "Zeit", ort: "Verortet", album: "In Alben", tag: "Getaggt", papierkorb: "Wiederhergestellt" };
+function doneTable(rows) {
+  const keys = Object.keys(DONE_LABEL).filter((k) => rows.some((r) => r[k]));
+  return h("table", { class: "tbl" },
+    h("thead", {}, h("tr", {}, h("th", {}, "Monat"), ...keys.map((k) => h("th", {}, DONE_LABEL[k])))),
+    h("tbody", {}, ...rows.slice().reverse().map((r) => h("tr", {}, h("td", {}, month(r.monat)),
+      ...keys.map((k) => h("td", {}, r[k] ? r[k].toLocaleString("de-DE") : "–"))))));
+}
+function month(m) { return new Date(m + "-15").toLocaleDateString("de-DE", { month: "short", year: "numeric" }); }
 
 /* -------------------------------------------------------------- Alben */
 const PAGE_ALB = 20;
@@ -1914,6 +2064,13 @@ function updateActionbar() {
     } else {
       buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !sure, onclick: (e) => applyAllSure(e.currentTarget) }, `Alle sicheren (${sure})`));
     }
+  } else if (S.tab === "ovw") {
+    info.textContent = "Stand der Bibliothek";
+  } else if (S.tab === "cln" && S.cln.bereich === "papierkorb") {
+    const sel = [...S.cln.sel];
+    info.textContent = sel.length ? `${sel.length} gewählt` : "Antippen zum Auswählen";
+    buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !(S.cln.info && S.cln.info.anzahl),
+      onclick: (e) => restoreTrash(sel.length ? sel : null, e.currentTarget) }, sel.length ? "Wiederherstellen" : "Alle wiederherstellen"));
   } else if (S.tab === "cln" && S.cln.bereich === "zeit") {
     const c = S.cln;
     const chosen = c.items.filter((it) => c.sel.has(it.id));
@@ -1973,12 +2130,13 @@ function loadTab(tab, force = false) {
   return p;
 }
 
-const TAB_TARGET = { dup: "#dup-list", loc: "#loc-list", cln: "#cln-list", alb: "#alb-list", tags: "#tags-list", stage: "#stage-list", set: "#set-welcome" };
+const TAB_TARGET = { ovw: "#ovw-body", dup: "#dup-list", loc: "#loc-list", cln: "#cln-list", alb: "#alb-list", tags: "#tags-list", stage: "#stage-list", set: "#set-welcome" };
 
 async function doLoadTab(tab, force) {
   try {
     if (tab === "dup" && (force || !S.dup.loaded)) await loadDuplicates(true);
     if (tab === "loc" && (force || !S.loc.loaded)) await loadLocation(true);
+    if (tab === "ovw" && (force || !S.ovw.loaded)) await loadOverview();
     if (tab === "cln" && (force || !S.cln.loaded)) await loadCleanup(true);
     if (tab === "alb" && (force || !S.alb.loaded)) await loadAlbums(true);
     if (tab === "tags" && (force || !S.tags.loaded)) await loadTags();
@@ -2036,6 +2194,8 @@ $("#yaml-save").addEventListener("click", (e) => saveYaml(e.currentTarget));
 $("#set-add-user").addEventListener("click", () => $("#set-users").append(userRow({ name: "", key_gesetzt: false })));
 $("#set-test").addEventListener("click", (e) => testConnection(e.currentTarget));
 $("#set-auto").addEventListener("change", updateAutoFields);
+$("#set-rep-channel").addEventListener("change", updateReportFields);
+$("#set-rep-test").addEventListener("click", (e) => sendTestReport(e.currentTarget));
 $("#set-logout").addEventListener("click", async () => {
   await fetch("/api/logout", { method: "POST" }).catch(() => null);
   location.href = "/login";
@@ -2054,7 +2214,7 @@ $("#version-update").addEventListener("click", (e) => startUpdate(e.currentTarge
     await showTab("set");
     return;
   }
-  await showTab(["dup", "loc", "cln", "alb", "tags", "stage", "set"].includes(tab) ? tab : "dup");
+  await showTab(["ovw", "dup", "loc", "cln", "alb", "tags", "stage", "set"].includes(tab) ? tab : "dup");
   // Nach dem ersten Laden (ggf. Einlesen) Status aktualisieren und Zähler der anderen Tabs holen
   loadStatus(false);
   loadOtherCounts();
