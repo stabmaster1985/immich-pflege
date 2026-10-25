@@ -137,3 +137,31 @@ def test_execute_against_mock(state, clients):
     assert not any(a["isTrashed"] for a in ext)
     # Lokaler Stand ist aktualisiert
     assert len(find_groups(lib)) == 1 and find_groups(lib)[0].done()
+
+
+def test_group_kinds():
+    same = [asset(checksum="K"), asset(owner="julia", checksum="K")]
+    assert find_groups(library(*same))[0].kind == "identisch"
+    a = asset(name="IMG_1.JPG", local="2024-01-01T10:00:00Z")
+    b = asset(name="IMG_1.JPG", local="2024-01-01T10:00:00Z", library_id=EXT)
+    assert find_groups(library(a, b))[0].kind == "sehr_wahrscheinlich"
+    c, d = asset(), asset()
+    lib = library(c, d, duplicates=[ImmichDuplicate("frank", "x", [c.id, d.id], [c.id])])
+    g = find_groups(lib)[0]
+    assert g.kind == "aehnlich" and g.to_dict()["art_text"] == "ähnlich"
+    assert g.month == "2024-07"
+
+
+def test_ignore_list(tmp_path):
+    from immich_pflege.duplicates import IgnoreList
+    a, b, c = asset(checksum="I"), asset(checksum="I"), asset(checksum="I")
+    path = tmp_path / "ign.json"
+    ign = IgnoreList(path)
+    g = find_groups(library(a, b))[0]
+    ign.add(g.asset_ids)
+    assert IgnoreList(path).contains(g)
+    # Eine Kopie verschwindet -> bleibt ausgeblendet; neue Kopie -> taucht wieder auf
+    assert IgnoreList(path).contains(find_groups(library(a, b))[0])
+    assert not IgnoreList(path).contains(find_groups(library(a, b, c))[0])
+    ign.remove(g.asset_ids)
+    assert not IgnoreList(path).contains(g)

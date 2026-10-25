@@ -11,10 +11,11 @@ import httpx
 from . import __version__
 from .client import ImmichClient, ImmichError
 from .config import Settings
-from .duplicates import AKTIONEN, DuplicateGroup, execute_steps, find_groups, plan_group
+from .duplicates import (AKTIONEN, ARTEN, DuplicateGroup, IgnoreList, clear_immich_duplicates, execute_steps,
+                         find_groups, plan_group)
 from .library import Library, scan_library
 from .location import (LEVELS, analyze, apply_locations, level_at_least, month_facets, month_key,
-                       place_facets, place_key)
+                       month_label, place_facets, place_key)
 from .rules import Resolver, Rule, RuleError, apply as apply_rules, load_rules, preview as preview_rules
 
 log = logging.getLogger(__name__)
@@ -139,31 +140,70 @@ class Pflege:
         return check_server(self.clients)
 
     # --------------------------------------------------------------- Duplikate
-    def duplicate_groups(self) -> list[DuplicateGroup]:
-        return find_groups(self.library())
+    def ignore_list(self) -> IgnoreList:
+        return IgnoreList(self.settings.data_dir / "duplikate_ignoriert.json")
 
-    def duplicates_view(self, offset: int = 0, limit: int = 50, include_done: bool = True) -> dict:
+    def duplicate_groups(self, include_ignored: bool = False) -> list[DuplicateGroup]:
+        groups = find_groups(self.library())
+        if include_ignored:
+            return groups
+        ignored = self.ignore_list()
+        return [g for g in groups if not ignored.contains(g)]
+
+    @staticmethod
+    def _filter_groups(groups, art=None, monat=None, cross_user=False):
+        if art and art not in ARTEN:
+            raise ActionError(f"Art muss {', '.join(ARTEN)} sein")
+        if art:
+            groups = [g for g in groups if g.kind == art]
+        if monat:
+            groups = [g for g in groups if g.month == monat]
+        if cross_user:
+            groups = [g for g in groups if len(g.users) > 1]
+        return groups
+
+    def duplicates_view(self, offset: int = 0, limit: int = 50, include_done: bool = True,
+                        art: str | None = None, monat: str | None = None, cross_user: bool = False,
+                        ignored: bool = False) -> dict:
+        """Gruppen mit Filtern. ``ignored=True`` zeigt nur die als „kein Duplikat“ markierten."""
         lib = self.library()
-        groups = find_groups(lib)
+        all_groups = find_groups(lib)
+        ignore = self.ignore_list()
+        n_ignored = sum(1 for g in all_groups if ignore.contains(g))
+        base = [g for g in all_groups if ignore.contains(g) == ignored]
         if not include_done:
-            groups = [g for g in groups if not g.done()]
+            base = [g for g in base if not g.done()]
+        groups = self._filter_groups(base, art, monat, cross_user)
         page = groups[offset: offset + limit] if limit > 0 else groups[offset:]
+        # Mengen je Art (für den aktuellen Monat) und je Monat (für die aktuelle Art)
+        for_kinds = self._filter_groups(base, monat=monat, cross_user=cross_user)
+        months: dict[str, int] = {}
+        for g in self._filter_groups(base, art=art, cross_user=cross_user):
+            months[g.month] = months.get(g.month, 0) + 1
         return {
             "stand": lib.scanned_at,
             "gesamt": len(groups),
             "offen": sum(1 for g in groups if not g.done()),
             "benutzeruebergreifend": sum(1 for g in groups if len(g.users) > 1),
+            "ignoriert": n_ignored,
+            "arten": {k: {"name": label, "anzahl": sum(1 for g in for_kinds if g.kind == k),
+                          "offen": sum(1 for g in for_kinds if g.kind == k and not g.done())}
+                      for k, label in ARTEN.items()},
+            "monate": [{"key": k, "name": month_label(k), "anzahl": v} for k, v in sorted(months.items(), reverse=True)],
+            "filter": {"art": art, "monat": monat, "benutzeruebergreifend": cross_user},
             "offset": offset,
             "gruppen": [g.to_dict() for g in page],
         }
 
-    def plan_duplicates(self, action: str, groups: list[dict] | None = None, all_groups: bool = False):
+    def plan_duplicates(self, action: str, groups: list[dict] | None = None, all_groups: bool = False,
+                        art: str | None = None, monat: str | None = None, cross_user: bool = False):
         if action not in AKTIONEN:
             raise ActionError(f"Unbekannte Aktion {action!r} – erlaubt: {', '.join(AKTIONEN)}")
         found = {g.id: g for g in self.duplicate_groups()}
         selection: list[tuple[DuplicateGroup, str]] = []
         if all_groups:
-            selection = [(g, g.suggested_keep) for g in found.values() if not g.done()]
+            chosen = self._filter_groups(list(found.values()), art, monat, cross_user)
+            selection = [(g, g.suggested_keep) for g in chosen if not g.done()]
         else:
             if not groups:
                 raise ActionError("Keine Gruppen ausgewählt (groups: [{id, keep}] oder all: true)")
@@ -180,10 +220,35 @@ class Pflege:
             steps += plan_group(g, keep, action)
         return selection, steps
 
-    def apply_duplicates(self, action: str, groups: list[dict] | None = None, all_groups: bool = False,
-                         confirm: str | None = None, dry_run: bool = False) -> dict[str, Any]:
+    def ignore_duplicates(self, group_ids: list[str], undo: bool = False) -> dict[str, Any]:
+        """„Kein Duplikat“: Gruppen dauerhaft ausblenden (bzw. mit undo wieder aufnehmen)."""
+        if not group_ids:
+            raise ActionError("Keine Gruppen angegeben")
         with self._lock:
-            selection, steps = self.plan_duplicates(action, groups, all_groups)
+            lib = self.library()
+            groups = {g.id: g for g in find_groups(lib)}
+            missing = [i for i in group_ids if i not in groups]
+            if missing:
+                raise ActionError(f"Gruppe(n) {', '.join(missing)} nicht gefunden – bitte neu laden")
+            ignore = self.ignore_list()
+            cleared = 0
+            for gid in group_ids:
+                g = groups[gid]
+                if undo:
+                    ignore.remove(g.asset_ids)
+                else:
+                    ignore.add(g.asset_ids)
+                    cleared += clear_immich_duplicates(lib, self.clients, g)
+            if cleared:
+                self._save()
+            log.info("%d Gruppe(n) %s", len(group_ids), "wieder aufgenommen" if undo else "als „kein Duplikat“ markiert")
+            return {"gruppen": len(group_ids), "in_immich_entfernt": cleared, "rueckgaengig": undo}
+
+    def apply_duplicates(self, action: str, groups: list[dict] | None = None, all_groups: bool = False,
+                         confirm: str | None = None, dry_run: bool = False, art: str | None = None,
+                         monat: str | None = None, cross_user: bool = False) -> dict[str, Any]:
+        with self._lock:
+            selection, steps = self.plan_duplicates(action, groups, all_groups, art, monat, cross_user)
             summary = {
                 "aktion": action,
                 "gruppen": len(selection),

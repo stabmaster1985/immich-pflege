@@ -160,6 +160,14 @@ class ImmichClient:
             n += len(batch)
         return n
 
+    def clear_duplicate(self, ids: Iterable[str]) -> int:
+        """Entfernt Medien aus Immichs Duplikat-Gruppen (duplicateId = null)."""
+        n = 0
+        for batch in chunked(ids):
+            self.request("PUT", "/assets", json={"ids": batch, "duplicateId": None})
+            n += len(batch)
+        return n
+
     def thumbnail(self, asset_id: str, size: str = "thumbnail") -> tuple[bytes, str]:
         url = f"{self.api_url}/assets/{asset_id}/thumbnail"
         try:

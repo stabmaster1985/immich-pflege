@@ -321,6 +321,8 @@ def create_app(state: MockState) -> FastAPI:
             if "latitude" in body:
                 a["exifInfo"]["latitude"] = body["latitude"]
                 a["exifInfo"]["longitude"] = body["longitude"]
+            if "duplicateId" in body:
+                a["duplicateId"] = body["duplicateId"]
         return Response(status_code=204)
 
     @app.get("/api/assets/{asset_id}/thumbnail")

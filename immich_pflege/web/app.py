@@ -51,6 +51,9 @@ class DuplicatesApply(BaseModel):
     action: Literal["album", "papierkorb"]
     groups: Optional[list[GroupSelection]] = None
     all: bool = False
+    art: Optional[Literal["identisch", "sehr_wahrscheinlich", "aehnlich"]] = None
+    monat: Optional[str] = None
+    benutzeruebergreifend: bool = False
     confirm: Optional[str] = None
     dry_run: bool = False
 
@@ -59,6 +62,11 @@ class Place(BaseModel):
     breite: float = Field(ge=-90, le=90)
     laenge: float = Field(ge=-180, le=180)
     name: Optional[str] = None
+
+
+class DuplicatesIgnore(BaseModel):
+    groups: list[str]
+    undo: bool = False
 
 
 class NoLocationApply(BaseModel):
@@ -363,13 +371,21 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     # -------------------------------------------------------- Duplikate
     @app.get("/api/duplicates")
     def duplicates(offset: int = Query(0, ge=0), limit: int = Query(50, ge=0, le=5000),
-                   include_done: bool = True):
-        return svc().duplicates_view(offset, limit, include_done)
+                   include_done: bool = True,
+                   art: Optional[Literal["identisch", "sehr_wahrscheinlich", "aehnlich"]] = None,
+                   monat: Optional[str] = None, benutzeruebergreifend: bool = False,
+                   ignoriert: bool = False):
+        return svc().duplicates_view(offset, limit, include_done, art, monat, benutzeruebergreifend, ignoriert)
+
+    @app.post("/api/duplicates/ignore")
+    def duplicates_ignore(body: DuplicatesIgnore):
+        return svc().ignore_duplicates(body.groups, body.undo)
 
     @app.post("/api/duplicates/apply")
     def duplicates_apply(body: DuplicatesApply):
         groups = [g.model_dump() for g in body.groups] if body.groups else None
-        return svc().apply_duplicates(body.action, groups, body.all, body.confirm, body.dry_run)
+        return svc().apply_duplicates(body.action, groups, body.all, body.confirm, body.dry_run,
+                                      body.art, body.monat, body.benutzeruebergreifend)
 
     # --------------------------------------------------------- Ohne Ort
     @app.get("/api/no-location")

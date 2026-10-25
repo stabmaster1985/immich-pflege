@@ -138,6 +138,11 @@ def duplikate(
     behalten: Optional[list[str]] = typer.Option(
         None, "--behalten", help="Vorschlag überschreiben: GRUPPE=MEDIUM-ID (mehrfach möglich)"),
     erledigte: bool = typer.Option(False, "--erledigte", help="Auch erledigte Gruppen anzeigen"),
+    art: Optional[str] = typer.Option(None, "--art", help="Nur diese Art: identisch, sehr_wahrscheinlich, aehnlich"),
+    monat: Optional[str] = typer.Option(None, "--monat", help="Nur Gruppen aus diesem Monat (JJJJ-MM)"),
+    uebergreifend: bool = typer.Option(False, "--benutzeruebergreifend", help="Nur Gruppen mit Kopien beider Benutzer"),
+    kein_duplikat: Optional[list[str]] = typer.Option(None, "--kein-duplikat",
+                                                      help="Gruppe(n) als „kein Duplikat“ markieren (dauerhaft ausblenden)"),
     neu: bool = NeuOpt, json_: bool = JsonOpt, csv_: bool = CsvOpt,
 ):
     """Duplikate finden (Immich + Prüfsumme + Dateiname/Zeit) und Behalten-Vorschlag zeigen."""
@@ -148,6 +153,18 @@ def duplikate(
     if neu:
         with err.status("Lese Bibliothek ein …"):
             _run(svc.scan)
+    if art and art not in ("identisch", "sehr_wahrscheinlich", "aehnlich"):
+        err.print("[red]--art: identisch, sehr_wahrscheinlich oder aehnlich[/red]")
+        raise typer.Exit(2)
+    if kein_duplikat:
+        res = _run(lambda: svc.ignore_duplicates(list(kein_duplikat)))
+        if json_:
+            _emit_json(res)
+        else:
+            out.print(f"[green]{res['gruppen']} Gruppe(n) als „kein Duplikat“ markiert[/green]"
+                      + (f", {res['in_immich_entfernt']} Medien in Immich aus der Duplikatliste genommen"
+                         if res["in_immich_entfernt"] else ""))
+        return
     action = "album" if ins_album else "papierkorb" if papierkorb else None
 
     overrides: dict[str, str] = {}
@@ -159,7 +176,8 @@ def duplikate(
         overrides[g.strip()] = a.strip()
 
     if action is None:
-        view = _run(lambda: svc.duplicates_view(limit=0, include_done=erledigte or bool(gruppe)))
+        view = _run(lambda: svc.duplicates_view(limit=0, include_done=erledigte or bool(gruppe), art=art,
+                                                monat=monat, cross_user=uebergreifend))
         groups = [g for g in view["gruppen"] if not gruppe or g["id"] in gruppe]
         for g in groups:
             if g["id"] in overrides:
@@ -182,13 +200,14 @@ def duplikate(
 
     groups_sel = None
     all_groups = not gruppe
+    filters = dict(art=art, monat=monat, cross_user=uebergreifend)
     if gruppe:
         groups_sel = [{"id": g, "keep": overrides.get(g)} for g in gruppe]
     elif overrides:
         view = _run(lambda: svc.duplicates_view(limit=0, include_done=False))
         groups_sel = [{"id": g["id"], "keep": overrides.get(g["id"])} for g in view["gruppen"]]
         all_groups = False
-    plan = _run(lambda: svc.apply_duplicates(action, groups_sel, all_groups, dry_run=True))
+    plan = _run(lambda: svc.apply_duplicates(action, groups_sel, all_groups, dry_run=True, **filters))
     if not plan["schritte"]:
         out.print("Nichts zu tun.")
         return
@@ -206,7 +225,7 @@ def duplikate(
                 err.print("Abgebrochen.")
                 raise typer.Exit(1)
         confirm = CONFIRM_TRASH
-    res = _run(lambda: svc.apply_duplicates(action, groups_sel, all_groups, confirm=confirm))
+    res = _run(lambda: svc.apply_duplicates(action, groups_sel, all_groups, confirm=confirm, **filters))
     if json_:
         _emit_json(res)
         return
@@ -218,7 +237,7 @@ def duplikate(
 
 def _print_groups(groups: list[dict]) -> None:
     for g in groups:
-        title = f"Gruppe {g['id']} · {', '.join(g['quellen'])}"
+        title = f"Gruppe {g['id']} · {g['art_text']} · {', '.join(g['quellen'])}"
         if g["benutzeruebergreifend"]:
             title += " · benutzerübergreifend"
         if g["erledigt"]:

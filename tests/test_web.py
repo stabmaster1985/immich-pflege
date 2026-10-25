@@ -76,6 +76,39 @@ def test_album_all(web, state):
     assert web.get("/api/duplicates?include_done=false").json()["gesamt"] == 0
 
 
+def test_duplicate_filters_and_kinds(web):
+    r = web.get("/api/duplicates").json()
+    assert {k: v["anzahl"] for k, v in r["arten"].items()} == {"identisch": 1, "sehr_wahrscheinlich": 1, "aehnlich": 1}
+    assert r["monate"] == [{"key": "2024-07", "name": "Juli 2024", "anzahl": 3}]
+    assert web.get("/api/duplicates?art=identisch").json()["gesamt"] == 1
+    assert web.get("/api/duplicates?benutzeruebergreifend=true").json()["gesamt"] == 1
+    assert web.get("/api/duplicates?monat=2023-01").json()["gesamt"] == 0
+    # Alle identischen auf einmal ins Prüf-Album
+    plan = web.post("/api/duplicates/apply", json={"action": "album", "all": True, "art": "identisch",
+                                                    "dry_run": True}).json()
+    assert plan["gruppen"] == 1 and plan["album"] == 1
+
+
+def test_not_a_duplicate(web, state):
+    r = web.get("/api/duplicates?art=aehnlich").json()
+    gid = r["gruppen"][0]["id"]
+    res = web.post("/api/duplicates/ignore", json={"groups": [gid]}).json()
+    assert res["in_immich_entfernt"] == 2
+    # in Immich (Mock) ist die duplicateId weg
+    assert not any(a["duplicateId"] for a in state.assets.values())
+    r = web.get("/api/duplicates").json()
+    assert r["gesamt"] == 2 and r["ignoriert"] == 0  # Immich-Gruppe existiert nicht mehr
+    # Prüfsummen-Gruppe ausblenden und wieder aufnehmen
+    gid = r["gruppen"][0]["id"]
+    web.post("/api/duplicates/ignore", json={"groups": [gid]})
+    r = web.get("/api/duplicates").json()
+    assert r["gesamt"] == 1 and r["ignoriert"] == 1
+    assert web.get("/api/duplicates?ignoriert=true").json()["gruppen"][0]["id"] == gid
+    web.post("/api/duplicates/ignore", json={"groups": [gid], "undo": True})
+    assert web.get("/api/duplicates").json()["gesamt"] == 2
+    assert web.post("/api/duplicates/ignore", json={"groups": ["x"]}).status_code == 400
+
+
 def test_no_location(web):
     r = web.get("/api/no-location").json()
     assert r["medien"] == 7 and r["screenshots_ausgeblendet"] == 1 and r["mit_vorschlag"] == 3

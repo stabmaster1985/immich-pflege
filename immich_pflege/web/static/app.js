@@ -5,7 +5,7 @@ const PAGE_DUP = 20;
 const S = {
   tab: "dup",
   status: null,
-  dup: { groups: [], total: 0, open: 0, keep: {}, sel: new Set(), includeDone: false, loaded: false },
+  dup: { groups: [], total: 0, open: 0, keep: {}, sel: new Set(), includeDone: false, art: null, monat: null, crossUser: false, ignored: false, loaded: false, info: null },
   loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, loaded: false, info: null },
   tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [], items: [], fileErrors: [], users: [], yaml: "" },
   set: { data: null, loaded: false },
@@ -176,21 +176,106 @@ async function rescan() {
 async function loadDuplicates(reset) {
   const d = S.dup;
   if (reset) { d.groups = []; d.sel.clear(); d.keep = {}; $("#dup-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
-  const r = await api(`api/duplicates?offset=${d.groups.length}&limit=${PAGE_DUP}&include_done=${d.includeDone}`);
+  const params = new URLSearchParams({ offset: d.groups.length, limit: PAGE_DUP, include_done: d.includeDone,
+    benutzeruebergreifend: d.crossUser, ignoriert: d.ignored });
+  if (d.art) params.set("art", d.art);
+  if (d.monat) params.set("monat", d.monat);
+  const r = await api("api/duplicates?" + params);
+  if (d.monat && !r.monate.some((m) => m.key === d.monat)) { d.monat = null; return loadDuplicates(true); }
   if (reset) $("#dup-list").replaceChildren();
-  d.total = r.gesamt; d.open = r.offen; d.loaded = true;
+  d.total = r.gesamt; d.open = r.offen; d.loaded = true; d.info = r;
+  renderDupFilters(r);
   for (const g of r.gruppen) {
     d.groups.push(g);
     $("#dup-list").append(renderGroup(g));
   }
-  if (!d.groups.length) $("#dup-list").replaceChildren(h("p", { class: "empty" }, "Keine Duplikate gefunden 🎉"));
-  $("#dup-summary").textContent = `${r.offen} offen · ${r.gesamt} Gruppen · ${r.benutzeruebergreifend} benutzerübergreifend`;
-  $("#count-dup").textContent = r.offen ? `(${r.offen})` : "";
+  if (!d.groups.length) {
+    $("#dup-list").replaceChildren(h("p", { class: "empty" },
+      d.ignored ? "Keine ausgeblendeten Gruppen." : (d.art || d.monat || d.crossUser ? "Nichts mit diesem Filter." : "Keine Duplikate gefunden 🎉")));
+  }
+  $("#dup-summary").textContent = d.ignored
+    ? `${n(r.gesamt, "ausgeblendete Gruppe", "ausgeblendete Gruppen")} („kein Duplikat“)`
+    : `${r.offen} offen · ${n(r.gesamt, "Gruppe", "Gruppen")} · ${r.benutzeruebergreifend} benutzerübergreifend`;
+  if (!d.art && !d.monat && !d.crossUser && !d.ignored) $("#count-dup").textContent = r.offen ? `(${r.offen})` : "";
   $("#dup-more").hidden = d.groups.length >= d.total;
   updateActionbar();
 }
 
-const SOURCE_LABEL = { immich: "Immich", pruefsumme: "Prüfsumme", name_zeit: "Name + Zeit" };
+function renderDupFilters(r) {
+  const d = S.dup;
+  const artSel = h("select", { onchange: (e) => { d.art = e.target.value || null; loadTab("dup", true); } },
+    h("option", { value: "" }, "alle Arten"),
+    ...Object.entries(r.arten).map(([k, v]) => h("option", { value: k }, `${v.name} (${d.includeDone ? v.anzahl : v.offen})`)));
+  artSel.value = d.art || "";
+  const monthSel = h("select", { onchange: (e) => { d.monat = e.target.value || null; loadTab("dup", true); } },
+    h("option", { value: "" }, "alle Monate"),
+    ...r.monate.map((m) => h("option", { value: m.key }, `${m.name} (${m.anzahl})`)));
+  monthSel.value = d.monat || "";
+  $("#dup-filters").replaceChildren(
+    h("label", { class: "field grow" }, "Art", artSel),
+    h("label", { class: "field grow" }, "Monat", monthSel),
+    h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: d.crossUser,
+      onchange: (e) => { d.crossUser = e.target.checked; loadTab("dup", true); } }), "nur benutzerübergreifend"),
+    h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: d.ignored,
+      onchange: (e) => { d.ignored = e.target.checked; loadTab("dup", true); } }), `ausgeblendete (${r.ignoriert})`));
+}
+
+const SOURCE_LABEL = { immich: "Immich-KI", pruefsumme: "Prüfsumme", name_zeit: "Name + Zeit", bildhash: "Bild-Fingerabdruck" };
+const KIND_CLASS = { identisch: "conf-hoch", sehr_wahrscheinlich: "conf-mittel", aehnlich: "conf-niedrig" };
+
+async function ignoreGroup(g, undo) {
+  if (!undo) {
+    const ok = await confirmDialog({
+      title: "Kein Duplikat?",
+      body: [h("p", {}, "Die Gruppe wird dauerhaft ausgeblendet. Kommt später eine weitere Kopie dazu, taucht sie wieder auf."),
+        g.quellen.includes("immich") ? h("p", { class: "muted" }, "Die Medien werden auch in Immich aus der Duplikatliste genommen.") : null],
+      okLabel: "Ausblenden",
+    });
+    if (!ok) return;
+  }
+  try {
+    await api("api/duplicates/ignore", { method: "POST", body: { groups: [g.id], undo } });
+    toast(undo ? "Gruppe wieder aufgenommen" : "Als „kein Duplikat“ markiert");
+    await loadDuplicates(true);
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+async function applyAllDuplicates(action, btn) {
+  const d = S.dup;
+  const body = { action, all: true, art: d.art, monat: d.monat, benutzeruebergreifend: d.crossUser };
+  busy(btn, true);
+  let plan;
+  try {
+    plan = await api("api/duplicates/apply", { method: "POST", body: { ...body, dry_run: true } });
+  } catch (e) {
+    toast(e.message, true); busy(btn, false); return;
+  } finally { busy(btn, false); }
+  if (!plan.papierkorb && !plan.album) { toast("Nichts zu tun."); return; }
+  const trash = action === "papierkorb" && plan.papierkorb > 0;
+  const scope = [d.art ? d.info.arten[d.art].name : null, d.monat ? d.info.monate.find((m) => m.key === d.monat).name : null,
+    d.crossUser ? "benutzerübergreifend" : null].filter(Boolean).join(", ") || "alle offenen";
+  const ok = await confirmDialog({
+    title: trash ? "Alle in den Papierkorb?" : "Alle ins Prüf-Album?",
+    body: [h("p", {}, `${n(plan.gruppen, "Gruppe", "Gruppen")} (${scope}) mit dem jeweiligen Behalten-Vorschlag:`),
+      h("ul", {}, plan.papierkorb ? h("li", {}, h("b", {}, plan.papierkorb), " in den Papierkorb") : null,
+        plan.album ? h("li", {}, h("b", {}, plan.album), " ins Prüf-Album") : null)],
+    okLabel: trash ? "Papierkorb" : "Ins Album", danger: trash,
+    checkLabel: trash ? `Ja, ${n(plan.papierkorb, "Medium", "Medien")} in den Papierkorb verschieben` : null,
+  });
+  if (!ok) return;
+  busy(btn, true);
+  try {
+    const r = await api("api/duplicates/apply", { method: "POST", body: { ...body, confirm: trash ? "PAPIERKORB" : null } });
+    toast(`Erledigt: ${r.ergebnis.papierkorb} im Papierkorb, ${r.ergebnis.album} im Prüf-Album`);
+    await loadDuplicates(true);
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    busy(btn, false);
+  }
+}
 
 function renderGroup(g) {
   const d = S.dup;
@@ -201,9 +286,12 @@ function renderGroup(g) {
       type: "checkbox", checked: d.sel.has(g.id),
       onchange: (e) => { e.target.checked ? d.sel.add(g.id) : d.sel.delete(g.id); card.classList.toggle("selected", e.target.checked); updateActionbar(); },
     }), `${g.medien.length} Kopien`),
+    h("span", { class: "chip " + (KIND_CLASS[g.art] || ""), title: "Art der Übereinstimmung" }, g.art_text),
     ...g.quellen.map((q) => h("span", { class: "chip" }, SOURCE_LABEL[q] || q)),
     g.benutzeruebergreifend ? h("span", { class: "chip accent" }, g.benutzer.join(" + ")) : null,
     g.erledigt ? h("span", { class: "chip ok" }, "erledigt") : null,
+    h("button", { type: "button", class: "btn small edit", onclick: () => ignoreGroup(g, S.dup.ignored) },
+      S.dup.ignored ? "Wieder aufnehmen" : "Kein Duplikat"),
   );
   const grid = h("div", { class: "grid" });
   for (const m of g.medien) {
@@ -1022,16 +1110,23 @@ function updateActionbar() {
   const buttons = [];
   if (S.tab === "dup") {
     const cnt = S.dup.sel.size;
-    const open = S.dup.groups.filter((g) => !g.erledigt);
-    info.textContent = cnt ? `${cnt} gewählt` : "Nichts gewählt";
-    const allSel = open.length && open.every((g) => S.dup.sel.has(g.id));
-    buttons.push(h("button", { class: "btn small", type: "button", disabled: !open.length, onclick: () => {
-      open.forEach((g) => (allSel ? S.dup.sel.delete(g.id) : S.dup.sel.add(g.id)));
-      $("#dup-list").replaceChildren(...S.dup.groups.map(renderGroup));
-      updateActionbar();
-    } }, allSel ? "Keine" : "Alle"));
-    buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !cnt, onclick: (e) => applyDuplicates("album", e.currentTarget) }, "Ins Prüf-Album"));
-    buttons.push(h("button", { class: "btn small danger", type: "button", disabled: !cnt, onclick: (e) => applyDuplicates("papierkorb", e.currentTarget) }, "Papierkorb"));
+    if (S.dup.ignored) {
+      info.textContent = "Ausgeblendete Gruppen – „Wieder aufnehmen“ pro Gruppe";
+    } else if (cnt) {
+      info.textContent = `${cnt} gewählt`;
+      buttons.push(h("button", { class: "btn small", type: "button", onclick: () => {
+        S.dup.sel.clear();
+        $("#dup-list").replaceChildren(...S.dup.groups.map(renderGroup));
+        updateActionbar();
+      } }, "Keine"));
+      buttons.push(h("button", { class: "btn small primary", type: "button", onclick: (e) => applyDuplicates("album", e.currentTarget) }, "Ins Prüf-Album"));
+      buttons.push(h("button", { class: "btn small danger", type: "button", onclick: (e) => applyDuplicates("papierkorb", e.currentTarget) }, "Papierkorb"));
+    } else {
+      const open = S.dup.open || 0;
+      info.textContent = open ? "Aktuelle Auswahl:" : "Nichts offen";
+      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !open, onclick: (e) => applyAllDuplicates("album", e.currentTarget) }, `Alle ins Album (${open})`));
+      buttons.push(h("button", { class: "btn small danger", type: "button", disabled: !open, onclick: (e) => applyAllDuplicates("papierkorb", e.currentTarget) }, "Papierkorb …"));
+    }
   } else if (S.tab === "loc") {
     const cnt = S.loc.sel.size;
     const sure = S.loc.info ? S.loc.info.nach_sicherheit.hoch : 0;

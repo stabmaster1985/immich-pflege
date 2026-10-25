@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Iterable
@@ -27,9 +28,18 @@ QUELLEN = {
     "immich": "Immich-Duplikaterkennung",
     "pruefsumme": "identische Prüfsumme",
     "name_zeit": "gleicher Dateiname + Aufnahmezeit",
+    "bildhash": "fast gleicher Bild-Fingerabdruck",
 }
 
 AKTIONEN = ("album", "papierkorb")
+
+# Art einer Gruppe – wie sicher es wirklich dieselbe Aufnahme ist
+ARTEN = {
+    "identisch": "identisch",  # alle Dateien Byte für Byte gleich (gleiche Prüfsumme)
+    "sehr_wahrscheinlich": "sehr wahrscheinlich",  # Name + Zeit gleich oder Bild-Fingerabdruck fast gleich
+    "aehnlich": "ähnlich",  # nur Immich-KI: ähnliches Motiv, z. B. auch Serienbilder
+}
+STRONG_SOURCES = {"pruefsumme", "name_zeit", "bildhash"}
 
 
 class UnionFind:
@@ -88,6 +98,24 @@ class DuplicateGroup:
                 return a
         raise KeyError(asset_id)
 
+    @property
+    def kind(self) -> str:
+        checksums = {a.checksum for a in self.assets}
+        if len(checksums) == 1 and "" not in checksums:
+            return "identisch"
+        if self.sources & STRONG_SOURCES:
+            return "sehr_wahrscheinlich"
+        return "aehnlich"
+
+    @property
+    def month(self) -> str:
+        days = [a.local_day for a in self.assets if a.local_day]
+        return min(days).strftime("%Y-%m") if days else "ohne-datum"
+
+    @property
+    def asset_ids(self) -> frozenset[str]:
+        return frozenset(a.id for a in self.assets)
+
     def done(self, keep_id: str | None = None) -> bool:
         keep_id = keep_id or self.suggested_keep
         return all(a.in_review_album for a in self.assets if a.id != keep_id)
@@ -99,6 +127,9 @@ class DuplicateGroup:
             "quellen": sorted(self.sources),
             "benutzer": sorted(self.users),
             "benutzeruebergreifend": len(self.users) > 1,
+            "art": self.kind,
+            "art_text": ARTEN[self.kind],
+            "monat": self.month,
             "behalten": keep_id,
             "vorschlag": self.suggested_keep,
             "erledigt": self.done(keep_id),
@@ -257,3 +288,61 @@ def execute_steps(lib: Library, clients: dict[str, ImmichClient], steps: list[Pl
             lib.assets.pop(i, None)
         log.info("%d Medien von %s in den Papierkorb verschoben", len(ids), user)
     return result
+
+
+# ------------------------------------------------------------ „Kein Duplikat“
+class IgnoreList:
+    """Gruppen, die als „kein Duplikat“ markiert wurden (DATA_DIR/duplikate_ignoriert.json).
+
+    Eine Gruppe bleibt ausgeblendet, solange sie nur aus markierten Medien besteht. Kommt eine
+    neue Kopie hinzu, taucht sie wieder auf.
+    """
+
+    def __init__(self, path):
+        self.path = path
+        self.sets: list[frozenset[str]] = []
+        try:
+            data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+            self.sets = [frozenset(ids) for ids in data.get("gruppen", [])]
+        except (OSError, ValueError) as exc:
+            log.warning("Liste „kein Duplikat“ unlesbar (%s) – starte leer", exc)
+
+    def contains(self, group: DuplicateGroup) -> bool:
+        ids = group.asset_ids
+        return any(ids <= s for s in self.sets)
+
+    def add(self, ids: Iterable[str]) -> None:
+        new = frozenset(ids)
+        self.sets = [s for s in self.sets if not s <= new] + [new]
+        self._save()
+
+    def remove(self, ids: Iterable[str]) -> None:
+        ids = frozenset(ids)
+        self.sets = [s for s in self.sets if not ids <= s]
+        self._save()
+
+    def _save(self) -> None:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {"gruppen": [sorted(s) for s in self.sets]}
+            self.path.write_text(json.dumps(payload, indent=1), encoding="utf-8")
+        except OSError as exc:
+            log.warning("Liste „kein Duplikat“ nicht speicherbar: %s", exc)
+
+
+def clear_immich_duplicates(lib: Library, clients: dict[str, ImmichClient], group: DuplicateGroup) -> int:
+    """Nimmt Immich-erkannte Duplikate auch in Immich aus der Duplikatliste."""
+    if "immich" not in group.sources:
+        return 0
+    ids = group.asset_ids
+    by_owner: dict[str, list[str]] = {}
+    for d in lib.immich_duplicates:
+        hit = [i for i in d.asset_ids if i in ids]
+        if hit:
+            by_owner.setdefault(d.user, []).extend(hit)
+    n = 0
+    for owner, owner_ids in by_owner.items():
+        n += clients[owner].clear_duplicate(sorted(set(owner_ids)))
+    lib.immich_duplicates = [d for d in lib.immich_duplicates
+                             if not (set(d.asset_ids) & ids)]
+    return n
