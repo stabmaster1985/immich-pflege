@@ -30,6 +30,16 @@ Unter **Ziel** kannst du statt des Vorschlags ein anderes passendes Album wähle
 - **Neues Album:** Es gehört dem Benutzer mit den meisten Medien der Reise und wird mit dem anderen geteilt (als Bearbeiter), wenn auch von ihm Fotos dabei sind. Jeder fügt seine eigenen Fotos hinzu, so liegen am Ende die Fotos von euch beiden darin.
 - **Album ergänzen:** Hat der andere Benutzer noch keinen Zugriff, teilt der Besitzer das Album mit ihm als Bearbeiter. Das steht vorher in der Vormerkliste dabei. Ist jemand nur Betrachter, werden seine Fotos nicht hinzugefügt (Hinweis in der Vormerkliste).
 
+## Alle Bilder ansehen und einzelne abwählen
+
+Die Karte zeigt nur ein paar Beispielbilder. **Alle … ansehen** klappt sämtliche Bilder der Reise auf:
+
+- Grün umrandet = kommt ins Album.
+- Mit **✓ im Album** = liegt schon im gewählten Album, bleibt dort.
+- **Antippen** nimmt ein Bild heraus (grau) oder wieder hinein. Oben steht „28 von 31 ausgewählt“.
+
+Herausgenommene Bilder gehören danach **nicht mehr zu dieser Reise**. Die Reise gilt also als erledigt, auch wenn sie nicht im Album liegen. Nimmst du den Eintrag unter ✓ Vorgemerkt wieder zurück, ist auch die Abwahl aufgehoben.
+
 ## Ablauf
 
 1. **Vormerken** pro Reise oder für alle angezeigten. Noch geht nichts an Immich.

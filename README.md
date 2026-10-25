@@ -194,7 +194,8 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | POST | `/api/no-location/apply` | Ort übernehmen: `ids`, `series`, `ort`/`monat` (alle Serien eines Ortes oder Monats), `min_confidence` (`hoch`/`mittel`/`niedrig`), optional `place` `{breite, laenge, name}` |
 | GET | `/api/places?q=Siena` | Ortssuche über Immich |
 | GET | `/api/album-suggestions` | Reisen mit Albumvorschlag. Parameter: `status` (`neu`, `ergaenzen`, `vorhanden`; ohne = offene), `jahr`, `ignoriert`, `offset`, `limit` |
-| POST | `/api/album-suggestions/apply` | Direkt anlegen/ergänzen: `{"trips": [{"id": "…"}]}`, optional je Reise `album` (Album-ID, `null` = neues Album) und `name` |
+| GET | `/api/album-suggestions/{id}/media` | Alle Medien einer Reise, `im_album` bezogen auf `album` (ohne = Vorschlag, leer = neues Album) |
+| POST | `/api/album-suggestions/apply` | Direkt anlegen/ergänzen: `{"trips": [{"id": "…"}]}`, optional je Reise `album` (Album-ID, `null` = neues Album) `name` und `ohne` (abgewählte Medien) |
 | POST | `/api/album-suggestions/ignore` | „Kein Album“: `{"trips": [...]}`, mit `"undo": true` wieder aufnehmen |
 | GET | `/api/tags` | Regel-Vorschau (`rules=Name`, mehrfach möglich) |
 | GET | `/api/help/{thema}` | Hilfetext als Markdown (`duplikate`, `ohne-ort`, `aufraeumen`, `alben`, `tags`, `vorgemerkt`, `einstellungen`) |

@@ -9,7 +9,7 @@ const S = {
   loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, loaded: false, info: null },
   ovw: { loaded: false },
   cln: { bereich: "speicher", kategorie: null, ignored: false, items: [], total: 0, sel: new Set(), keep: {}, loaded: false, info: null },
-  alb: { trips: [], total: 0, status: null, jahr: null, ignored: false, sel: new Set(), choice: {}, loaded: false, info: null },
+  alb: { trips: [], total: 0, status: null, jahr: null, ignored: false, sel: new Set(), choice: {}, ohne: {}, open: {}, loaded: false, info: null },
   sug: { items: [], hidden: false, info: null, smart: null, cut: null, tag: "" },
   tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [], items: [], fileErrors: [], users: [], yaml: "" },
   set: { data: null, loaded: false },
@@ -1919,7 +1919,7 @@ const ALB_STATUS = { neu: "Neues Album", ergaenzen: "Album ergänzen", vorhanden
 
 async function loadAlbums(reset) {
   const a = S.alb;
-  if (reset) { a.trips = []; a.sel.clear(); a.choice = {}; $("#alb-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
+  if (reset) { a.trips = []; a.sel.clear(); a.choice = {}; a.ohne = {}; a.open = {}; $("#alb-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
   const params = new URLSearchParams({ offset: a.trips.length, limit: PAGE_ALB, ignoriert: a.ignored });
   if (a.status) params.set("status", a.status);
   if (a.jahr) params.set("jahr", a.jahr);
@@ -2022,6 +2022,14 @@ function renderTrip(t) {
   card.append(found);
 
   if (t.beispiele.length) card.append(h("div", { class: "strip" }, t.beispiele.map((m) => thumb(m))));
+  const all = h("div", { class: "trip-all" });
+  const allBtn = h("button", { type: "button", class: "btn small", onclick: () => {
+    a.open[t.id] = !a.open[t.id];
+    allBtn.textContent = a.open[t.id] ? "Weniger zeigen" : `Alle ${t.anzahl} ansehen`;
+    if (a.open[t.id]) loadTripMedia(t, all); else all.replaceChildren();
+  } }, a.open[t.id] ? "Weniger zeigen" : `Alle ${t.anzahl} ansehen`);
+  card.append(h("div", { class: "row-gap", style: "margin-top:8px" }, allBtn, h("span", { class: "muted small trip-sel" }, tripSelText(t))), all);
+  if (a.open[t.id]) loadTripMedia(t, all);
 
   if (a.ignored) {
     card.append(h("div", { class: "row-gap" }, h("button", { type: "button", class: "btn small", onclick: () => ignoreTrip(t, true) }, "Wieder aufnehmen")));
@@ -2040,6 +2048,7 @@ function renderTrip(t) {
     const album = e.target.value || null;
     a.choice[t.id] = { album, name: nameIn.value };
     nameRow.hidden = album !== null;
+    if (a.open[t.id]) loadTripMedia(t, all);  // „schon im Album“ hängt vom Ziel ab
   } },
     ...targets.map((k) => h("option", { value: k.id }, `„${k.name}“ ergänzen`)),
     h("option", { value: "" }, "Neues Album anlegen"));
@@ -2051,10 +2060,43 @@ function renderTrip(t) {
   return card;
 }
 
+function tripSelText(t) {
+  const off = (S.alb.ohne[t.id] || new Set()).size;
+  return off ? `${t.anzahl - off} von ${t.anzahl} ausgewählt` : "";
+}
+
+// Alle Medien einer Reise; antippen nimmt einzelne heraus bzw. wieder hinein
+async function loadTripMedia(t, box) {
+  const a = S.alb;
+  box.replaceChildren(h("p", { class: "muted small" }, "Lade alle Bilder …"));
+  const c = tripChoice(t);
+  let r;
+  try {
+    r = await api(`api/album-suggestions/${t.id}/media?album=` + encodeURIComponent(c.album || ""));  // leer = neues Album
+  } catch (e) { box.replaceChildren(h("div", { class: "banner err" }, e.message)); return; }
+  const off = a.ohne[t.id] || (a.ohne[t.id] = new Set());
+  const grid = h("div", { class: "smart-grid" });
+  const label = box.parentElement && box.parentElement.querySelector(".trip-sel");
+  for (const m of r.medien) {
+    const el = tile({ class: "smart-tile" + (m.im_album ? " in-album" : off.has(m.id) ? " out" : " in"), title: m.dateiname,
+      onclick: () => {
+        if (m.im_album) return;
+        off.has(m.id) ? off.delete(m.id) : off.add(m.id);
+        el.className = "smart-tile " + (off.has(m.id) ? "out" : "in");
+        if (label) label.textContent = tripSelText(t);
+      } },
+    thumb(m), m.im_album ? h("span", { class: "badge ok" }, "✓ im Album") : null);
+    grid.append(el);
+  }
+  box.replaceChildren(h("p", { class: "muted small" }, "Antippen nimmt ein Bild heraus (grau) bzw. wieder hinein. Herausgenommene gehören danach nicht mehr zu dieser Reise."), grid);
+}
+
 async function stageTrips(trips, btn) {
   const body = { trips: trips.map((t) => {
     const c = tripChoice(t);
-    return c.album ? { id: t.id, album: c.album } : { id: t.id, album: null, name: (c.name || t.name).trim() };
+    const ohne = [...(S.alb.ohne[t.id] || [])];
+    const sel = c.album ? { id: t.id, album: c.album } : { id: t.id, album: null, name: (c.name || t.name).trim() };
+    return ohne.length ? { ...sel, ohne } : sel;
   }) };
   if (trips.length > 1) {
     const ok = await confirmDialog({

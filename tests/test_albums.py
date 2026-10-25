@@ -171,3 +171,40 @@ def test_manual_home(web):
     web.put("/api/settings", json={"album_home": []})
     assert web.get("/api/album-suggestions").json()["zuhause"][0] == {
         "name": "Hamburg", "tage": 122, "von_hand": False, "breite": 53.55, "laenge": 9.99}
+
+
+def test_all_media_and_single_selection(web, state):
+    tosk = trip_named(web.get("/api/album-suggestions").json()["reisen"], "Toskana")
+    media = web.get(f"/api/album-suggestions/{tosk['id']}/media").json()
+    assert media["anzahl"] == 31 and len(media["medien"]) == 31
+    assert sum(m["im_album"] for m in media["medien"]) == 5  # schon in Julias „Toskana 2024“
+    drop = [m["id"] for m in media["medien"] if not m["im_album"]][:3]
+    entry = web.post("/api/staged/albums", json={"trips": [{"id": tosk["id"], "ohne": drop}]}).json()
+    assert entry["vorgemerkt"] == 1
+    staged = web.get("/api/staged").json()["eintraege"][0]
+    assert staged["anzahl"] == 23 and staged["daten"]["ohne"] == sorted(drop)
+    # zurücknehmen hebt die Abwahl wieder auf
+    web.delete(f"/api/staged/{staged['id']}")
+    again = trip_named(web.get("/api/album-suggestions").json()["reisen"], "Toskana")
+    assert again["anzahl"] == 31
+    web.post("/api/staged/albums", json={"trips": [{"id": again["id"], "ohne": drop}]})
+    web.post("/api/staged/apply", json={})
+    album = next(a for a in state.albums.values() if a["albumName"] == "Toskana 2024")
+    inside = state.asset_ids_in_album(album["id"])
+    assert len(inside) == 28 and not set(drop) & inside
+    done = web.get("/api/album-suggestions", params={"status": "vorhanden"}).json()["reisen"]
+    assert any(t["name"].startswith("Toskana") and t["anzahl"] == 28 for t in done)  # abgewählte zählen nicht mehr
+
+
+def test_new_album_without_some(web, state):
+    kop = trip_named(web.get("/api/album-suggestions").json()["reisen"], "Kopenhagen")
+    media = web.get(f"/api/album-suggestions/{kop['id']}/media").json()["medien"]
+    keep = [m["id"] for m in media[:20]]
+    r = web.post("/api/album-suggestions/apply",
+                 json={"trips": [{"id": kop["id"], "ohne": [m["id"] for m in media[20:]]}]}).json()
+    assert r["alben"][0]["hinzugefuegt"] == 20
+    album = next(a for a in state.albums.values() if a["albumName"].startswith("Kopenhagen"))
+    assert state.asset_ids_in_album(album["id"]) == set(keep)
+    everything = [m["id"] for m in media]
+    assert web.post("/api/album-suggestions/apply",
+                    json={"trips": [{"id": kop["id"], "ohne": everything}]}).status_code == 400

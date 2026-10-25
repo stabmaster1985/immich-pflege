@@ -157,6 +157,7 @@ class TripSelection(BaseModel):
     id: str
     album: Optional[str] = None  # weglassen = Vorschlag, null = neues Album, sonst Album-ID
     name: Optional[str] = Field(None, max_length=200)
+    ohne: Optional[list[str]] = None  # einzeln abgewählte Medien
 
 
 class AlbumsApply(BaseModel):
@@ -626,6 +627,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
                           ignoriert: bool = False, jahr: Optional[str] = None,
                           offset: int = Query(0, ge=0), limit: int = Query(20, ge=0, le=5000)):
         return svc().albums_view(status, ignoriert, jahr, offset, limit)
+
+    @app.get("/api/album-suggestions/{trip_id}/media")
+    def album_suggestion_media(trip_id: str, album: Optional[str] = None):
+        return svc().trip_media(trip_id, album)
 
     @app.post("/api/album-suggestions/apply")
     def album_suggestions_apply(body: AlbumsApply):

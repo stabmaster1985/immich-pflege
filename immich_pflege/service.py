@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 
 from . import __version__
-from .albums import STATUS as ALBUM_STATUS, AlbumError, Home, TripIgnoreList, execute_plan, overlaps, plan_title, plan_trip, suggest
+from .albums import STATUS as ALBUM_STATUS, AlbumError, ExcludedMedia, Home, TripIgnoreList, execute_plan, overlaps, plan_title, plan_trip, suggest
 from .client import ImmichClient, ImmichError
 from .config import Settings
 from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, IgnoreList, PlannedStep,
@@ -676,6 +676,9 @@ class Pflege:
         return tag_ids(data["tags"][0], ids, lib, resolver)
 
     def unstage(self, entry_ids: list[str]) -> dict[str, Any]:
+        for e in self.staging.entries:
+            if e["id"] in entry_ids and e["typ"] == "album" and e["daten"].get("ohne"):
+                self.album_excluded().update(e["daten"]["ohne"], remove=True)  # Abwahl zurücknehmen
         return {"entfernt": self.staging.remove(entry_ids)}
 
     def staged_view(self) -> dict[str, Any]:
@@ -989,17 +992,35 @@ class Pflege:
     def album_ignore_list(self) -> TripIgnoreList:
         return TripIgnoreList(self.settings.data_dir / "alben_ignoriert.json")
 
+    def album_excluded(self) -> ExcludedMedia:
+        return ExcludedMedia(self.settings.data_dir / "alben_ohne.json")
+
+    def trip_media(self, trip_id: str, album_id: str | None = None) -> dict[str, Any]:
+        """Alle Medien einer Reise; ``im_album`` bezogen auf das Ziel-Album (Vorschlag oder ``album_id``)."""
+        if self.albums_pending(wait_s=3):
+            raise ActionError("Die Alben werden gerade noch gelesen – bitte gleich noch einmal")
+        lib, _, trips = self._trips()
+        trip = next((t for t, _ in trips if t.id == trip_id), None)
+        if trip is None:
+            raise ActionError("Reise nicht gefunden – bitte neu laden")
+        if album_id is None and trip.target:
+            album_id = trip.target.album["id"]
+        inside = set(lib.albums[album_id]["medien"]) if album_id in lib.albums else set()
+        return {"id": trip.id, "album": album_id, "anzahl": len(trip.assets),
+                "medien": [{**a.summary(), "im_album": a.id in inside} for a in trip.assets]}
+
     def _trips(self):
         """Reisen ohne vorgemerkte; ``ignored`` = als „kein Album“ markiert."""
         lib = self.library()
         # Berechnung nur neu, wenn sich Bibliothek, Alben oder Einstellungen geändert haben
         manual = [Home(h["breite"], h["laenge"], h["name"], 0, manual=True) for h in self.settings.album_home]
+        without = frozenset(self.album_excluded().ids)
         key = (lib.uid, lib.rev, self.settings.album_min_km, self.settings.album_min_media,
-               tuple((h.latitude, h.longitude) for h in manual))
+               tuple((h.latitude, h.longitude) for h in manual), without)
         with self._calc_lock:
             if not self._trips_cache or self._trips_cache[0] != key:
                 self._trips_cache = (key, suggest(lib, self.settings.album_min_km, self.settings.album_min_media,
-                                                  homes=manual or None))
+                                                  exclude=set(without), homes=manual or None))
             homes, trips = self._trips_cache[1]
         staged = self.staging.id_sets("album")
         ignore = self.album_ignore_list()
@@ -1057,7 +1078,7 @@ class Pflege:
             else:
                 album_id = trip.target.album["id"] if trip.status == "ergaenzen" and trip.target else None
             try:
-                plan = plan_trip(trip, lib, album_id, sel.get("name"))
+                plan = plan_trip(trip, lib, album_id, sel.get("name"), set(sel.get("ohne") or []))
             except AlbumError as exc:
                 raise ActionError(str(exc)) from exc
             if not plan["anzahl"] and not plan["teilen"]:
@@ -1070,6 +1091,8 @@ class Pflege:
         with self._lock:
             plans = self._album_plans(selection)
             for plan in plans:
+                if plan["ohne"]:  # abgewählte gehören nicht zur Reise – auch nach dem Übertragen nicht
+                    self.album_excluded().update(plan["ohne"])
                 media = plan.pop("beispiele")
                 self.staging.add("album", plan_title(plan), plan, media, plan["anzahl"], key=plan["reise"])
             return {"vorgemerkt": len(plans), "hinweise": [h for p in plans for h in p["hinweise"]]}
@@ -1081,6 +1104,8 @@ class Pflege:
             results = []
             for plan in plans:
                 plan.pop("beispiele")
+                if plan["ohne"]:
+                    self.album_excluded().update(plan["ohne"])
                 try:
                     res = execute_plan(self.library(), self.clients, plan)
                     self._record("album", plan_title(plan), res["hinzugefuegt"], res, "api")

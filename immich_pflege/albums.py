@@ -334,15 +334,18 @@ class AlbumError(ValueError):
     pass
 
 
-def plan_trip(trip: Trip, lib: Library, album_id: str | None = None, name: str | None = None) -> dict[str, Any]:
-    """Was beim Übertragen passiert: Album anlegen oder ergänzen, ggf. teilen, Medien je Benutzer."""
+def plan_trip(trip: Trip, lib: Library, album_id: str | None = None, name: str | None = None,
+              without: set[str] | None = None) -> dict[str, Any]:
+    """Was beim Übertragen passiert: Album anlegen oder ergänzen, ggf. teilen, Medien je Benutzer.
+    ``without``: einzeln abgewählte Medien, die nicht ins Album sollen."""
+    without = (without or set()) & trip.ids
     notes: list[str] = []
     if album_id:
         album = lib.albums.get(album_id)
         if album is None:
             raise AlbumError("Album nicht gefunden – bitte neu einlesen")
         owner = album["besitzer"]
-        missing = trip.missing(album)
+        missing = [a for a in trip.missing(album) if a.id not in without]
         share: list[str] = []
         media: dict[str, list[str]] = {}
         for user, cnt in Counter(a.owner for a in missing).items():
@@ -365,11 +368,20 @@ def plan_trip(trip: Trip, lib: Library, album_id: str | None = None, name: str |
         owner = next(iter(users))
         plan = {"aktion": "neu", "album_id": None, "name": name, "besitzer": owner,
                 "teilen": sorted(u for u in users if u != owner),
-                "medien": {u: [a.id for a in trip.assets if a.owner == u] for u in users}}
+                "medien": {u: ids for u in users
+                           if (ids := [a.id for a in trip.assets if a.owner == u and a.id not in without])}}
+        if not plan["medien"]:
+            raise AlbumError("Alle Medien abgewählt – nichts anzulegen")
+        plan["teilen"] = sorted(u for u in plan["medien"] if u != owner)
+        if owner not in plan["medien"]:  # Besitzer ohne eigene Medien: der mit den meisten wird Besitzer
+            owner = max(plan["medien"], key=lambda u: len(plan["medien"][u]))
+            plan["besitzer"] = owner
+            plan["teilen"] = sorted(u for u in plan["medien"] if u != owner)
     plan["anzahl"] = sum(len(v) for v in plan["medien"].values())
     plan["hinweise"] = notes
     plan["reise"] = trip.id
     plan["alle_medien"] = sorted(trip.ids)
+    plan["ohne"] = sorted(without)
     return plan
 
 
@@ -439,6 +451,27 @@ def execute_plan(lib: Library, clients: dict[str, ImmichClient], plan: dict[str,
 
 
 # ------------------------------------------------------- „Kein Album“
+class ExcludedMedia:
+    """Einzeln abgewählte Medien: gehören nicht zur Reise (DATA_DIR/alben_ohne.json)."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self._lock = threading.Lock()
+        self.ids: set[str] = set()
+        try:
+            if path.exists():
+                self.ids = set(json.loads(path.read_text(encoding="utf-8")).get("ohne", []))
+        except (OSError, ValueError) as exc:
+            log.warning("%s unlesbar: %s", path, exc)
+
+    def update(self, ids: Iterable[str], remove: bool = False) -> None:
+        with self._lock:
+            self.ids = self.ids - set(ids) if remove else self.ids | set(ids)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"ohne": sorted(self.ids)}), encoding="utf-8")
+            tmp.replace(self.path)
+
+
 class TripIgnoreList:
     """Reisen, für die kein Album gewünscht ist. Gemerkt als Mengen von Medien-IDs, damit
     eine Reise auch nach neuen Fotos wiedererkannt wird (Überschneidung ab 50 %)."""
