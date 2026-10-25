@@ -32,7 +32,8 @@ def env(tmp_path) -> dict[str, str]:
     """Umgebung wie per .env konfiguriert."""
     return {"DATA_DIR": str(tmp_path / "data"), "IMMICH_URL": "http://immich-server:2283",
             "IMMICH_KEY_FRANK": "key-frank", "IMMICH_KEY_JULIA": "key-julia",
-            "DUP_IMAGE_HASH": "false"}  # Fingerabdruck-Tests schalten ihn gezielt ein
+            "DUP_IMAGE_HASH": "false",  # Fingerabdruck-Tests schalten ihn gezielt ein
+            "PFLEGE_ALBEN_HINTERGRUND": "0"}  # Threads überleben sonst den TestClient
 
 
 @pytest.fixture

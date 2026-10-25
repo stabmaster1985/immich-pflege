@@ -41,6 +41,7 @@ class Library:
     warnings: list[str] = field(default_factory=list)
     immich_url: str = ""
     rev: int = 0  # Änderungszähler (nicht gespeichert): ungültig machen von Zwischenergebnissen
+    albums_ready: bool = True  # False, solange die Album-Inhalte im Hintergrund gelesen werden
 
     def assets_of(self, user: str) -> list[Asset]:
         return [a for a in self.assets.values() if a.owner == user]
@@ -132,6 +133,7 @@ def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any
     erneut abgefragt."""
     names = {u["id"]: n for n, u in users.items()}
     previous = previous or {}
+    started = time.monotonic()
     albums: dict[str, dict[str, Any]] = {}
     jobs: list[tuple[str, str]] = []  # (Album, Benutzer), deren Inhalt abgefragt werden muss
     for name, client in clients.items():
@@ -174,14 +176,29 @@ def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any
     with ThreadPoolExecutor(max_workers=ALBUM_WORKERS) as pool:
         for album_id, ids in pool.map(fetch, jobs):
             albums[album_id]["medien"] |= ids
-    log.info("%d Alben, davon %d neu abgefragt", len(albums), len({j[0] for j in jobs}))
+    log.info("Alben gelesen: %d, davon %d neu abgefragt, in %.1f s", len(albums), len({j[0] for j in jobs}),
+             time.monotonic() - started)
     for entry in albums.values():
         entry["medien"] = sorted(entry["medien"])
     return albums
 
 
-def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: Library | None = None) -> Library:
-    """Liest alle Assets, Album-Zugehörigkeit und Immich-Duplikate aller Benutzer ein."""
+def apply_album_membership(lib: Library) -> None:
+    """Medien im Prüf-Album zählen nur als „im Album“, wenn sie noch in einem anderen Album liegen."""
+    members: set[str] = set()
+    for al in lib.albums.values():
+        members.update(al["medien"])
+    for a in lib.assets.values():
+        if a.in_review_album and a.in_album:
+            a.in_album = a.id in members
+
+
+def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: Library | None = None,
+                 read_album_contents: bool = True) -> Library:
+    """Liest alle Assets, Album-Zugehörigkeit und Immich-Duplikate aller Benutzer ein.
+
+    ``read_album_contents=False``: Album-Inhalte später lesen (siehe ``read_albums``); bis dahin
+    gelten die vom letzten Einlesen."""
     started = time.monotonic()
     warnings: list[str] = []
     assets: dict[str, Asset] = {}
@@ -206,6 +223,7 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
 
         own: dict[str, Asset] = {}
         skipped = 0
+        t0 = time.monotonic()
         for raw in client.search_metadata(withExif=True):
             # Partner-Freigaben liefern ggf. fremde Assets – nur eigene übernehmen.
             if raw.get("ownerId") and raw["ownerId"] != uid:
@@ -214,7 +232,9 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
                 skipped += 1
                 continue
             own[raw["id"]] = Asset.from_api(raw, name)
+        t_media = time.monotonic() - t0
 
+        t0 = time.monotonic()
         not_in_album = client.search_ids(isNotInAlbum=True)
         album_id = find_review_album(client, review_album)
         review_albums[name] = album_id
@@ -225,13 +245,7 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
         for aid, asset in own.items():
             asset.in_album = aid not in not_in_album
             asset.in_review_album = aid in review_members
-        # Mitglieder des Prüf-Albums zählen nur als "im Album", wenn sie noch in einem
-        # anderen Album liegen.
-        for aid in review_members:
-            asset = own[aid]
-            if asset.in_album:
-                others = [a for a in client.albums(asset_id=aid) if a.get("id") != album_id]
-                asset.in_album = bool(others)
+        t_album = time.monotonic() - t0
 
         for d in client.duplicates():
             ids = [a["id"] for a in d.get("assets") or [] if a.get("id")]
@@ -242,15 +256,19 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
                 suggested_keep=list(d.get("suggestedKeepAssetIds") or []),
             ))
 
-        log.info("%s: %d Medien (%d ignoriert: Papierkorb/versteckt)", name, len(own), skipped)
+        log.info("%s: %d Medien (%d ignoriert: Papierkorb/versteckt) – Medien %.1f s, Album-Zugehörigkeit %.1f s",
+                 name, len(own), skipped, t_media, t_album)
         assets.update(own)
 
-    albums = read_albums(clients, users, {a for a in review_albums.values() if a},
-                         previous.albums if previous else None)
+    skip = {a for a in review_albums.values() if a}
+    if read_album_contents:
+        albums = read_albums(clients, users, skip, previous.albums if previous else None)
+    else:
+        albums = {k: v for k, v in (previous.albums if previous else {}).items() if k not in skip}
 
     duration = round(time.monotonic() - started, 2)
     log.info("Einlesen fertig: %d Medien in %.1f s", len(assets), duration)
-    return Library(
+    lib = Library(
         scanned_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         duration_s=duration,
         server_version=server_version,
@@ -260,4 +278,7 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
         review_albums=review_albums,
         albums=albums,
         warnings=warnings,
+        albums_ready=read_album_contents,
     )
+    apply_album_membership(lib)
+    return lib

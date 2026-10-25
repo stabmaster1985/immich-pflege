@@ -1331,6 +1331,16 @@ async function loadAlbums(reset) {
   if (a.status) params.set("status", a.status);
   if (a.jahr) params.set("jahr", a.jahr);
   const r = await api("api/album-suggestions?" + params);
+  if (r.laedt) {
+    // Album-Inhalte werden nach dem Einlesen im Hintergrund gelesen – gleich noch einmal fragen
+    $("#alb-list").replaceChildren(h("div", { class: "banner warn" },
+      "Die Alben beider Benutzer werden gerade gelesen, um sie mit den Reisen abzugleichen. Das dauert bei vielen Alben ein paar Minuten – die Vorschläge erscheinen dann von selbst."));
+    $("#alb-filters").replaceChildren(); $("#alb-summary").textContent = ""; $("#alb-more").hidden = true;
+    a.loaded = false;
+    setTimeout(() => { if (S.tab === "alb" && !a.loaded) loadTab("alb", true); }, 10000);
+    updateActionbar();
+    return;
+  }
   if (a.jahr && !r.jahre.some((j) => j.key === a.jahr)) { a.jahr = null; return loadAlbums(true); }
   if (reset) $("#alb-list").replaceChildren();
   a.total = r.gesamt; a.info = r; a.loaded = true;

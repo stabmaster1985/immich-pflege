@@ -145,3 +145,18 @@ def test_rescan_reuses_unchanged_albums(env, http, state):
     lib = svc.scan()
     assert len(album_queries()) == first + 2  # nur Wien, für beide Benutzer
     assert extra in lib.albums[wien["id"]]["medien"]
+
+
+def test_albums_read_in_background(env, http, state):
+    """Einlesen wartet nicht auf die Album-Inhalte; die Vorschläge kommen, sobald sie gelesen sind."""
+    svc = Pflege(Settings.load(env), http=http)
+    svc.background_albums = True
+    lib = svc.library()
+    svc._albums_thread.join(10)
+    assert lib.albums_ready and {a["name"] for a in lib.albums.values()} == {"Toskana 2024", "Wien"}
+    r = svc.albums_view()
+    assert r["offen"] == 2 and "laedt" not in r
+    # während des Lesens: Hinweis statt falscher „neues Album“-Vorschläge
+    lib.albums_ready = False
+    svc._albums_thread = None
+    assert svc.albums_view() == {"laedt": True, "stand": lib.scanned_at}

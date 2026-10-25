@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 import re
 import threading
@@ -150,7 +151,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
 
     app = FastAPI(title="immich-pflege", version=__version__, docs_url="/api/docs",
                   redoc_url=None, openapi_url="/api/openapi.json", lifespan=lifespan)
+    # Album-Inhalte nach dem Einlesen im Hintergrund lesen (Tests: PFLEGE_ALBEN_HINTERGRUND=0)
+    background_albums = (os.environ if env is None else env).get("PFLEGE_ALBEN_HINTERGRUND", "1") != "0"
     app.state.service = Pflege(first, http=http)
+    app.state.service.background_albums = background_albums
     app.state.auto_scan = AutoScan(lambda: app.state.service)
     app.state.version = version or Version("", http=ext_http)
     sessions = Sessions(first.data_dir)
@@ -171,6 +175,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         old = svc()
         new = Settings.load(env)
         fresh = Pflege(new, http=http)
+        fresh.background_albums = background_albums
         if old._lib and new.immich_url == old.settings.immich_url and new.users == old.settings.users:
             fresh._lib = old._lib  # Bibliothek weiterverwenden, wenn sich Immich-Zugang nicht ändert
         app.state.service = fresh

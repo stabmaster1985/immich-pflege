@@ -16,7 +16,7 @@ from .config import Settings
 from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, IgnoreList, PlannedStep,
                          clear_immich_duplicates, execute_steps, find_groups, plan_group)
 from .imagehash import HashProgress, HashStore, compute_missing, similar_pairs
-from .library import Library, scan_library
+from .library import Library, apply_album_membership, read_albums, scan_library
 from .location import (LEVELS, LocationChange, analyze, execute_location_changes, level_at_least,
                        month_facets, month_key, month_label, place_facets, place_key, resolve_locations)
 from .rules import Resolver, Rule, RuleError, apply as apply_rules, load_rules, preview as preview_rules
@@ -80,6 +80,8 @@ class Pflege:
         self._groups_cache: tuple[tuple, list[DuplicateGroup]] | None = None
         self._analysis_cache: tuple[tuple, Any] | None = None
         self._calc_lock = threading.RLock()  # gleiche Berechnung nicht doppelt (Vorberechnung + Anfrage)
+        self.background_albums = False  # Web: Album-Inhalte nach dem Einlesen im Hintergrund lesen
+        self._albums_thread: threading.Thread | None = None
 
     # ------------------------------------------------------------ Bibliothek
     def cached_library(self) -> Library | None:
@@ -107,7 +109,8 @@ class Pflege:
         with self._lock:
             self.scanning = True
             try:
-                lib = scan_library(self.clients, self.settings.review_album, self.cached_library())
+                lib = scan_library(self.clients, self.settings.review_album, self.cached_library(),
+                                   read_album_contents=not self.background_albums)
             except ImmichError as exc:
                 self.last_error = str(exc)
                 raise
@@ -117,10 +120,34 @@ class Pflege:
             lib.immich_url = self.settings.immich_url
             self._lib = lib
             lib.save(self.settings.cache_file)
+        if not lib.albums_ready:
+            self._albums_thread = threading.Thread(target=self._read_albums, args=(lib,), name="alben-lesen", daemon=True)
+            self._albums_thread.start()
         if self.settings.dup_image_hash:
             self.start_hashing()
         self.warm_up_background()
         return lib
+
+    def _read_albums(self, lib: Library) -> None:
+        try:
+            skip = {a for a in lib.review_albums.values() if a}
+            albums = read_albums(self.clients, lib.users, skip, lib.albums)
+        except ImmichError as exc:
+            log.error("Alben konnten nicht gelesen werden: %s", exc)
+            albums = None
+        with self._lock:
+            if albums is not None:
+                lib.albums = albums
+                apply_album_membership(lib)
+            lib.albums_ready = True
+            if self._lib is lib:
+                self._save()
+
+    def albums_pending(self, wait_s: float = 0) -> bool:
+        lib = self.library()
+        if not lib.albums_ready and self._albums_thread is not None:
+            self._albums_thread.join(wait_s)
+        return not lib.albums_ready
 
     def _save(self) -> None:
         if self._lib is not None:
@@ -135,7 +162,8 @@ class Pflege:
         try:
             self.all_groups()
             self._analysis()
-            self._trips()
+            if not self.albums_pending():
+                self._trips()
         except Exception as exc:  # nur Vorarbeit – Fehler zeigen sich beim echten Aufruf
             log.warning("Vorberechnung fehlgeschlagen: %s", exc)
             return
@@ -613,6 +641,8 @@ class Pflege:
         """Reisen mit Albumvorschlag. Ohne ``status`` die offenen (neu + ergänzen)."""
         if status and status not in ALBUM_STATUS:
             raise ActionError(f"Status muss {', '.join(ALBUM_STATUS)} sein")
+        if self.albums_pending(wait_s=3):
+            return {"laedt": True, "stand": self.library().scanned_at}
         lib, homes, trips = self._trips()
         base = [t for t, ign in trips if ign == ignored]
         counts = {k: sum(1 for t in base if t.status == k) for k in ALBUM_STATUS}
@@ -643,6 +673,8 @@ class Pflege:
         """selection: [{id, album?: Album-ID oder null = neu, name?}]; ohne album = Vorschlag."""
         if not selection:
             raise ActionError("Keine Reisen ausgewählt")
+        if self.albums_pending(wait_s=3):
+            raise ActionError("Die Alben werden gerade noch gelesen – bitte gleich noch einmal")
         lib, _, trips = self._trips()
         known = {t.id: t for t, _ in trips}
         plans = []
