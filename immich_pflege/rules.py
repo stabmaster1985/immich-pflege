@@ -478,6 +478,30 @@ def preview(rules: list[Rule], lib: Library, resolver: Resolver) -> list[dict[st
     return result
 
 
+def tag_ids(tag: str, ids: list[str], lib: Library, resolver: Resolver) -> dict[str, Any]:
+    """Ausgewählte Medien direkt taggen (je Besitzer mit dessen Key); nur ergänzen."""
+    by_user: dict[str, list[str]] = {}
+    for i in ids:
+        if i in lib.assets:
+            by_user.setdefault(lib.assets[i].owner, []).append(i)
+    tagged, undo = 0, []
+    for user, own in by_user.items():
+        already = resolver.tagged_assets(user, tag)
+        new = [i for i in own if i not in already]
+        if not new:
+            continue
+        client = resolver.clients[user]
+        upserted = client.upsert_tags([tag])
+        tid = next((t["id"] for t in upserted if t.get("value") == tag), None) or resolver.tag_id(user, tag)
+        if not tid:
+            raise RuntimeError(f"Tag „{tag}“ konnte bei {user} nicht angelegt werden")
+        client.tag_assets([tid], new)
+        resolver.forget_tags(user)
+        tagged += len(new)
+        undo.append({"op": "tag_entfernen", "user": user, "tag": tid, "ids": sorted(new)})
+    return {"getaggt": tagged, "rueck": undo}
+
+
 def apply(rules: list[Rule], lib: Library, resolver: Resolver) -> list[dict[str, Any]]:
     """Ergänzt fehlende Tags. Entfernt niemals Tags."""
     result = []

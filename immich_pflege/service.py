@@ -26,7 +26,9 @@ from .library import Library, apply_album_membership, read_albums, scan_library
 from .models import Asset
 from .location import (LEVELS, LocationChange, analyze, execute_location_changes, level_at_least,
                        month_facets, month_key, month_label, place_facets, place_key, resolve_locations)
-from .rules import Resolver, Rule, RuleError, apply as apply_rules, load_rules, preview as preview_rules
+from .rules import (Resolver, Rule, RuleError, apply as apply_rules, dump_rules, load_rules, parse_rules,
+                    preview as preview_rules, tag_ids)
+from .suggestions import BEGRIFFE, HiddenList, data_suggestions, smart_results
 from .stacking import execute_stacks, propose as propose_stacks, whole_album
 from .staging import StagingStore
 
@@ -581,6 +583,98 @@ class Pflege:
                              p.get("beispiele", []), p.get("neu", 0), key=name)
         return {"vorgemerkt": len(names)}
 
+    # ------------------------------------------------------ Tag-Vorschläge
+    def hidden_suggestions(self) -> HiddenList:
+        return HiddenList(self.settings.data_dir / "vorschlaege_ausgeblendet.json")
+
+    def _suggestion_rules(self) -> list[tuple[dict[str, Any], Rule]]:
+        defs = data_suggestions(self.library())
+        rules = parse_rules(dump_rules([d["regel"] for d in defs]), list(self.clients)) if defs else []
+        return list(zip(defs, rules))
+
+    def suggestions_view(self, hidden: bool = False) -> dict[str, Any]:
+        """Tag-Vorschläge aus den Daten (gezählt wie eine Regel) und die Begriffe für die KI-Suche."""
+        lib = self.library()
+        key = (lib.uid, lib.rev, len(self.history.entries))
+        with self._calc_lock:
+            if not getattr(self, "_sugg_cache", None) or self._sugg_cache[0] != key:
+                pairs = self._suggestion_rules()
+                previews = preview_rules([r for _, r in pairs], lib, Resolver(self.clients)) if pairs else []
+                self._sugg_cache = (key, [{**d, "tag": r.tags[0], **{k: p[k] for k in
+                                           ("treffer", "schon_getaggt", "neu", "beispiele", "benutzer")}}
+                                          for (d, r), p in zip(pairs, previews)])
+            items = self._sugg_cache[1]
+        off = self.hidden_suggestions().ids
+        staged = {e.get("key") for e in self.staging.of_type("tag")}
+        shown = [s for s in items if (s["id"] in off) == hidden and s["id"] not in staged and (hidden or s["neu"])]
+        return {"stand": lib.scanned_at, "vorschlaege": shown, "ausgeblendet": sum(1 for s in items if s["id"] in off),
+                "begriffe": [{"name": n, "tag": t} for n, _, t in BEGRIFFE]}
+
+    def smart_view(self, begriff: str | None = None, query: str | None = None, tag: str | None = None) -> dict[str, Any]:
+        """KI-Suche: Treffer nach Passgenauigkeit, ohne schon getaggte und vorgemerkte."""
+        known = {n: (q, t) for n, q, t in BEGRIFFE}
+        if begriff:
+            if begriff not in known:
+                raise ActionError(f"Unbekannter Begriff {begriff!r}")
+            query, default_tag = known[begriff]
+            tag = tag or default_tag
+        if not query or not query.strip():
+            raise ActionError("Suchbegriff fehlt")
+        tag = (tag or f"KI/{query.strip()}").strip("/ ")
+        lib = self.library()
+        resolver = Resolver(self.clients)
+        exclude = {i for u in self.clients for i in resolver.tagged_assets(u, tag)}
+        exclude |= {i for e in self.staging.of_type("tag") for ids in (e["daten"].get("medien") or {}).values() for i in ids}
+        try:
+            ids = smart_results(self.clients, lib, query.strip(), exclude)
+        except ImmichError as exc:
+            raise ActionError(f"KI-Suche nicht möglich (ist das maschinelle Lernen in Immich aktiv?): {exc}") from exc
+        return {"begriff": begriff, "suche": query, "tag": tag, "medien": [lib.assets[i].summary() for i in ids]}
+
+    def stage_suggestions(self, ids: list[str]) -> dict[str, Any]:
+        view = {s["id"]: s for s in self.suggestions_view()["vorschlaege"]}
+        missing = [i for i in ids if i not in view]
+        if not ids or missing:
+            raise ActionError("Vorschlag nicht (mehr) vorhanden – bitte neu laden")
+        for i in ids:
+            s = view[i]
+            self.staging.add("tag", f"🏷 {s['titel']} → {s['tag']}", {"regel_def": s["regel"], "tags": [s["tag"]]},
+                             s.get("beispiele", []), s["neu"], key=i)
+        return {"vorgemerkt": len(ids)}
+
+    def stage_smart(self, tag: str, ids: list[str], label: str | None = None) -> dict[str, Any]:
+        tag = "/".join(p.strip() for p in (tag or "").split("/") if p.strip())
+        if not tag:
+            raise ActionError("Tag fehlt")
+        lib = self.library()
+        chosen = [i for i in ids if i in lib.assets]
+        if not chosen:
+            raise ActionError("Keine Medien ausgewählt")
+        by_user: dict[str, list[str]] = {}
+        for i in chosen:
+            by_user.setdefault(lib.assets[i].owner, []).append(i)
+        self.staging.add("tag", f"🏷 {label or tag}: {len(chosen)} Medien (KI-Suche) → {tag}",
+                         {"medien": by_user, "tags": [tag]}, [lib.assets[i].summary() for i in chosen[:8]], len(chosen))
+        return {"vorgemerkt": len(chosen)}
+
+    def hide_suggestions(self, ids: list[str], undo: bool = False) -> dict[str, Any]:
+        self.hidden_suggestions().update(ids, remove=undo)
+        return {"vorschlaege": len(ids), "rueckgaengig": undo}
+
+    def _apply_staged_tag(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Vorgemerkte Tags: eigene Regel (Name), Vorschlag (Regel-Definition) oder ausgewählte Medien."""
+        if "regel" in data:
+            return self.tags_apply([data["regel"]], record=False)
+        resolver = Resolver(self.clients)
+        lib = self.library()
+        if "regel_def" in data:
+            rules = parse_rules(dump_rules([data["regel_def"]]), list(self.clients))
+            res = apply_rules(rules, lib, resolver)
+            return {"regeln": res, "warnungen": resolver.warnings, "getaggt": sum(r.get("getaggt", 0) for r in res),
+                    "rueck": [op for r in res for op in r.pop("rueck", [])]}
+        ids = [i for ids in data["medien"].values() for i in ids]
+        return tag_ids(data["tags"][0], ids, lib, resolver)
+
     def unstage(self, entry_ids: list[str]) -> dict[str, Any]:
         return {"entfernt": self.staging.remove(entry_ids)}
 
@@ -621,7 +715,7 @@ class Pflege:
                     elif e["typ"] == "stapel":
                         res = execute_stacks(lib, self.clients, e["daten"])
                     else:
-                        res = self.tags_apply([e["daten"]["regel"]], record=False)
+                        res = self._apply_staged_tag(e["daten"])
                 except (ImmichError, ActionError, RuleError, AlbumError) as exc:
                     self.staging.set_error(e["id"], str(exc))
                     results.append({"id": e["id"], "titel": e["titel"], "fehler": str(exc)})
@@ -1027,7 +1121,7 @@ class Pflege:
         rules = self._select_rules(names)
         resolver = Resolver(self.clients)
         lib = self.library()
-        staged = {e["daten"]["regel"] for e in self.staging.of_type("tag")}
+        staged = {e["daten"].get("regel") for e in self.staging.of_type("tag")}
         regeln = [{**r, "vorgemerkt": r["name"] in staged} for r in preview_rules(rules, lib, resolver)]
         return {"stand": lib.scanned_at, "regeldatei": str(self.settings.rules_file),
                 "regeln": regeln, "warnungen": resolver.warnings}

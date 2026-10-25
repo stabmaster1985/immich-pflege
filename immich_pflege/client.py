@@ -114,6 +114,11 @@ class ImmichClient:
     def search_ids(self, **filters: Any) -> set[str]:
         return {a["id"] for a in self.search_metadata(**filters)}
 
+    def smart_search(self, query: str, size: int = 100) -> list[dict]:
+        """KI-Suche (CLIP) – Treffer nach Passgenauigkeit sortiert, ohne feste Grenze."""
+        data = self.request("POST", "/search/smart", json={"query": query, "size": size, "page": 1})
+        return ((data or {}).get("assets") or {}).get("items") or []
+
     def search_places(self, name: str) -> list[dict]:
         return self.request("GET", "/search/places", params={"name": name}) or []
 

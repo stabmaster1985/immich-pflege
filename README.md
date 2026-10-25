@@ -8,7 +8,7 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 | **Ohne Ort** | Medien ohne GPS bekommen einen Ortsvorschlag mit Sicherheit (sicher, wahrscheinlich, unsicher) aus den GPS-Fotos beider Benutzer, zusammengefasst nach Ort und Serie. Für den Rest gibt es die Ortssuche von Immich. Screenshots werden ausgeblendet. |
 | **Aufräumen** | Speicherfresser (große Videos, Bildschirmaufnahmen, doppelte Live-Photo-Videos), Serienbilder (das schärfste bleibt oder alles stapeln), **Stapeln aus eigenen Alben**, unscharfe und dunkle Fotos, falsche Aufnahmezeiten samt Kamera-Zeitversatz, Papierkorb-Übersicht. |
 | **Alben** | Erkennt Reisen (weg von zu Hause, beide Benutzer zusammen) und schlägt Alben vor. Vorher wird gegen alle vorhandenen Alben beider Benutzer abgeglichen: schon vorhanden, ergänzen oder neu. Neue Alben werden mit dem anderen Benutzer geteilt. |
-| **Tags** | Massen-Tagging nach Regeln, die du in der Oberfläche anlegst, auch nach Land, Region oder Ort. Tags werden nur ergänzt, nie entfernt. |
+| **Tags** | Fertige Vorschläge zum Abhaken (Länder, Kameras, Screenshots, WhatsApp) und Suche mit Immichs KI (Hund, Strand, Quittung …): erstes unpassendes Bild antippen, alles davor wird getaggt. Eigene Regeln für Sonderfälle. Tags werden nur ergänzt, nie entfernt. |
 | **Übersicht** | Kennzahlen je Benutzer, offene Aufgaben, Aufnahmen je Jahr, Erledigtes je Monat. Auf Wunsch wöchentlich als Nachricht per ntfy oder Telegram. |
 
 Alles startet als **Vorschau**. In der Oberfläche wird Bestätigtes zuerst nur **vorgemerkt** und verschwindet aus der Übersicht. Unter **✓ Vorgemerkt** prüfst du alles noch einmal und überträgst es dann per Klick an Immich. Jede Übertragung steht im **Verlauf** und lässt sich dort rückgängig machen (außer Orten, siehe Hilfe).
@@ -127,7 +127,7 @@ Tabs **Übersicht**, **Duplikate**, **Ohne Ort**, **Aufräumen**, **Alben**, **T
 | Fotos ohne Ort: Kriterien und Sicherheit, Serien, Ortssuche, Fehlerquellen | [`immich_pflege/hilfe/ohne-ort.md`](immich_pflege/hilfe/ohne-ort.md) |
 | Aufräumen: Speicherfresser, Serienbilder, unscharf/dunkel, falsche Zeit, Papierkorb | [`immich_pflege/hilfe/aufraeumen.md`](immich_pflege/hilfe/aufraeumen.md) |
 | Albumvorschläge: Reise-Erkennung, Abgleich mit vorhandenen Alben, Teilen | [`immich_pflege/hilfe/alben.md`](immich_pflege/hilfe/alben.md) |
-| Massen-Tagging: Regelfelder, Vorschau, YAML | [`immich_pflege/hilfe/tags.md`](immich_pflege/hilfe/tags.md) |
+| Tags: Vorschläge, KI-Suche, eigene Regeln | [`immich_pflege/hilfe/tags.md`](immich_pflege/hilfe/tags.md) |
 | Vorgemerkt, Verlauf und Rückgängig | [`immich_pflege/hilfe/vorgemerkt.md`](immich_pflege/hilfe/vorgemerkt.md) |
 | Einstellungen: Immich, automatisch einlesen, Zugang, Updates | [`immich_pflege/hilfe/einstellungen.md`](immich_pflege/hilfe/einstellungen.md) |
 
@@ -214,6 +214,10 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/api/cleanup` | Aufräumen: `art` (`speicher`, `serien`, `qualitaet`), `kategorie`, `ignoriert`, `offset`, `limit` |
 | POST | `/api/staged/cleanup` | Aufräumen vormerken: `action` (`album`/`papierkorb`, bei Serien auch `stapel`), `ids` oder `kategorie`, optional `keep` {Eintrag: Medium} |
 | POST | `/api/cleanup/keep` | „Behalten“/„Passt so“: `{"ids": [...]}`, mit `"undo": true` zurück |
+| GET | `/api/suggestions` | Tag-Vorschläge aus den Daten (`ausgeblendet=true` für ausgeblendete) und Begriffe der KI-Suche |
+| GET | `/api/suggestions/smart` | KI-Suche: `begriff` (aus der Liste) oder `suche` (eigener Text), optional `tag` |
+| POST | `/api/staged/suggestions`, `/api/staged/smart` | Vorschläge (`ids`) bzw. KI-Treffer (`tag`, `ids`) vormerken |
+| POST | `/api/suggestions/hide` | „Kein Interesse“: `ids`, mit `undo` zurück |
 | GET | `/api/stacks` | Stapel-Vorschläge: `album`, `ganz` (ganzes Album je Benutzer) |
 | POST | `/api/staged/stacks` | Stapel vormerken: `album`, `ids` (ohne = alle), `ganz`, `oben` {Vorschlag: Medium}, `aus_album` |
 | GET | `/api/timefix` | Falsche Aufnahmezeiten: `art` (`zeitversatz`, `dateiname`, `zukunft`, `standard`) |

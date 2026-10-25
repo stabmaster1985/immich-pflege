@@ -1,8 +1,38 @@
-# Massen-Tagging
+# Tags
 
-Regeln vergeben Tags an viele Fotos auf einmal. **Tags werden nur ergänzt, nie entfernt.**
+Tags an viele Fotos auf einmal vergeben – meist reicht ein Haken bei einem Vorschlag. **Tags werden nur ergänzt, nie entfernt**, und jede Übertragung lässt sich im Verlauf (Tab ✓) **rückgängig** machen.
 
-## Regeln anlegen
+## Vorschläge
+
+Das Tool schlägt aus euren Daten Tags vor und zählt genau, wie viele Medien noch keinen haben:
+
+| Vorschlag | Tag | Wann |
+|---|---|---|
+| 🌍 Reisen nach … | `Reisen/<Land>` | Fotos mit Ort in einem Land, ab 10 Fotos – euer Heimatland (das häufigste) nicht |
+| 📷 Kamera … | `Kamera/<Modell>` | ab 30 Medien mit dieser Kamera |
+| 📥 Screenshots | `Quelle/Screenshot` | Bildschirmfotos |
+| 📥 WhatsApp-Bilder | `Quelle/WhatsApp` | Dateinamen wie `IMG-20240718-WA0003` |
+
+**Vormerken** übernimmt einen Vorschlag, **Vormerken (n)** unten alle. **Kein Interesse** blendet ihn dauerhaft aus (unter „ausgeblendete“ zurückholbar). Kommen später neue passende Fotos dazu, erscheint der Vorschlag wieder mit der neuen Anzahl.
+
+## Mit der KI-Suche finden
+
+Immich versteht Bildinhalte (maschinelles Lernen, „Smart Search“). Das Tool nutzt diese Suche für Begriffe wie **Hund, Katze, Strand, Berge, Schnee, Sonnenuntergang, Feuerwerk, Geburtstag, Weihnachten, Essen, Auto, Quittung, Dokument** – oder einen eigenen Begriff (Englisch funktioniert mit Immichs Standardmodell am besten, z. B. „dog on the beach“).
+
+Die KI-Suche liefert **keine feste Trefferzahl**, sondern alles nach Passgenauigkeit sortiert: oben die besten, weiter unten immer unpassender. Deshalb:
+
+1. Begriff antippen. Es erscheinen die passendsten Treffer von euch beiden (je Benutzer bis zu 120), schon getaggte und vorgemerkte nicht.
+2. Auf das **erste Bild tippen, das nicht mehr passt**. Alles davor wird grün, der Rest grau.
+3. Tag prüfen (Vorschlag z. B. `Tiere/Hund`) und unten **als „…“ vormerken**.
+4. Danach erscheinen die nächsten Treffer – so lässt sich Seite für Seite weitermachen.
+
+Voraussetzung: In Immich ist das maschinelle Lernen (Smart Search) aktiv.
+
+## Erweitert: eigene Regeln
+
+Für Sonderfälle gibt es weiterhin eigene Regeln (unten im Tab aufklappen).
+
+### Regeln anlegen
 
 **+ Neue Regel** öffnet ein Formular:
 
@@ -22,11 +52,11 @@ Regeln vergeben Tags an viele Fotos auf einmal. **Tags werden nur ergänzt, nie 
 
 Alle Bedingungen einer Regel müssen zutreffen. Eine Regel ohne Bedingung ist nicht erlaubt, sonst würde die ganze Bibliothek getaggt.
 
-## Vorschau und Vormerken
+### Vorschau und Vormerken
 
 Pro Regel siehst du **Treffer**, **schon getaggt** und **neu**, dazu Beispielbilder der neuen Treffer. Regeln anhaken und **Tags vormerken**. Übertragen wird unter **✓ Vorgemerkt**. Fehlende Tags legt das Tool in Immich an, getrennt pro Benutzer.
 
-## Für Fortgeschrittene
+### Für Fortgeschrittene
 
 - **YAML** zeigt alle Regeln als Text. Beim Speichern wird geprüft, und fehlerhafte Regeln werden mit verständlicher Meldung abgelehnt. Die alte Fassung bleibt dann erhalten.
 - **Beispiele** fügt Beispielregeln ausgeschaltet hinzu.

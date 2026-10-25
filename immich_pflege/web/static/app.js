@@ -10,6 +10,7 @@ const S = {
   ovw: { loaded: false },
   cln: { bereich: "speicher", kategorie: null, ignored: false, items: [], total: 0, sel: new Set(), keep: {}, loaded: false, info: null },
   alb: { trips: [], total: 0, status: null, jahr: null, ignored: false, sel: new Set(), choice: {}, loaded: false, info: null },
+  sug: { items: [], hidden: false, info: null, smart: null, cut: null, tag: "" },
   tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [], items: [], fileErrors: [], users: [], yaml: "" },
   set: { data: null, loaded: false },
   stage: { entries: [], info: null, loaded: false },
@@ -851,8 +852,118 @@ function renderTags() {
     }
     list.append(card);
   });
-  $("#count-tags").textContent = totalNew ? `(${totalNew})` : "";
+  S.tags.openRules = t.rules.filter((r) => r.aktiv && r.neu).length;
+  if (t.items.length) $("#rules-details").open = true;
+  updateTagsCount();
   updateActionbar();
+}
+
+function updateTagsCount() {
+  const total = (S.sug.items.length || 0) + (S.tags.openRules || 0);
+  $("#count-tags").textContent = total ? `(${total})` : "";
+}
+
+/* ------------------------------------------------------ Tag-Vorschläge */
+const SUG_ICON = { land: "🌍", kamera: "📷", quelle: "📥" };
+
+async function loadSuggestions() {
+  const g = S.sug;
+  $("#sug-list").replaceChildren(h("p", { class: "empty" }, "Lade …"));
+  const r = await api("api/suggestions?ausgeblendet=" + g.hidden);
+  g.items = r.vorschlaege; g.info = r;
+  $("#sug-summary").textContent = `${n(r.vorschlaege.length, "Vorschlag", "Vorschläge")}`;
+  const cards = r.vorschlaege.map(renderSuggestion);
+  const toggle = h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: g.hidden,
+    onchange: (e) => { g.hidden = e.target.checked; loadSuggestions(); } }), `ausgeblendete (${r.ausgeblendet})`);
+  $("#sug-list").replaceChildren(...(cards.length ? cards : [h("p", { class: "empty" }, g.hidden ? "Nichts ausgeblendet." : "Keine offenen Vorschläge 🎉")]), toggle);
+  $("#smart-terms").replaceChildren(...r.begriffe.map((b) => h("button", { type: "button", class: "chip-btn" + (g.smart && g.smart.begriff === b.name ? " on" : ""),
+    onclick: () => loadSmart({ begriff: b.name }) }, b.name)));
+  updateTagsCount();
+  updateActionbar();
+}
+
+function renderSuggestion(s) {
+  const g = S.sug;
+  return h("article", { class: "card" },
+    h("div", { class: "card-head" }, h("span", {}, SUG_ICON[s.art] || "🏷"), h("b", {}, s.titel),
+      h("span", { class: "chip accent" }, "🏷 " + s.tag),
+      h("button", { type: "button", class: "btn small edit", onclick: () => hideSuggestion(s, g.hidden) }, g.hidden ? "Wieder zeigen" : "Kein Interesse")),
+    h("div", { class: "muted small" }, `${s.grund} · ${s.neu} noch ohne Tag${s.schon_getaggt ? `, ${s.schon_getaggt} schon getaggt` : ""}`),
+    s.beispiele.length ? h("div", { class: "strip" }, s.beispiele.map((m) => thumb(m))) : null,
+    g.hidden || !s.neu ? null : h("div", { class: "row-gap", style: "margin-top:8px" },
+      h("button", { type: "button", class: "btn small primary", onclick: (e) => stageSuggestions([s], e.currentTarget) }, `Vormerken (${s.neu})`)));
+}
+
+async function stageSuggestions(list, btn) {
+  busy(btn, true);
+  try {
+    await api("api/staged/suggestions", { method: "POST", body: { ids: list.map((s) => s.id) } });
+    toast(`${n(list.length, "Vorschlag", "Vorschläge")} vorgemerkt`);
+    S.stage.loaded = false;
+    await Promise.all([loadSuggestions(), loadTab("stage", true)]);
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
+
+async function hideSuggestion(s, undo) {
+  try {
+    await api("api/suggestions/hide", { method: "POST", body: { ids: [s.id], undo } });
+    await loadSuggestions();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function loadSmart(q) {
+  const g = S.sug;
+  const box = $("#smart-box");
+  box.replaceChildren(h("p", { class: "empty" }, "Frage Immichs KI-Suche …"));
+  const params = new URLSearchParams();
+  if (q.begriff) params.set("begriff", q.begriff);
+  if (q.suche) params.set("suche", q.suche);
+  if (q.tag) params.set("tag", q.tag);
+  try {
+    g.smart = await api("api/suggestions/smart?" + params);
+  } catch (e) {
+    box.replaceChildren(h("div", { class: "banner err" }, e.message)); return;
+  }
+  g.cut = null; g.tag = g.smart.tag;
+  document.querySelectorAll("#smart-terms .chip-btn").forEach((b) => b.classList.toggle("on", b.textContent === q.begriff));
+  renderSmart();
+}
+
+function renderSmart() {
+  const g = S.sug;
+  const r = g.smart;
+  const box = $("#smart-box");
+  if (!r) { box.replaceChildren(); return; }
+  if (!r.medien.length) { box.replaceChildren(h("p", { class: "empty" }, "Keine neuen Treffer – alles schon getaggt?")); updateActionbar(); return; }
+  const cut = g.cut === null ? 0 : g.cut;
+  const tagIn = h("input", { type: "text", value: g.tag, oninput: (e) => { g.tag = e.target.value; updateActionbar(); } });
+  const grid = h("div", { class: "smart-grid" });
+  r.medien.forEach((m, i) => {
+    const inside = g.cut !== null && i < g.cut;
+    grid.append(tile({ class: "smart-tile" + (inside ? " in" : g.cut === i ? " cut" : g.cut !== null ? " out" : ""), title: `${i + 1}. ${m.dateiname}`,
+      onclick: () => { g.cut = i; renderSmart(); } },
+    thumb(m), g.cut === i ? h("span", { class: "badge" }, "ab hier nicht") : null));
+  });
+  box.replaceChildren(
+    h("label", { class: "f" }, "Tag", tagIn),
+    h("p", { class: "muted small" }, g.cut === null ? `${r.medien.length} Treffer für „${r.suche}“ – tippe auf das erste, das nicht passt.`
+      : `${n(cut, "Treffer passt", "Treffer passen")}. Anderes Bild antippen, um die Grenze zu verschieben.`),
+    grid);
+  updateActionbar();
+}
+
+async function stageSmart(btn) {
+  const g = S.sug;
+  const ids = g.smart.medien.slice(0, g.cut).map((m) => m.id);
+  if (!ids.length) return;
+  busy(btn, true);
+  try {
+    await api("api/staged/smart", { method: "POST", body: { tag: g.tag, ids, begriff: g.smart.begriff || g.smart.suche } });
+    toast(`${n(ids.length, "Medium", "Medien")} für „${g.tag}“ vorgemerkt`);
+    S.stage.loaded = false;
+    loadTab("stage", true);
+    await loadSmart({ begriff: g.smart.begriff, suche: g.smart.begriff ? null : g.smart.suche, tag: g.tag });
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
 }
 
 async function saveRules(items, errorBox) {
@@ -2233,8 +2344,18 @@ function updateActionbar() {
   } else {
     const cnt = S.tags.sel.size;
     const total = S.tags.rules.filter((r) => S.tags.sel.has(r.name)).reduce((a, r) => a + (r.neu || 0), 0);
-    info.textContent = cnt ? `${n(cnt, "Regel", "Regeln")} · ${n(total, "Medium", "Medien")}` : "Regeln anhaken";
-    buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !cnt, onclick: (e) => applyTags(e.currentTarget) }, "Tags vormerken"));
+    const g = S.sug;
+    if (cnt) {
+      info.textContent = `${n(cnt, "Regel", "Regeln")} · ${n(total, "Medium", "Medien")}`;
+      buttons.push(h("button", { class: "btn small primary", type: "button", onclick: (e) => applyTags(e.currentTarget) }, "Tags vormerken"));
+    } else if (g.smart && g.cut) {
+      info.textContent = `KI-Suche: ${n(g.cut, "Medium", "Medien")}`;
+      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !g.tag.trim(), onclick: (e) => stageSmart(e.currentTarget) }, `als „${g.tag}“ vormerken`));
+    } else {
+      const open = g.hidden ? [] : g.items.filter((s) => s.neu);
+      info.textContent = open.length ? "Alle Vorschläge:" : "";
+      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !open.length, onclick: (e) => stageSuggestions(open, e.currentTarget) }, `Vormerken (${open.length})`));
+    }
   }
   $("#ab-buttons").replaceChildren(...buttons);
 }
@@ -2259,7 +2380,7 @@ async function doLoadTab(tab, force) {
     if (tab === "ovw" && (force || !S.ovw.loaded)) await loadOverview();
     if (tab === "cln" && (force || !S.cln.loaded)) await loadCleanup(true);
     if (tab === "alb" && (force || !S.alb.loaded)) await loadAlbums(true);
-    if (tab === "tags" && (force || !S.tags.loaded)) await loadTags();
+    if (tab === "tags" && (force || !S.tags.loaded)) await Promise.all([loadTags(), loadSuggestions()]);
     if (tab === "stage" && (force || !S.stage.loaded)) await loadStaged();
     if (tab === "set" && (force || !S.set.loaded)) { await loadSettings(); loadVersion(); }
     if (tab !== "set" && S.status && !S.status.bibliothek) loadStatus(false);
@@ -2304,6 +2425,8 @@ $("#loc-hours").addEventListener("change", (e) => {
 $("#cln-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadCleanup(false).finally(() => busy(e.currentTarget, false)); });
 $("#alb-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadAlbums(false).finally(() => busy(e.currentTarget, false)); });
 $("#tags-reload").addEventListener("click", () => loadTab("tags", true));
+$("#smart-go").addEventListener("click", () => { const q = $("#smart-q").value.trim(); if (q) loadSmart({ suche: q }); });
+$("#smart-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#smart-go").click(); } });
 document.querySelectorAll(".help-btn").forEach((b) => b.addEventListener("click", () => openHelp(b.dataset.help)));
 $("#rule-new").addEventListener("click", () => openRule(null));
 $("#rule-examples").addEventListener("click", () => addExamples().catch((e) => toast(e.message, true)));

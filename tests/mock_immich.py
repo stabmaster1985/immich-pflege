@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import copy
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -62,7 +63,7 @@ class MockState:
                   path: str | None = None, type: str = "IMAGE", visibility: str = "timeline",
                   trashed: bool = False, duplicate_id: str | None = None, size: int = 2_000_000,
                   asset_id: str | None = None, image: str | None = None,
-                  duration: int | None = None) -> str:
+                  duration: int | None = None, motiv: str = "") -> str:
         a = copy.deepcopy(TEMPLATE)
         aid = asset_id or new_id()
         uid = self.user_id(owner)
@@ -94,7 +95,8 @@ class MockState:
         a["_albums"] = set()
         a["_tags"] = set()
         a["_people"] = set()
-        a["_image"] = image or aid  # gleiche Bild-Kennung = gleiches Motiv im Vorschaubild
+        a["_image"] = image or aid
+        a["_motiv"] = motiv  # Wörter für die nachgebildete KI-Suche, z. B. "dog beach"  # gleiche Bild-Kennung = gleiches Motiv im Vorschaubild
         self.assets[aid] = a
         return aid
 
@@ -271,6 +273,18 @@ def create_app(state: MockState) -> FastAPI:
                 "nextPage": next_page if state.paging == "page" else None,
             },
         }
+
+    @app.post("/api/search/smart")
+    async def smart_search(request: Request):
+        """Wie CLIP: alles nach Ähnlichkeit sortiert – Treffer mit passendem Motiv zuerst, Rest danach."""
+        user = auth(request)
+        body = await record(request, user) or {}
+        words = set(re.findall(r"\w+", body.get("query", "").lower()))
+        items = sorted(visible(user), key=lambda a: (-len(words & set(a["_motiv"].split())), a["localDateTime"] or ""))
+        size = int(body.get("size", 100))
+        return {"assets": {"total": len(items[:size]), "count": len(items[:size]), "items": [public(a) for a in items[:size]],
+                           "nextPage": None, "facets": []},
+                "albums": {"total": 0, "count": 0, "items": [], "facets": []}}
 
     @app.get("/api/search/places")
     async def search_places(request: Request, name: str = ""):
@@ -681,6 +695,8 @@ def full_state() -> MockState:
                for i, b in enumerate((2, 0, 3))]
     stapel += [s.add_asset("frank", "IMG_7200.HEIC", "2024-08-22T10:00:00.000Z")]
     s.add_album("frank", "Zum Stapeln", stapel)
+    for i, u in enumerate(["frank", "julia", "frank", "julia", "frank", "julia"]):
+        s.add_asset(u, f"IMG_H{i}.HEIC", f"2024-09-1{i}T10:00:00.000Z", motiv="dog", image=f"hund{i}")
     return s
 
 

@@ -138,6 +138,21 @@ class TrashRestore(BaseModel):
     ids: Optional[list[str]] = None  # ohne = alle
 
 
+class SuggestionStage(BaseModel):
+    ids: list[str]
+
+
+class SmartStage(BaseModel):
+    tag: str = Field(max_length=200)
+    ids: list[str]
+    begriff: Optional[str] = None
+
+
+class SuggestionHide(BaseModel):
+    ids: list[str]
+    undo: bool = False
+
+
 class TripSelection(BaseModel):
     id: str
     album: Optional[str] = None  # weglassen = Vorschlag, null = neues Album, sonst Album-ID
@@ -572,6 +587,26 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/staged/timefix")
     def stage_timefix(body: TimeStage):
         return svc().stage_timefix([e.model_dump(exclude_none=True) for e in body.eintraege])
+
+    @app.get("/api/suggestions")
+    def suggestions(ausgeblendet: bool = False):
+        return svc().suggestions_view(ausgeblendet)
+
+    @app.get("/api/suggestions/smart")
+    def suggestions_smart(begriff: Optional[str] = None, suche: Optional[str] = None, tag: Optional[str] = None):
+        return svc().smart_view(begriff, suche, tag)
+
+    @app.post("/api/staged/suggestions")
+    def stage_suggestions(body: SuggestionStage):
+        return svc().stage_suggestions(body.ids)
+
+    @app.post("/api/staged/smart")
+    def stage_smart(body: SmartStage):
+        return svc().stage_smart(body.tag, body.ids, body.begriff)
+
+    @app.post("/api/suggestions/hide")
+    def suggestions_hide(body: SuggestionHide):
+        return svc().hide_suggestions(body.ids, body.undo)
 
     @app.get("/api/stacks")
     def stacks(album: Optional[str] = None, ganz: bool = False):

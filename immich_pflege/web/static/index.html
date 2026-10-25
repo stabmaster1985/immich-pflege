@@ -91,16 +91,34 @@
 
     <section id="tab-tags" class="tab" role="tabpanel" hidden>
       <div class="toolbar">
-        <button id="rule-new" class="btn small primary" type="button">+ Neue Regel</button>
+        <span id="sug-summary" class="muted"></span>
         <span class="row-gap">
-          <button id="rule-examples" class="btn small" type="button">Beispiele</button>
-          <button id="rule-yaml" class="btn small" type="button">YAML</button>
           <button id="tags-reload" class="btn small" type="button" aria-label="Neu laden" title="Neu laden">↻</button>
           <button type="button" class="btn small help-btn" data-help="tags" aria-label="Hilfe zum Tagging">?</button>
         </span>
       </div>
-      <div id="tags-errors"></div>
-      <div id="tags-list"></div>
+      <h2 class="stage-head">Vorschläge</h2>
+      <div id="sug-list"></div>
+      <h2 class="stage-head">Mit der KI-Suche finden</h2>
+      <p class="hint">Begriff antippen oder eigenen eingeben. Die Treffer kommen nach Passgenauigkeit sortiert – tippe auf das <b>erste Bild, das nicht mehr passt</b>. Alles davor wird getaggt.</p>
+      <div id="smart-terms" class="row-gap"></div>
+      <div class="toolbar">
+        <label class="field grow">Eigener Begriff <input type="search" id="smart-q" placeholder="z. B. dog on the beach" autocomplete="off"></label>
+        <button id="smart-go" class="btn small" type="button">Suchen</button>
+      </div>
+      <div id="smart-box"></div>
+      <details id="rules-details">
+        <summary>Erweitert: eigene Regeln</summary>
+        <div class="toolbar">
+          <button id="rule-new" class="btn small primary" type="button">+ Neue Regel</button>
+          <span class="row-gap">
+            <button id="rule-examples" class="btn small" type="button">Beispiele</button>
+            <button id="rule-yaml" class="btn small" type="button">YAML</button>
+          </span>
+        </div>
+        <div id="tags-errors"></div>
+        <div id="tags-list"></div>
+      </details>
     </section>
 
     <section id="tab-stage" class="tab" role="tabpanel" hidden>
