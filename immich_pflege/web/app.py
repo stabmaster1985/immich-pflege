@@ -178,6 +178,17 @@ class AlbumsApply(BaseModel):
     trips: list[TripSelection]
 
 
+class FolderSelection(BaseModel):
+    id: str
+    name: Optional[str] = Field(None, max_length=200)
+    album: Optional[str] = None  # weglassen = Vorschlag, null = neues Album
+    sync: bool = False  # neue Dateien nach jedem Einlesen automatisch hinzufügen
+
+
+class FoldersStage(BaseModel):
+    ordner: list[FolderSelection]
+
+
 class AlbumsIgnore(BaseModel):
     trips: list[str]
     undo: bool = False
@@ -659,6 +670,15 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.get("/api/album-suggestions/{trip_id}/media")
     def album_suggestion_media(trip_id: str, album: Optional[str] = None):
         return svc().trip_media(trip_id, album)
+
+    @app.get("/api/folder-albums")
+    def folder_albums(status: Optional[Literal["neu", "ergaenzen", "abgeglichen", "vorhanden"]] = None,
+                      ausgeblendet: bool = False):
+        return svc().folders_view(status, ausgeblendet)
+
+    @app.post("/api/staged/folder-albums")
+    def stage_folder_albums(body: FoldersStage):
+        return svc().stage_folders([f.model_dump(exclude_unset=True) for f in body.ordner])
 
     @app.post("/api/album-suggestions/apply")
     def album_suggestions_apply(body: AlbumsApply):

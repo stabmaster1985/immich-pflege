@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from . import __version__
+from .folders import SyncedFolders, pending_sync, plan_folder, proposals as folder_proposals
 from .albumcare import ARTEN as CARE_ARTEN, execute_care, find_issues, plan_delete, plan_merge
 from .albums import STATUS as ALBUM_STATUS, AlbumError, ExcludedMedia, Home, TripIgnoreList, execute_plan, overlaps, plan_title, plan_trip, suggest
 from .client import ImmichClient, ImmichError
@@ -149,6 +150,8 @@ class Pflege:
         if not lib.albums_ready:
             self._albums_thread = threading.Thread(target=self._read_albums, args=(lib,), name="alben-lesen", daemon=True)
             self._albums_thread.start()
+        else:
+            self.sync_folders()
         if self.settings.dup_image_hash:
             self.start_hashing()
         self.warm_up_background()
@@ -168,6 +171,73 @@ class Pflege:
             lib.albums_ready = True
             if self._lib is lib:
                 self._save()
+        if self._lib is lib:
+            self.sync_folders()
+
+    # ------------------------------------------------------- Ordner-Alben
+    def synced_folders(self) -> SyncedFolders:
+        return SyncedFolders(self.settings.data_dir / "ordner_alben.json")
+
+    def sync_folders(self) -> int:
+        """Abgeglichene Ordner: neue Dateien automatisch ins Album (nur hinzufügen, im Verlauf rückgängig)."""
+        with self._lock:
+            lib = self._lib
+            if lib is None or not lib.albums_ready:
+                return 0
+            added = 0
+            for plan in pending_sync(lib, self.synced_folders()):
+                try:
+                    res = execute_plan(lib, self.clients, plan)
+                except (ImmichError, AlbumError) as exc:
+                    log.warning("Ordner-Abgleich „%s“ fehlgeschlagen: %s", plan["ordner"], exc)
+                    continue
+                self._record("album", f"📁 Ordner-Abgleich „{plan['name']}“: {res['hinzugefuegt']} neue Dateien",
+                             res["hinzugefuegt"], res, "automatisch")
+                added += res["hinzugefuegt"]
+            if added:
+                self._save()
+                log.info("Ordner-Abgleich: %d neue Dateien in Alben", added)
+            return added
+
+    def folders_view(self, status: str | None = None, ignored: bool = False) -> dict[str, Any]:
+        if self.albums_pending(wait_s=3):
+            return {"laedt": True}
+        lib = self.library()
+        synced = self.synced_folders().data
+        items = folder_proposals(lib, synced)
+        staged = {e["daten"].get("ordner_key") for e in self.staging.of_type("album")}
+        keep = self.keep_list().ids
+        items = [p for p in items if p["id"] not in staged]
+        base = [p for p in items if (p["id"] in keep) == ignored]
+        counts = {k: sum(1 for p in base if p["status"] == k) for k in ("neu", "ergaenzen", "abgeglichen", "vorhanden")}
+        shown = [p for p in base if (p["status"] == status if status else p["status"] in ("neu", "ergaenzen"))]
+        return {"ordner": shown, "status": counts, "ausgeblendet": sum(1 for p in items if p["id"] in keep)}
+
+    def stage_folders(self, selection: list[dict]) -> dict[str, Any]:
+        """selection: [{id, name?, album? (null = neu), sync}]."""
+        with self._lock:
+            lib = self.library()
+            known = {p["id"]: p for p in folder_proposals(lib, self.synced_folders().data)}
+            staged = 0
+            for sel in selection:
+                p = known.get(sel.get("id", ""))
+                if p is None:
+                    raise ActionError("Ordner nicht gefunden – bitte neu laden")
+                album_id = sel["album"] if "album" in sel else (p["album"]["id"] if p["album"] else None)
+                if album_id and album_id not in lib.albums:
+                    raise ActionError("Album nicht gefunden – bitte neu einlesen")
+                plan = plan_folder(lib, p["benutzer"], p["ordner"], sel.get("name"), album_id, bool(sel.get("sync")))
+                if not plan["anzahl"] and not plan["sync"]:
+                    raise ActionError(f"„{plan['name']}“: alles schon im Album")
+                title = (f"📁 Ordner {p['ordner']} → " + (f"„{plan['name']}“ ergänzen" if album_id else f"neues Album „{plan['name']}“")
+                         + f" ({plan['anzahl']} Medien)" + (", danach automatisch aktuell halten" if plan["sync"] else ""))
+                self.staging.add("album", title, plan, p["beispiele"], plan["anzahl"], key=p["id"])
+                staged += 1
+            return {"vorgemerkt": staged}
+
+    def _after_album_plan(self, plan: dict[str, Any], res: dict[str, Any]) -> None:
+        if plan.get("ordner") and plan.get("sync"):
+            self.synced_folders().set(plan["ordner_key"], plan["besitzer"], plan["ordner"], res["album_id"])
 
     def albums_pending(self, wait_s: float = 0) -> bool:
         lib = self.library()
@@ -768,6 +838,7 @@ class Pflege:
                             LocationChange.from_dict(ch) for ch in e["daten"]["aenderungen"]])
                     elif e["typ"] == "album":
                         res = execute_plan(lib, self.clients, e["daten"])
+                        self._after_album_plan(e["daten"], res)
                     elif e["typ"] == "zeit":
                         res = execute_shifts(lib, self.clients, e["daten"]["aenderungen"])
                     elif e["typ"] == "stapel":

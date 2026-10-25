@@ -9,7 +9,8 @@ const S = {
   loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, loaded: false, info: null },
   ovw: { loaded: false },
   cln: { bereich: "speicher", kategorie: null, ignored: false, items: [], total: 0, sel: new Set(), keep: {}, loaded: false, info: null },
-  alb: { trips: [], total: 0, status: null, jahr: null, ignored: false, sel: new Set(), choice: {}, ohne: {}, open: {}, loaded: false, info: null },
+  fol: { items: [], status: null, ignored: false, choice: {}, sync: {} },
+  alb: { quelle: "reisen", trips: [], total: 0, status: null, jahr: null, ignored: false, sel: new Set(), choice: {}, ohne: {}, open: {}, loaded: false, info: null },
   sug: { items: [], hidden: false, info: null, smart: null, cut: null, tag: "" },
   tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [], items: [], fileErrors: [], users: [], yaml: "" },
   set: { data: null, loaded: false },
@@ -1794,6 +1795,81 @@ async function stageCare(it, aktion, btn) {
   } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
 }
 
+/* ---------------------------------------------------------- Ordner-Alben */
+const FOL_STATUS = { neu: "Neues Album", ergaenzen: "Album ergänzen", abgeglichen: "Wird aktuell gehalten", vorhanden: "Schon in Alben" };
+
+async function loadFolders() {
+  const f = S.fol;
+  $("#alb-list").replaceChildren(h("p", { class: "empty" }, "Lade …"));
+  $("#alb-more").hidden = true;
+  const params = new URLSearchParams({ ausgeblendet: f.ignored });
+  if (f.status) params.set("status", f.status);
+  const r = await api("api/folder-albums?" + params);
+  S.alb.loaded = true;
+  if (r.laedt) {
+    $("#alb-list").replaceChildren(h("div", { class: "banner warn" }, "Die Alben werden gerade gelesen – die Vorschläge erscheinen gleich."));
+    S.alb.loaded = false;
+    setTimeout(() => { if (S.tab === "alb" && !S.alb.loaded) loadTab("alb", true); }, 10000);
+    return;
+  }
+  f.items = r.ordner;
+  const sel = h("select", { onchange: (e) => { f.status = e.target.value || null; loadTab("alb", true); } },
+    h("option", { value: "" }, `offen (${r.status.neu + r.status.ergaenzen})`),
+    ...Object.entries(FOL_STATUS).map(([k, v]) => h("option", { value: k }, `${v} (${r.status[k]})`)));
+  sel.value = f.status || "";
+  $("#alb-filters").replaceChildren(h("label", { class: "field grow" }, "Zeigen", sel),
+    h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: f.ignored,
+      onchange: (e) => { f.ignored = e.target.checked; loadTab("alb", true); } }), `ausgeblendete (${r.ausgeblendet})`));
+  $("#alb-summary").textContent = "Ordner der externen Bibliothek mit mindestens 5 Medien";
+  $("#alb-list").replaceChildren(...(f.items.length ? f.items.map(renderFolder)
+    : [h("p", { class: "empty" }, f.ignored ? "Nichts ausgeblendet." : "Keine Ordner ohne Album 🎉")]));
+  updateActionbar();
+}
+
+function renderFolder(p) {
+  const f = S.fol;
+  const card = h("article", { class: "card" });
+  const chip = { neu: "conf-niedrig", ergaenzen: "conf-mittel", abgeglichen: "conf-hoch", vorhanden: "conf-hoch" }[p.status];
+  card.append(h("div", { class: "card-head" }, h("div", { class: "grow" }, h("h2", {}, "📂 " + p.name),
+    h("span", { class: "muted small" }, `${p.ordner} · ${p.benutzer} · ${n(p.anzahl, "Medium", "Medien")}`)),
+    h("span", { class: "chip " + chip }, FOL_STATUS[p.status])));
+  if (p.album) card.append(h("div", { class: "alb-found" }, `Album „${p.album.name}“` + (p.fehlend ? ` – ${p.fehlend} fehlen. ` : ". "), albumLinks(p.album)));
+  if (p.beispiele.length) card.append(h("div", { class: "strip" }, p.beispiele.map((m) => thumb(m))));
+  if (f.ignored || p.status === "abgeglichen" || p.status === "vorhanden") {
+    if (f.ignored) card.append(h("button", { type: "button", class: "btn small", onclick: () => keepFolder(p, true) }, "Wieder zeigen"));
+    return card;
+  }
+  const choice = f.choice[p.id] || {};
+  if (p.status === "neu") {
+    card.append(h("label", { class: "f alb-name" }, "Name des Albums", h("input", { type: "text", value: choice.name || p.name,
+      oninput: (e) => { f.choice[p.id] = { ...f.choice[p.id], name: e.target.value }; } })));
+  }
+  card.append(h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: !!f.sync[p.id],
+    onchange: (e) => { f.sync[p.id] = e.target.checked; } }), "neue Dateien aus dem Ordner automatisch hinzufügen"),
+  h("div", { class: "row-gap", style: "margin-top:8px" },
+    h("button", { type: "button", class: "btn small primary", onclick: (e) => stageFolders([p], e.currentTarget) }, "Vormerken"),
+    h("button", { type: "button", class: "btn small", onclick: () => keepFolder(p, false) }, "Kein Album")));
+  return card;
+}
+
+async function stageFolders(list, btn) {
+  const f = S.fol;
+  busy(btn, true);
+  try {
+    const body = { ordner: list.map((p) => ({ id: p.id, sync: !!f.sync[p.id], ...(p.status === "neu" && f.choice[p.id] && f.choice[p.id].name ? { name: f.choice[p.id].name } : {}) })) };
+    const r = await api("api/staged/folder-albums", { method: "POST", body });
+    toast(`${n(r.vorgemerkt, "Ordner", "Ordner")} vorgemerkt`);
+    await afterStage("alb");
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
+
+async function keepFolder(p, undo) {
+  try {
+    await api("api/cleanup/keep", { method: "POST", body: { ids: [p.id], undo } });
+    await loadTab("alb", true);
+  } catch (e) { toast(e.message, true); }
+}
+
 /* ------------------------------------------------------------- Stapeln */
 async function loadStacks() {
   const c = S.cln;
@@ -2005,6 +2081,8 @@ const ALB_STATUS = { neu: "Neues Album", ergaenzen: "Album ergänzen", vorhanden
 
 async function loadAlbums(reset) {
   const a = S.alb;
+  document.querySelectorAll("#tab-alb .seg button").forEach((b) => b.classList.toggle("on", b.dataset.quelle === a.quelle));
+  if (a.quelle === "ordner") return loadFolders();
   if (reset) { a.trips = []; a.sel.clear(); a.choice = {}; a.ohne = {}; a.open = {}; $("#alb-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
   const params = new URLSearchParams({ offset: a.trips.length, limit: PAGE_ALB, ignoriert: a.ignored });
   if (a.status) params.set("status", a.status);
@@ -2238,7 +2316,7 @@ async function loadStaged() {
   renderHistory(hist.eintraege);
 }
 
-const HIST_SOURCE = { oberflaeche: "Oberfläche", api: "API/Kommandozeile" };
+const HIST_SOURCE = { oberflaeche: "Oberfläche", api: "API/Kommandozeile", automatisch: "automatisch" };
 
 function renderHistory(entries) {
   const list = $("#history-list");
@@ -2452,6 +2530,11 @@ function updateActionbar() {
       buttons.push(h("button", { class: "btn small" + (c.bereich === "serien" ? "" : " primary"), type: "button", disabled: !list.length, onclick: (e) => stageCleanup("album", list, e.currentTarget) }, "Ins Prüf-Album"));
       buttons.push(h("button", { class: "btn small danger", type: "button", disabled: !list.length, onclick: (e) => stageCleanup("papierkorb", list, e.currentTarget) }, "Papierkorb"));
     }
+  } else if (S.tab === "alb" && S.alb.quelle === "ordner") {
+    const open = S.fol.ignored ? [] : S.fol.items.filter((p) => p.status === "neu" || p.status === "ergaenzen");
+    info.textContent = open.length ? "Alle offenen Ordner:" : "";
+    buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !open.length,
+      onclick: (e) => stageFolders(open, e.currentTarget) }, `Vormerken (${open.length})`));
   } else if (S.tab === "alb") {
     const a = S.alb;
     const open = a.trips.filter((t) => t.status !== "vorhanden");
@@ -2560,6 +2643,9 @@ $("#loc-hours").addEventListener("change", (e) => {
   if (v > 0 && v <= 48) { S.loc.hours = v; loadTab("loc", true); } else { e.target.value = S.loc.hours; }
 });
 $("#cln-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadCleanup(false).finally(() => busy(e.currentTarget, false)); });
+document.querySelectorAll("#tab-alb .seg button").forEach((b) => b.addEventListener("click", () => {
+  S.alb.quelle = b.dataset.quelle; loadTab("alb", true);
+}));
 $("#alb-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadAlbums(false).finally(() => busy(e.currentTarget, false)); });
 $("#tags-reload").addEventListener("click", () => loadTab("tags", true));
 $("#smart-go").addEventListener("click", () => { const q = $("#smart-q").value.trim(); if (q) loadSmart({ suche: q }); });

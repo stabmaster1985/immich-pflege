@@ -7,7 +7,7 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 | **Duplikate** | Findet doppelte Medien über beide Benutzer und über Uploads und externe Bibliotheken hinweg: per Prüfsumme, Dateiname + Aufnahmezeit, Bild-Fingerabdruck (z. B. WhatsApp-Kopien) und Immichs eigener Erkennung. Jede Gruppe hat eine Art (identisch, sehr wahrscheinlich, ähnlich) und einen Behalten-Vorschlag. Nicht behaltene Kopien kommen ins Album „Duplikat-Prüfung“ oder in den Papierkorb. |
 | **Ohne Ort** | Medien ohne GPS bekommen einen Ortsvorschlag mit Sicherheit (sicher, wahrscheinlich, unsicher) aus den GPS-Fotos beider Benutzer, zusammengefasst nach Ort und Serie. Für den Rest gibt es die Ortssuche von Immich. Screenshots werden ausgeblendet. |
 | **Aufräumen** | Speicherfresser (große Videos, Bildschirmaufnahmen, doppelte Live-Photo-Videos), Serienbilder (das schärfste bleibt oder alles stapeln), **Stapeln aus eigenen Alben**, **Alben aufräumen** (doppelte von beiden Benutzern zusammenführen, leere/Mini-Alben), unscharfe und dunkle Fotos, falsche Aufnahmezeiten samt Kamera-Zeitversatz, Papierkorb-Übersicht. |
-| **Alben** | Erkennt Reisen (weg von zu Hause, beide Benutzer zusammen) und schlägt Alben vor. Vorher wird gegen alle vorhandenen Alben beider Benutzer abgeglichen: schon vorhanden, ergänzen oder neu. Neue Alben werden mit dem anderen Benutzer geteilt. |
+| **Alben** | Erkennt Reisen (weg von zu Hause, beide Benutzer zusammen) und schlägt Alben vor. Vorher wird gegen alle vorhandenen Alben beider Benutzer abgeglichen: schon vorhanden, ergänzen oder neu. Neue Alben werden mit dem anderen Benutzer geteilt. Außerdem **Alben aus Ordnern** der externen Bibliothek, auf Wunsch automatisch aktuell gehalten. |
 | **Tags** | Fertige Vorschläge zum Abhaken (Länder, Kameras, Screenshots, WhatsApp) und Suche mit Immichs KI (Hund, Strand, Quittung …): erstes unpassendes Bild antippen, alles davor wird getaggt. Eigene Regeln für Sonderfälle. Tags werden nur ergänzt, nie entfernt. **Archivieren** nimmt Screenshots, WhatsApp-Bilder, Quittungen u. Ä. aus der Zeitleiste, ohne zu löschen. |
 | **Übersicht** | Kennzahlen je Benutzer, offene Aufgaben, Aufnahmen je Jahr, Erledigtes je Monat. Auf Wunsch wöchentlich als Nachricht per ntfy oder Telegram. |
 
@@ -195,6 +195,8 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/api/places?q=Siena` | Ortssuche über Immich |
 | GET | `/api/album-suggestions` | Reisen mit Albumvorschlag. Parameter: `status` (`neu`, `ergaenzen`, `vorhanden`; ohne = offene), `jahr`, `ignoriert`, `offset`, `limit` |
 | GET | `/api/album-suggestions/{id}/media` | Alle Medien einer Reise, `im_album` bezogen auf `album` (ohne = Vorschlag, leer = neues Album) |
+| GET | `/api/folder-albums` | Ordner der externen Bibliothek als Albumvorschlag: `status` (`neu`, `ergaenzen`, `abgeglichen`, `vorhanden`) |
+| POST | `/api/staged/folder-albums` | vormerken: `{"ordner": [{"id", "name"?, "album"?, "sync"}]}`; `sync` hält das Album nach jedem Einlesen aktuell |
 | POST | `/api/album-suggestions/apply` | Direkt anlegen/ergänzen: `{"trips": [{"id": "…"}]}`, optional je Reise `album` (Album-ID, `null` = neues Album) `name` und `ohne` (abgewählte Medien) |
 | POST | `/api/album-suggestions/ignore` | „Kein Album“: `{"trips": [...]}`, mit `"undo": true` wieder aufnehmen |
 | GET | `/api/tags` | Regel-Vorschau (`rules=Name`, mehrfach möglich) |

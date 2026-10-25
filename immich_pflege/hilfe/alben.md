@@ -48,6 +48,12 @@ Herausgenommene Bilder gehören danach **nicht mehr zu dieser Reise**. Die Reise
 2. Unter **✓ Vorgemerkt** prüfen und **Übertragen**. Erst dann legt das Tool Alben an, teilt sie und fügt Medien hinzu. Gelöscht oder verschoben wird nie etwas.
 3. **Kein Album** blendet eine Reise dauerhaft aus. Kommen später Fotos dazu, bleibt sie ausgeblendet. Unter „ausgeblendete“ lässt sie sich wieder aufnehmen.
 
+## Alben aus Ordnern
+
+Oben im Tab auf **Ordner** umschalten. Für die **externe Bibliothek** (z. B. die Kamera-Fotos auf der Festplatte) schlägt das Tool für jeden Ordner mit mindestens **5 Medien** ein Album vor, benannt nach dem Ordner. Bei Ordnern wie `2019` oder `100MSDCF` kommt der übergeordnete Ordner dazu, z. B. „Toskana 2019“. Liegen die Medien schon zu **95 %** in Alben, steht der Ordner unter „Schon in Alben“. Gibt es ein Album mit dem Ordnernamen, wird es ergänzt.
+
+Mit **neue Dateien aus dem Ordner automatisch hinzufügen** hält das Tool das Album aktuell: Nach jedem Einlesen kommen neue Dateien aus dem Ordner dazu. Es wird nur hinzugefügt, nie entfernt, und jeder Abgleich steht im Verlauf (Quelle „automatisch“) und lässt sich rückgängig machen. Wird das Album gelöscht, endet der Abgleich.
+
 ## Grenzen
 
 - Ohne Fotos mit GPS gibt es kein Zuhause und keine Reisen.

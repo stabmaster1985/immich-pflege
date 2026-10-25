@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from immich_pflege import albumcare, albums, cleanup, duplicates, imagehash, location, stacking, suggestions, timefix
+from immich_pflege import albumcare, albums, cleanup, folders, duplicates, imagehash, location, stacking, suggestions, timefix
 from immich_pflege.web.app import HELP, HELP_TOPICS, create_app
 
 
@@ -33,6 +33,7 @@ def test_help_matches_code():
     assert albums.MATCH == 0.2 and "ab 20 %" in alb
     assert albums.NAME_SHARE == 0.6 and "60 %" in alb
     assert albums.MIN_GPS == 3 and "3 Fotos mit GPS" in alb
+    assert folders.MIN_MEDIA == 5 and "mindestens **5 Medien**" in alb and folders.COMPLETE == 0.95 and "**95 %**" in alb
     cln = (HELP / "aufraeumen.md").read_text()
     assert cleanup.BIG_VIDEO_MB == 300 and "**300 MB**" in cln
     assert cleanup.LIVE_MAX_S == 3.5 and "3,5 s" in cln and cleanup.LIVE_DELTA_S == 2
