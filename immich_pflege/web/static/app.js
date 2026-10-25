@@ -90,8 +90,18 @@ function fmtBig(b) {
   return b >= 1073741824 ? (b / 1073741824).toFixed(1).replace(".", ",") + " GB" : Math.round(b / 1048576) + " MB";
 }
 
+function fmtDur(s) {
+  if (!s) return "";
+  const t = Math.round(s), hh = Math.floor(t / 3600), mm = Math.floor((t % 3600) / 60), ss = String(t % 60).padStart(2, "0");
+  return hh ? `${hh}:${String(mm).padStart(2, "0")}:${ss}` : `${mm}:${ss}`;
+}
+
+// Vorschaubild; Videos bekommen ihre Länge als Plakette („▶ 1:23“)
 function thumb(m, alt) {
-  return h("img", { src: m.thumb || ("thumb/" + m.id), loading: "lazy", decoding: "async", alt: alt || m.dateiname || "" });
+  const img = h("img", { src: m.thumb || ("thumb/" + m.id), loading: "lazy", decoding: "async", alt: alt || m.dateiname || "" });
+  if (m.typ !== "video") return img;
+  return h("span", { class: "thumb-wrap" }, img,
+    h("span", { class: "vid-badge", title: m.dauer_s ? `Video, ${fmtDur(m.dauer_s)}` : "Video" }, "▶" + (m.dauer_s ? " " + fmtDur(m.dauer_s) : "")));
 }
 
 // Kachel als <div role="button">: darin dürfen Links stehen (in <button> nicht erlaubt)
@@ -379,7 +389,7 @@ function renderGroup(g) {
     h("span", { class: "badge" }, badge),
     h("div", { class: "meta" },
       h("div", { class: "name" }, m.dateiname),
-      h("div", {}, `${m.benutzer} · ${m.extern ? "extern" : "Upload"}${m.typ === "video" ? " · Video" : ""}`),
+      h("div", {}, `${m.benutzer} · ${m.extern ? "extern" : "Upload"}${m.typ === "video" ? " · Video" + (m.dauer_s ? " " + fmtDur(m.dauer_s) : "") : ""}`),
       h("div", {}, fmtTaken(m.aufnahme)),
       h("div", {}, [m.breite && m.hoehe ? `${m.breite}×${m.hoehe}` : "", fmtSize(m.groesse)].filter(Boolean).join(" · ")),
       renderReasons(m, g),
@@ -1545,7 +1555,7 @@ function renderCleanupItem(it) {
     }, thumb(m), h("span", { class: "badge" }, drop ? "weg" : "★ bleibt"),
     h("div", { class: "meta" },
       h("div", { class: "name" }, m.dateiname),
-      h("div", {}, `${m.benutzer} · ${m.extern ? "extern" : "Upload"}${m.dauer_s ? ` · ${m.dauer_s} s` : ""}`),
+      h("div", {}, `${m.benutzer} · ${m.extern ? "extern" : "Upload"}${m.dauer_s ? ` · ${fmtDur(m.dauer_s)}` : ""}`),
       h("div", {}, fmtTaken(m.aufnahme)),
       h("div", {}, fmtSize(m.groesse)),
       openLinks(m))));

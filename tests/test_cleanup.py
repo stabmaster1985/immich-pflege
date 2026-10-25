@@ -63,6 +63,8 @@ def test_categories(web, state):
                     "versehentlich": 1, "dunkel": 0, "unscharf": 1}
     assert r["arten"]["speicher"]["groesse"] == (900 + 2000 + 80 + 4) * MB
     assert by_cat(r, "grosse_videos")[0]["medien"][0]["id"] == state.ids["gross_extern"]  # größtes zuerst
+    big = next(e for e in by_cat(r, "grosse_videos") if e["medien"][0]["id"] == state.ids["gross"])
+    assert big["medien"][0]["dauer_s"] == 600.0 and "10 min" in big["grund"]  # Länge für die Anzeige
     live = by_cat(r, "live_videos")[0]
     assert {m["id"]: m["aktion"] for m in live["medien"]} == {state.ids["live_foto"]: "bleibt",
                                                               state.ids["live_video"]: "weg"}
