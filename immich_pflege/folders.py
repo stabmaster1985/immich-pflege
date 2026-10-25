@@ -15,7 +15,7 @@ import posixpath
 import re
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from .library import Library
 from .models import Asset
@@ -49,8 +49,14 @@ def folder_groups(lib: Library) -> dict[tuple[str, str], list[Asset]]:
     return groups
 
 
-def proposals(lib: Library, synced: dict[str, Any]) -> list[dict[str, Any]]:
-    members: dict[str, set[str]] = {aid: set(al["medien"]) for aid, al in lib.albums.items()}
+def _with_twins(ids: Iterable[str], twins: dict[str, set[str]] | None) -> set[str]:
+    """Albuminhalt samt Kopien und Stapel-Geschwistern: liegt eins drin, gilt das andere als enthalten."""
+    ids = set(ids)
+    return ids.union(*(twins.get(i, ()) for i in ids)) if twins else ids
+
+
+def proposals(lib: Library, synced: dict[str, Any], twins: dict[str, set[str]] | None = None) -> list[dict[str, Any]]:
+    members: dict[str, set[str]] = {aid: _with_twins(al["medien"], twins) for aid, al in lib.albums.items()}
     in_any = set().union(*members.values()) if members else set()
     by_name = {al["name"].strip().lower(): al for al in lib.albums.values() if al["besitzer"]}
     out = []
@@ -81,21 +87,22 @@ def proposals(lib: Library, synced: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def folder_missing(lib: Library, owner: str, folder: str, album_id: str | None) -> list[str]:
+def folder_missing(lib: Library, owner: str, folder: str, album_id: str | None,
+                   twins: dict[str, set[str]] | None = None) -> list[str]:
     """Medien des Ordners, die noch nicht im Ziel-Album liegen (alle bei neuem Album)."""
-    inside = set(lib.albums[album_id]["medien"]) if album_id in lib.albums else set()
+    inside = _with_twins(lib.albums[album_id]["medien"], twins) if album_id in lib.albums else set()
     return sorted(a.id for a in folder_groups(lib).get((owner, folder), []) if a.id not in inside)
 
 
 def plan_folder(lib: Library, owner: str, folder: str, name: str | None, album_id: str | None,
-                sync: bool, without: set[str] | None = None) -> dict[str, Any]:
+                sync: bool, without: set[str] | None = None, twins: dict[str, set[str]] | None = None) -> dict[str, Any]:
     """``without``: abgewählte Medien – kommen nicht ins Album, auch später beim Abgleich nicht."""
     without = without or set()
     ids = sorted(a.id for a in folder_groups(lib).get((owner, folder), []))
     if not ids:
         raise ValueError("Ordner nicht gefunden – bitte neu einlesen")
     if album_id:
-        inside = set(lib.albums[album_id]["medien"])
+        inside = _with_twins(lib.albums[album_id]["medien"], twins)
         media = [i for i in ids if i not in inside and i not in without]
         plan = {"aktion": "ergaenzen", "album_id": album_id, "name": lib.albums[album_id]["name"]}
     else:
@@ -136,7 +143,7 @@ class SyncedFolders:
                 self._save()
 
 
-def pending_sync(lib: Library, synced: SyncedFolders) -> list[dict[str, Any]]:
+def pending_sync(lib: Library, synced: SyncedFolders, twins: dict[str, set[str]] | None = None) -> list[dict[str, Any]]:
     """Neue Dateien in abgeglichenen Ordnern, die noch nicht im Album liegen."""
     groups = folder_groups(lib)
     out = []
@@ -145,7 +152,7 @@ def pending_sync(lib: Library, synced: SyncedFolders) -> list[dict[str, Any]]:
         if album is None:
             synced.remove(key)  # Album gelöscht -> Abgleich beenden
             continue
-        skip = set(album["medien"]) | set(s.get("ohne") or [])  # abgewählte bleiben draußen
+        skip = _with_twins(album["medien"], twins) | set(s.get("ohne") or [])  # abgewählte bleiben draußen
         new = sorted(a.id for a in groups.get((s["benutzer"], s["ordner"]), []) if a.id not in skip)
         if new:
             out.append({"aktion": "ergaenzen", "album_id": s["album"], "name": album["name"], "besitzer": s["benutzer"],

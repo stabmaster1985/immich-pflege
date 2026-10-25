@@ -103,13 +103,25 @@ class Trip:
     def users(self) -> dict[str, int]:
         return dict(Counter(a.owner for a in self.assets).most_common())
 
+    twins: dict[str, set[str]] = field(default_factory=dict)  # Medium -> Kopien/Stapel-Geschwister
+
     def missing(self, album: dict[str, Any] | None) -> list[Asset]:
+        """Medien, die (auch als Kopie oder im selben Stapel) noch nicht im Album liegen."""
         inside = set(album["medien"]) if album else set()
-        return [a for a in self.assets if a.id not in inside]
+        return [a for a in self.assets if a.id not in inside and not (self.twins.get(a.id, set()) & inside)]
+
+    def twin_in(self, a: Asset, album: dict[str, Any] | None) -> str | None:
+        """Kopie oder Stapel-Geschwister von ``a``, das im Album liegt."""
+        if not album:
+            return None
+        return next((t for t in self.twins.get(a.id, ()) if t in set(album["medien"])), None)
 
     def to_dict(self, lib: Library) -> dict[str, Any]:
         days = (self.end.date() - self.start.date()).days + 1
-        step = max(1, len(self.assets) // SAMPLES)
+        # Beispielbilder: beim Ergänzen nur, was im Album fehlt – sonst sähe es aus, als käme Vorhandenes dazu
+        missing = self.missing(self.target.album if self.target else None)
+        shown = missing if self.target and self.status == "ergaenzen" and missing else self.assets
+        step = max(1, len(shown) // SAMPLES)
         return {
             "id": self.id,
             "name": self.name,
@@ -123,9 +135,10 @@ class Trip:
             "status": self.status,
             "status_text": STATUS[self.status],
             "album": self.target.to_dict(lib) if self.target else None,
-            "fehlend": len(self.missing(self.target.album if self.target else None)),
+            "fehlend": len(missing),
             "kandidaten": [m.to_dict(lib) for m in self.matches],
-            "beispiele": [a.summary() for a in self.assets[::step][:SAMPLES]],
+            "beispiele": [a.summary() for a in shown[::step][:SAMPLES]],
+            "beispiele_fehlend": shown is missing,
         }
 
 
@@ -276,8 +289,11 @@ def _dates_overlap(album: dict[str, Any], trip: Trip) -> bool:
 class AlbumIndex:
     """Einmal pro Berechnung: Mitglieder als Mengen, Medium -> Alben, normalisierte Namen."""
 
-    def __init__(self, lib: Library):
-        self.members = {aid: set(al["medien"]) for aid, al in lib.albums.items()}
+    def __init__(self, lib: Library, twins: dict[str, set[str]] | None = None):
+        # Kopien und Stapel-Geschwister zählen mit: liegt eins im Album, gilt das andere als enthalten
+        twins = twins or {}
+        self.members = {aid: set(al["medien"]).union(*(twins.get(m, ()) for m in al["medien"]))
+                        for aid, al in lib.albums.items()}
         self.names = {aid: _norm(al["name"]) for aid, al in lib.albums.items()}
         self.by_asset: dict[str, list[str]] = {}
         for aid, members in self.members.items():
@@ -320,11 +336,22 @@ def match_albums(trip: Trip, lib: Library, index: AlbumIndex | None = None) -> N
             trip.status, trip.target = "neu", None
 
 
+def twin_map(groups: Iterable[set[str]]) -> dict[str, set[str]]:
+    """Gruppen gleicher Aufnahmen (Kopien, Stapel) -> je Medium die anderen."""
+    out: dict[str, set[str]] = {}
+    for g in groups:
+        for i in g:
+            out.setdefault(i, set()).update(g - {i})
+    return out
+
+
 def suggest(lib: Library, min_km: float, min_media: int, exclude: set[str] | None = None,
-            homes: list[Home] | None = None) -> tuple[list[Home], list[Trip]]:
+            homes: list[Home] | None = None, twins: dict[str, set[str]] | None = None) -> tuple[list[Home], list[Trip]]:
+    """``twins``: Kopien und Stapel-Geschwister (siehe ``twin_map``) – gelten im Album als enthalten."""
     homes, trips = find_trips(lib, min_km, min_media, exclude, homes)
-    index = AlbumIndex(lib)
+    index = AlbumIndex(lib, twins)
     for t in trips:
+        t.twins = twins or {}
         match_albums(t, lib, index)
     return homes, trips
 

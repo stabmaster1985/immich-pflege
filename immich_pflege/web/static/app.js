@@ -164,7 +164,23 @@ function renderViewer() {
     h("div", {}, [when, m.benutzer, m.extern ? "extern" : "", m.typ === "video" ? `Video${m.dauer_s ? " " + fmtDur(m.dauer_s) : ""} – abspielen in Immich` : ""].filter(Boolean).join(" · ")),
     m.ort ? h("div", {}, "📍 " + m.ort) : null,
     m.pfad ? h("div", { class: "v-path" }, m.pfad) : null,
+    m.check ? h("div", { class: "v-check" }, h("button", { type: "button", class: "v-btn small", onclick: (e) => checkAlbum(m, e.currentTarget) },
+      "Liegt doch schon im Album? Bei Immich nachfragen")) : null,
     openLinks(m)].filter(Boolean));
+}
+
+async function checkAlbum(m, btn) {
+  busy(btn, true);
+  try {
+    const r = await api(`api/album-check?asset=${m.id}&album=${m.check}`);
+    btn.replaceWith(h("div", { class: "v-result" + (r.im_album_immich || r.kopie ? " ok" : "") }, r.text));
+    if (r.korrigiert) {
+      S.alb.loaded = false;
+      toast("Album neu gelesen – die Vorschläge werden aktualisiert");
+      if (S.tab === "alb") loadTab("alb", true);
+      loadCounts();
+    }
+  } catch (e) { toast(e.message, true); busy(btn, false); }
 }
 
 function viewerStep(d) {
@@ -2549,7 +2565,11 @@ function renderTrip(t) {
     ...others.map((k, i) => h("span", { class: "alb-other" }, (i ? " · " : "") + `„${k.name}“ (${k.in_reise}) `, albumLinks(k)))));
   card.append(found);
 
-  if (t.beispiele.length) card.append(h("div", { class: "strip" }, t.beispiele.map((m) => thumb(m))));
+  if (t.beispiele.length) {
+    if (t.beispiele_fehlend) for (const m of t.beispiele) m.check = t.album && t.album.id;
+    card.append(h("div", { class: "muted small" }, t.beispiele_fehlend ? "Beispiele, die im Album fehlen:" : "Beispiele aus der Reise:"),
+      h("div", { class: "strip" }, t.beispiele.map((m) => thumb(m))));
+  }
   const allBtn = h("button", { type: "button", class: "btn small", onclick: (e) => openTripReview(t, card, e.currentTarget) }, `Alle ${t.anzahl} prüfen`);
   card.append(h("div", { class: "row-gap", style: "margin-top:8px" }, allBtn, h("span", { class: "muted small trip-sel" }, tripSelText(t))));
 
@@ -2596,11 +2616,14 @@ async function openTripReview(t, card, btn) {
     r = await api(`api/album-suggestions/${t.id}/media?album=` + encodeURIComponent(c.album || ""));  // leer = neues Album
   } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
   const inside = r.medien.filter((m) => m.im_album).length;
+  const copies = r.medien.filter((m) => m.kopie_im_album).length;
   const media = r.medien.filter((m) => !m.im_album);
+  if (r.album) for (const m of media) m.check = r.album;  // Großansicht: „bei Immich nachfragen“
   const keep = (ohne) => { a.ohne[t.id] = new Set(ohne); card.replaceWith(renderTrip(t)); };
   openReview({
     titel: `${t.name}`, medien: media, gruppe: "tag", ohne: [...(a.ohne[t.id] || [])].filter((i) => media.some((m) => m.id === i)),
-    hinweis: (inside ? `${inside} liegen schon im Album und fehlen hier. ` : "") + "Abgewählte gehören danach nicht mehr zu dieser Reise.",
+    hinweis: (inside ? `${inside} liegen schon im Album${copies ? ` (${copies} davon als Kopie oder im Stapel)` : ""} und fehlen hier. ` : "")
+      + "Abgewählte gehören danach nicht mehr zu dieser Reise. Liegt doch eins schon drin: groß ansehen → „Bei Immich nachfragen“.",
     aktionen: [
       { text: () => "Übernehmen", leer: true, run: async (ids, ohne) => keep(ohne) },
       { klasse: "primary", text: (k) => `${k} vormerken`, run: async (ids, ohne) => { keep(ohne); await stageTrips([t], null); } },

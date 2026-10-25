@@ -15,7 +15,8 @@ from . import __version__
 from .folders import SyncedFolders, folder_missing, pending_sync, plan_folder, proposals as folder_proposals
 from .albumcare import ARTEN as CARE_ARTEN, execute_care, find_issues, plan_delete, plan_merge
 from .covers import find_covers, plan_cover
-from .albums import STATUS as ALBUM_STATUS, AlbumError, ExcludedMedia, Home, TripIgnoreList, execute_plan, overlaps, plan_title, plan_trip, suggest
+from .albums import (STATUS as ALBUM_STATUS, AlbumError, ExcludedMedia, Home, TripIgnoreList, execute_plan, overlaps,
+                     plan_title, plan_trip, suggest, twin_map)
 from .client import ImmichClient, ImmichError
 from .config import Settings
 from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, IgnoreList, PlannedStep,
@@ -161,7 +162,8 @@ class Pflege:
     def _read_albums(self, lib: Library) -> None:
         try:
             skip = {a for a in lib.review_albums.values() if a}
-            albums = read_albums(self.clients, lib.users, skip, lib.albums)
+            # vollständiges Einlesen: auch Albuminhalte frisch, nicht aus dem Zwischenspeicher
+            albums = read_albums(self.clients, lib.users, skip, lib.albums if lib.incremental else None)
         except ImmichError as exc:
             log.error("Alben konnten nicht gelesen werden: %s", exc)
             albums = None
@@ -186,7 +188,7 @@ class Pflege:
             if lib is None or not lib.albums_ready:
                 return 0
             added = 0
-            for plan in pending_sync(lib, self.synced_folders()):
+            for plan in pending_sync(lib, self.synced_folders(), self.twins()):
                 try:
                     res = execute_plan(lib, self.clients, plan)
                 except (ImmichError, AlbumError) as exc:
@@ -205,7 +207,7 @@ class Pflege:
             return {"laedt": True}
         lib = self.library()
         synced = self.synced_folders().data
-        items = folder_proposals(lib, synced)
+        items = folder_proposals(lib, synced, self.twins())
         staged = {e["daten"].get("ordner_key") for e in self.staging.of_type("album")}
         keep = self.keep_list().ids
         items = [p for p in items if p["id"] not in staged]
@@ -217,17 +219,18 @@ class Pflege:
     def folder_media(self, folder_id: str, album_id: str | None = None) -> dict[str, Any]:
         """Medien eines Ordners, die noch nicht im Ziel-Album liegen – für die Prüf-Ansicht."""
         lib = self.library()
-        p = next((x for x in folder_proposals(lib, self.synced_folders().data) if x["id"] == folder_id), None)
+        p = next((x for x in folder_proposals(lib, self.synced_folders().data, self.twins()) if x["id"] == folder_id), None)
         if p is None:
             raise ActionError("Ordner nicht gefunden – bitte neu laden")
         return {"id": folder_id, "ordner": p["ordner"],
-                "medien": self._review_media(folder_missing(lib, p["benutzer"], p["ordner"], album_id))}
+                "medien": self._review_media(folder_missing(lib, p["benutzer"], p["ordner"], album_id, self.twins()))}
 
     def stage_folders(self, selection: list[dict]) -> dict[str, Any]:
         """selection: [{id, name?, album? (null = neu), sync, ohne?}]."""
         with self._lock:
             lib = self.library()
-            known = {p["id"]: p for p in folder_proposals(lib, self.synced_folders().data)}
+            twins = self.twins()
+            known = {p["id"]: p for p in folder_proposals(lib, self.synced_folders().data, twins)}
             staged = 0
             for sel in selection:
                 p = known.get(sel.get("id", ""))
@@ -237,7 +240,7 @@ class Pflege:
                 if album_id and album_id not in lib.albums:
                     raise ActionError("Album nicht gefunden – bitte neu einlesen")
                 plan = plan_folder(lib, p["benutzer"], p["ordner"], sel.get("name"), album_id, bool(sel.get("sync")),
-                                   set(sel.get("ohne") or []))
+                                   set(sel.get("ohne") or []), twins)
                 if not plan["anzahl"] and not plan["sync"]:
                     raise ActionError(f"„{plan['name']}“: alles schon im Album")
                 title = (f"📁 Ordner {p['ordner']} → " + (f"„{plan['name']}“ ergänzen" if album_id else f"neues Album „{plan['name']}“")
@@ -1318,9 +1321,85 @@ class Pflege:
             raise ActionError("Reise nicht gefunden – bitte neu laden")
         if album_id is None and trip.target:
             album_id = trip.target.album["id"]
-        inside = set(lib.albums[album_id]["medien"]) if album_id in lib.albums else set()
-        return {"id": trip.id, "album": album_id, "anzahl": len(trip.assets),
-                "medien": [{**a.summary(), "im_album": a.id in inside} for a in trip.assets]}
+        album = lib.albums.get(album_id)
+        inside = set(album["medien"]) if album else set()
+        out = []
+        for a in trip.assets:
+            twin = None if a.id in inside else trip.twin_in(a, album)
+            out.append({**a.summary(), "im_album": a.id in inside or twin is not None,
+                        "kopie_im_album": lib.assets[twin].file_name if twin in lib.assets else None})
+        return {"id": trip.id, "album": album_id, "anzahl": len(trip.assets), "medien": out}
+
+    def album_check(self, asset_id: str, album_id: str) -> dict[str, Any]:
+        """Liegt das Medium im Album? Fragt Immich direkt (GET /albums?assetId=) und vergleicht mit dem
+        Stand des Tools. Weicht es ab, wird das Album sofort neu gelesen (alle Besitzer)."""
+        lib = self.library()
+        album = lib.albums.get(album_id)
+        if album is None or asset_id not in lib.assets:
+            raise ActionError("Album oder Medium nicht gefunden – bitte neu einlesen")
+        twins = self.twins()
+        twin = next((t for t in twins.get(asset_id, ()) if t in set(album["medien"])), None)
+        seen: dict[str, str] = {}
+        for client in self.clients.values():
+            try:
+                for al in client.albums(asset_id=asset_id):
+                    seen[al["id"]] = al.get("albumName") or ""
+            except ImmichError as exc:
+                log.warning("Albumprüfung für %s: %s", asset_id, exc)
+        in_tool = asset_id in album["medien"]
+        in_immich = album_id in seen
+        fixed = False
+        if in_immich and not in_tool:
+            ids: set[str] = set()
+            for client in self.clients.values():
+                try:
+                    ids |= client.album_timeline_ids(album_id) | client.album_asset_ids(album_id)
+                except ImmichError:
+                    continue
+            with self._lock:
+                album["medien"] = sorted(set(album["medien"]) | ids | {asset_id})
+                apply_album_membership(lib, recompute=True)
+                self._save()
+            fixed = True
+            log.warning("Album „%s“ war unvollständig gelesen (%s fehlte) – neu gelesen", album["name"], asset_id)
+        if in_immich:
+            text = "Liegt laut Immich im Album." + (" Das Tool hatte das übersehen und hat das Album neu gelesen."
+                                                     if fixed else "")
+        elif twin:
+            text = f"Nicht dieses Medium, aber eine Kopie davon liegt im Album ({lib.assets[twin].file_name})."
+        else:
+            def label(aid: str, name: str) -> str:
+                owner = (lib.albums.get(aid) or {}).get("besitzer")
+                return f"„{name}“" + (f" von {owner}" if owner else "")
+            same = [aid for aid, name in seen.items() if name.strip().lower() == album["name"].strip().lower()]
+            text = f"Liegt laut Immich nicht in „{album['name']}“" + (f" von {album['besitzer']}" if album["besitzer"] else "") + "."
+            if seen:
+                text += " Es liegt in: " + ", ".join(label(k, v) for k, v in seen.items()) + "."
+            else:
+                text += " Es liegt in keinem Album."
+            if same:
+                text += (" Achtung: ein anderes Album mit demselben Namen – unter Alben → Alben aufräumen lassen sich"
+                         " die beiden zusammenführen.")
+        return {"asset": asset_id, "album": album_id, "im_album_tool": in_tool or fixed, "im_album_immich": in_immich,
+                "kopie": lib.assets[twin].file_name if twin else None, "alben_immich": [{"id": k, "name": v} for k, v in seen.items()],
+                "korrigiert": fixed, "text": text}
+
+    def twins(self) -> dict[str, set[str]]:
+        """Kopien derselben Aufnahme (Duplikat-Gruppen außer „ähnlich“) und Medien im selben Immich-Stapel.
+        Liegt eins davon im Album, gilt das Album für alle als vollständig."""
+        lib = self.library()
+        groups = [g.asset_ids for g in self.all_groups() if g.kind != "aehnlich"]
+        key = (lib.uid, lib.rev, self._pairs_cache[0] if self._pairs_cache else None)
+        cache = getattr(self, "_twins_cache", None)
+        if cache and cache[0] == key:
+            return cache[1]
+        stacks: dict[str, set[str]] = {}
+        for a in lib.assets.values():
+            if a.stack_id:
+                stacks.setdefault(a.stack_id, set()).add(a.id)
+        twins = twin_map([s for s in stacks.values() if len(s) > 1] + groups)
+        self._twins_cache = (key, twins)
+        return twins
 
     def _trips(self):
         """Reisen ohne vorgemerkte; ``ignored`` = als „kein Album“ markiert."""
@@ -1329,11 +1408,13 @@ class Pflege:
         manual = [Home(h["breite"], h["laenge"], h["name"], 0, manual=True) for h in self.settings.album_home]
         without = frozenset(self.album_excluded().ids)
         key = (lib.uid, lib.rev, self.settings.album_min_km, self.settings.album_min_media,
-               tuple((h.latitude, h.longitude) for h in manual), without)
+               tuple((h.latitude, h.longitude) for h in manual), without,
+               self._pairs_cache[0] if self._pairs_cache else None)  # neue Fingerabdrücke -> neue Kopien
+        twins = self.twins()  # vor der Sperre: braucht library() und damit self._lock
         with self._calc_lock:
             if not self._trips_cache or self._trips_cache[0] != key:
                 self._trips_cache = (key, suggest(lib, self.settings.album_min_km, self.settings.album_min_media,
-                                                  exclude=set(without), homes=manual or None))
+                                                  exclude=set(without), homes=manual or None, twins=twins))
             homes, trips = self._trips_cache[1]
         staged = self.staging.id_sets("album")
         ignore = self.album_ignore_list()

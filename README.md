@@ -242,6 +242,7 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/api/tags/rules/{name}/media` | alle neuen Treffer einer eigenen Regel |
 | POST | `/api/staged/tags/{name}/auswahl` | eigene Regel ohne abgewählte Medien vormerken: `ohne` |
 | GET | `/api/no-location/media` | alle Medien mit Ortsvorschlag ab `min_confidence` (Standard `hoch`), mit `ort_neu` |
+| GET | `/api/album-check` | liegt `asset` in `album`? Fragt Immich direkt (`GET /albums?assetId=`), liest das Album bei Abweichung neu |
 | GET | `/api/folder-albums/{id}/media` | Dateien eines Ordners, die noch nicht im Album (`album`) liegen |
 | GET | `/api/timefix/{id}/media` | alle Medien eines Eintrags (die Liste enthält nur eine Auswahl) |
 | POST | `/api/staged/timefix` | Zeitkorrektur vormerken: `{"eintraege": [{"id", "minuten"? , "ziel"?, "ohne"?}]}` – `ohne`: Medien, die nicht verschoben werden |

@@ -713,6 +713,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     def stage_folder_albums(body: FoldersStage):
         return svc().stage_folders([f.model_dump(exclude_unset=True) for f in body.ordner])
 
+    @app.get("/api/album-check")
+    def album_check(asset: str, album: str):
+        return svc().album_check(asset, album)
+
     @app.post("/api/album-suggestions/apply")
     def album_suggestions_apply(body: AlbumsApply):
         return svc().apply_albums([t.model_dump(exclude_unset=True) for t in body.trips])

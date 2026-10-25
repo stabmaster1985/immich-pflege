@@ -224,3 +224,58 @@ def test_partner_photos_in_unshared_album_count_as_inside(env, http, state):
     # die Zeitleiste wird nur gefragt, wenn die Suche weniger findet, als das Album zählt
     timeline = {c[3] for c in state.calls if c[1] == "/api/timeline"}
     assert album in timeline and len(timeline) == 1
+
+
+def test_copies_and_stacks_count_as_inside(web, state):
+    """Im Album liegt Franks Original, die Reise enthält auch Julias Kopie (gleiche Prüfsumme) bzw. ein
+    Bild aus demselben Stapel: beides gilt als enthalten und wird nicht noch einmal vorgeschlagen."""
+    frank_t = [i for i in state.toskana if state.assets[i]["ownerId"] == state.user_id("frank")]
+    julia_t = [i for i in state.toskana if state.assets[i]["ownerId"] == state.user_id("julia")]
+    copy, stacked = julia_t[0], frank_t[1]
+    state.assets[copy]["checksum"] = state.assets[frank_t[0]]["checksum"]  # Julias Kopie von Franks Foto
+    state.stacks["st1"] = {"ownerId": state.user_id("frank"), "assetIds": [frank_t[2], stacked]}
+    inside = [i for i in state.toskana if i not in (copy, stacked)]
+    album = state.add_album("frank", "Toskana komplett", inside, shared={"julia": "editor"})
+    trips = web.get("/api/album-suggestions", params={"status": "vorhanden"}).json()["reisen"]
+    tosk = next(t for t in trips if t["name"].startswith("Toskana"))
+    assert tosk["album"]["id"] == album and tosk["fehlend"] == 0
+    media = {m["id"]: m for m in web.get(f"/api/album-suggestions/{tosk['id']}/media").json()["medien"]}
+    assert media[copy]["im_album"] and media[copy]["kopie_im_album"]
+    assert media[stacked]["im_album"]
+
+
+def test_examples_show_only_missing_when_extending(web, state):
+    album = state.add_album("frank", "Toskana teils", state.toskana[:-3])
+    tosk = next(t for t in web.get("/api/album-suggestions").json()["reisen"] if t["name"].startswith("Toskana"))
+    assert tosk["status"] == "ergaenzen" and tosk["album"]["id"] == album
+    assert tosk["beispiele_fehlend"] and {m["id"] for m in tosk["beispiele"]} <= set(state.toskana[-3:])
+
+
+def test_album_check_asks_immich_and_repairs(web, state, monkeypatch):
+    """Die Gegenprüfung fragt Immich direkt; fehlte das Medium im gelesenen Albuminhalt, wird das Album neu gelesen."""
+    from immich_pflege.client import ImmichClient
+
+    album = state.add_album("frank", "Toskana komplett", state.toskana)
+    monkeypatch.setattr(ImmichClient, "album_timeline_ids", lambda self, aid: set())  # wie ein Lesefehler
+    tosk = next(t for t in web.get("/api/album-suggestions").json()["reisen"] if t["name"].startswith("Toskana"))
+    julia_one = next(i for i in state.toskana if state.assets[i]["ownerId"] == state.user_id("julia"))
+    assert tosk["fehlend"] > 0  # Julias Fotos fehlen im gelesenen Inhalt
+    monkeypatch.undo()
+    r = web.get("/api/album-check", params={"asset": julia_one, "album": album}).json()
+    assert r["im_album_immich"] and r["korrigiert"] and "neu gelesen" in r["text"]
+    tosk = next(t for t in web.get("/api/album-suggestions", params={"status": "vorhanden"}).json()["reisen"]
+                if t["name"].startswith("Toskana"))
+    assert tosk["fehlend"] == 0
+    other = state.add_asset("frank", "X.HEIC", "2024-07-14T10:00:00.000Z")
+    web.post("/api/scan", json={})
+    r = web.get("/api/album-check", params={"asset": other, "album": album}).json()
+    assert not r["im_album_immich"] and not r["korrigiert"] and "Liegt laut Immich nicht in" in r["text"]
+
+
+def test_album_check_names_same_named_album(web, state):
+    """Zwei Alben „Toskana 2024“ (Frank und Julia): die Antwort sagt, in welchem es wirklich liegt."""
+    julia_album = next(a for a in state.albums.values() if a["albumName"] == "Toskana 2024")["id"]
+    frank_album = state.add_album("frank", "Toskana 2024", state.toskana[:3])
+    photo = next(i for i in state.asset_ids_in_album(julia_album))
+    r = web.get("/api/album-check", params={"asset": photo, "album": frank_album}).json()
+    assert not r["im_album_immich"] and "von julia" in r["text"] and "demselben Namen" in r["text"]

@@ -42,6 +42,14 @@ Die Karte zeigt nur ein paar Beispielbilder. **Alle … prüfen** öffnet sämtl
 
 Herausgenommene Bilder gehören danach **nicht mehr zu dieser Reise**. Die Reise gilt also als erledigt, auch wenn sie nicht im Album liegen. Nimmst du den Eintrag unter Vorgemerkt wieder zurück, ist auch die Abwahl aufgehoben.
 
+## Was als „schon im Album“ zählt
+
+- Das Medium selbst liegt im Album, egal wem es gehört. Auch Julias Fotos, die du über die Partnerfreigabe in dein Album gelegt hast, zählen mit.
+- Eine **Kopie** davon liegt im Album, z. B. Julias Kopie deines Fotos, Upload und Datei der externen Bibliothek, HEIC und JPG oder Original und Bearbeitung (wie bei den Duplikaten erkannt, nur „ähnlich“ zählt nicht).
+- Ein Medium aus demselben **Immich-Stapel** liegt im Album, z. B. das JPG vor dem RAW.
+
+Bei **Album ergänzen** zeigt die Karte nur Beispielbilder, die im Album fehlen. Glaubst du, dass eins doch schon drin ist: Bild antippen und in der Großansicht **„Bei Immich nachfragen“**. Das Tool fragt Immich direkt, welche Alben das Bild enthalten. Weicht das vom Stand des Tools ab, liest es das Album sofort neu, und die Vorschläge stimmen wieder. **Komplett neu einlesen** liest alle Albuminhalte frisch.
+
 ## Ablauf
 
 1. **Vormerken** pro Reise oder für alle angezeigten. Noch geht nichts an Immich.

@@ -329,7 +329,8 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
 
     skip = {a for a in review_albums.values() if a}
     if read_album_contents:
-        albums = read_albums(clients, users, skip, previous.albums if previous else None)
+        # vollständiges Einlesen: auch Albuminhalte frisch, nicht aus dem Zwischenspeicher
+        albums = read_albums(clients, users, skip, previous.albums if previous and incremental else None)
     else:
         albums = {k: v for k, v in (previous.albums if previous else {}).items() if k not in skip}
 

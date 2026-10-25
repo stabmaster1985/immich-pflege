@@ -493,3 +493,7 @@ dialog.review[open] { display: flex; flex-direction: column; }
   #rv-actions { flex: 1; }
   #rv-actions .btn { flex: 1; padding: 10px 8px; font-size: .9rem; }
 }
+.v-check { margin-top: 6px; }
+.v-btn.small { min-height: 36px; font-size: .85rem; padding: 6px 12px; }
+.v-result { margin-top: 6px; padding: 6px 10px; border-radius: 8px; background: rgba(255,255,255,.1); }
+.v-result.ok { background: rgba(76,194,131,.25); }
