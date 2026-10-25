@@ -230,3 +230,16 @@ textarea { min-height: 55vh; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo
 .place-card .row-gap, .place-head .row-gap { margin: 6px 0; }
 .place-head { border-color: var(--accent); }
 progress { display: block; width: 100%; margin-top: 6px; accent-color: var(--accent); }
+
+/* Hilfe */
+.help-btn { min-width: 36px; font-weight: 800; border-radius: 50%; padding: 6px 0; width: 36px; }
+.help h1 { font-size: 1.25rem; margin: 0 0 10px; }
+.help h2 { font-size: 1.05rem; margin: 18px 0 6px; }
+.help h3 { font-size: .95rem; margin: 14px 0 4px; }
+.help p, .help li { font-size: .92rem; }
+.help ul, .help ol { padding-left: 20px; margin: 6px 0; }
+.help code { background: var(--chip); border-radius: 4px; padding: 1px 4px; font-size: .85em; }
+.help .table-wrap { overflow-x: auto; margin: 8px 0; }
+.help table { border-collapse: collapse; font-size: .85rem; min-width: 100%; }
+.help th, .help td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+.help th { background: var(--chip); }

@@ -4,8 +4,8 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 
 | Funktion | Was passiert |
 |---|---|
-| **Duplikate** | Immich-Duplikaterkennung pro Benutzer, dazu identische Prüfsumme sowie gleicher Dateiname mit gleicher Aufnahmezeit, auch benutzerübergreifend und zwischen Upload und externer Bibliothek. Überlappende Treffer werden zu Gruppen zusammengeführt. Ein Behalten-Vorschlag kommt aus einer Punktwertung. Nicht behaltene Kopien kommen ins Album „Duplikat-Prüfung“ oder in den Papierkorb. |
-| **Ohne Ort** | Medien ohne GPS, zu Serien zusammengefasst, mit Ortsvorschlag und Sicherheit (sicher/wahrscheinlich/unsicher) aus GPS-Fotos beider Benutzer. Ganze Serien übernimmst du mit einem Tipp, Serien ohne Vorschlag bekommen ihren Ort über die Ortssuche von Immich. Screenshots werden ausgeblendet. |
+| **Duplikate** | Findet doppelte Medien über beide Benutzer und über Uploads und externe Bibliotheken hinweg: per Prüfsumme, Dateiname + Aufnahmezeit, Bild-Fingerabdruck (z. B. WhatsApp-Kopien) und Immichs eigener Erkennung. Jede Gruppe hat eine Art (identisch, sehr wahrscheinlich, ähnlich) und einen Behalten-Vorschlag. Nicht behaltene Kopien kommen ins Album „Duplikat-Prüfung“ oder in den Papierkorb. |
+| **Ohne Ort** | Medien ohne GPS bekommen einen Ortsvorschlag mit Sicherheit (sicher, wahrscheinlich, unsicher) aus den GPS-Fotos beider Benutzer, zusammengefasst nach Ort und Serie. Für den Rest gibt es die Ortssuche von Immich. Screenshots werden ausgeblendet. |
 | **Tags** | Massen-Tagging nach Regeln, die du in der Oberfläche anlegst. Tags werden nur ergänzt, nie entfernt. |
 
 Alles startet als **Vorschau**. Änderungen gibt es nur nach ausdrücklicher Aktion.
@@ -91,63 +91,20 @@ Alternativ startest du den Workflow per **Test workflow** oder, wenn aktiviert, 
 
 ---
 
-## Oberfläche
+## Oberfläche und Hilfe
 
 Vier Tabs (**Duplikate**, **Ohne Ort**, **Tags**, **⚙ Einstellungen**), unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
 
-- **Duplikate:** Tippe auf ein Bild, damit es bleibt. Hake Gruppen an und wähle dann **Ins Prüf-Album** oder **Papierkorb**. Der Dialog zeigt vorher genau, was passiert. Für den Papierkorb muss zusätzlich ein Häkchen gesetzt werden.
-- **Ohne Ort:** Der Tab startet mit einer **Übersicht nach Ort**: Pro vorgeschlagenem Ort gibt es eine Karte mit Anzahl Medien und Serien, Zeitraum, Sicherheit und Beispielbildern, dazu **Alle übernehmen**. Am Ende stehen „Mehrere Orte“ und „Ohne Vorschlag“. **Ansehen** oder die Auswahl **Ort** zeigt die Serien eines Ortes. Die Auswahl **Monat** (mit Anzahl) grenzt große Gruppen ein, und für „Ohne Vorschlag“ in einem Monat gibt es **Ort für alle suchen …**.
-  Medien ohne GPS sind zu **Serien** zusammengefasst, also Aufnahmen mit höchstens 2 Stunden Abstand. Serien ganz ohne Vorschlag werden zusätzlich pro Tag zusammengefasst. Pro Serie gibt es einen Vorschlag, **Übernehmen** setzt ihn für die ganze Serie. **Ort suchen …** nutzt die Ortsdatenbank von Immich (z. B. „Siena“) für Serien ohne GPS-Fotos in der Nähe. Einzelne Bilder lassen sich antippen und mit **Übernehmen** oder **Ort wählen …** bearbeiten. **Alle sicheren** übernimmt alle sicheren Vorschläge auf einmal.
+**Jeder Tab hat oben ein „?“** mit einer ausführlichen Erklärung: wie Treffer und Vorschläge entstehen, nach welchen Kriterien bewertet wird und wo die Grenzen liegen. Dieselben Texte liegen im Repository:
 
-  Woher die Vorschläge kommen:
-  | Sicherheit | Wann |
-  |---|---|
-  | sicher | Ein GPS-Foto (beider Benutzer) liegt höchstens 30 min entfernt, oder die GPS-Fotos davor und danach liegen im Zeitfenster am selben Ort (≤ 1,5 km). |
-  | wahrscheinlich | Ein GPS-Foto liegt im Zeitfenster (Standard ±2 h), aber weiter weg, oder davor und danach sind verschiedene Orte. Oder der Ort kommt aus derselben Serie, deren Vorschlag sicher ist. |
-  | unsicher | Kein GPS-Foto im Zeitfenster, aber das letzte davor und das erste danach (je ≤ 12 h) liegen am selben Ort. Oder der Ort kommt aus einer Serie mit wahrscheinlichem oder unsicherem Vorschlag. |
-
-  Den Ort einer Serie übernehmen Medien ohne eigenen Vorschlag nur, wenn sich alle Vorschläge der Serie über den Ort einig sind. Screenshots und Bildschirmaufnahmen werden ausgeblendet: Erkennung über den Dateinamen oder PNG ohne Kameradaten, abschaltbar in den Einstellungen.
-- **Tags:** **+ Neue Regel** öffnet ein Formular mit allen Bedingungen. Pro Regel siehst du Treffer, schon getaggt und neu, mit Beispielbildern. Abhaken und **Tags anwenden**. **Beispiele** fügt Beispielregeln ausgeschaltet hinzu. **YAML** zeigt die Regeln als Text für Fortgeschrittene. Fehlerhafte Regeln werden beim Speichern mit verständlicher Meldung abgelehnt, und die alte Fassung bleibt erhalten.
-
-## Regeln der Duplikat-Bearbeitung
-
-**Behalten-Vorschlag.** Jede Stufe schlägt alle niedrigeren zusammen:
-
-| Kriterium | Punkte |
+| Thema | Datei |
 |---|---|
-| Favorit | 32 |
-| in einem Album (das Prüf-Album zählt nicht) | 16 |
-| hat GPS | 8 |
-| Immich schlägt es vor | 4 |
-| liegt in externer Bibliothek | 2 |
-| höchste Auflösung der Gruppe | 1 |
+| Duplikate: Quellen, Arten, Behalten-Vorschlag, Schutzregeln, Bild-Fingerabdruck | [`immich_pflege/hilfe/duplikate.md`](immich_pflege/hilfe/duplikate.md) |
+| Fotos ohne Ort: Kriterien und Sicherheit, Serien, Ortssuche, Fehlerquellen | [`immich_pflege/hilfe/ohne-ort.md`](immich_pflege/hilfe/ohne-ort.md) |
+| Massen-Tagging: Regelfelder, Vorschau, YAML | [`immich_pflege/hilfe/tags.md`](immich_pflege/hilfe/tags.md) |
+| Einstellungen: Immich, automatisch einlesen, Zugang, Updates | [`immich_pflege/hilfe/einstellungen.md`](immich_pflege/hilfe/einstellungen.md) |
 
-Bei Gleichstand gewinnt die größere Auflösung, dann die größere Datei.
-
-**Schutzregeln für den Papierkorb:**
-- Medien aus **externen Bibliotheken kommen nie in den Papierkorb**, sondern stattdessen ins Prüf-Album.
-- **Kopien eines anderen Benutzers** als dem der behaltenen Datei kommen nur ins Prüf-Album des Besitzers.
-- Papierkorb heißt Immich-Papierkorb (`force: false`), also wiederherstellbar.
-
-Das Album „Duplikat-Prüfung“ wird pro Benutzer angelegt, falls es fehlt.
-
-## Regeln fürs Tagging
-
-Regeln legst du in der Oberfläche an. Gespeichert werden sie als `data/regeln.yaml`, damit auch die Kommandozeile sie nutzt. Alle Bedingungen einer Regel müssen zutreffen:
-
-| Feld | Bedeutung |
-|---|---|
-| Tags | ein oder mehrere Tags, verschachtelt mit „/“ (z. B. `Reisen/Italien/2024`) |
-| von / bis | Aufnahmedatum (Ortszeit), jeweils einschließlich |
-| Bibliothek | nur Uploads oder nur extern |
-| Typ | Foto oder Video |
-| Album, Person | exakter Name; mehrere = alle müssen passen |
-| Kamerahersteller | exakt, Groß/klein egal (z. B. `SONY`, `Apple`) |
-| Kameramodell, Dateiname, Pfad | reguläre Ausdrücke, Groß/klein egal |
-| Für Benutzer | keiner angehakt = alle |
-| aktiv | ausgeschaltete Regeln werden nicht angewendet |
-
-Das YAML-Format ist in [`immich_pflege/regeln.example.yaml`](immich_pflege/regeln.example.yaml) beschrieben.
+Das YAML-Format der Regeln ist in [`immich_pflege/regeln.example.yaml`](immich_pflege/regeln.example.yaml) beschrieben.
 
 ---
 
@@ -165,6 +122,9 @@ docker exec -it immich-pflege pflege duplikate                    # Vorschau (Ta
 docker exec -it immich-pflege pflege duplikate --json > dup.json
 docker exec -it immich-pflege pflege duplikate --csv > dup.csv
 docker exec -it immich-pflege pflege duplikate --ins-album        # alle offenen Gruppen
+docker exec    immich-pflege pflege duplikate --art identisch --papierkorb --ja
+docker exec -it immich-pflege pflege duplikate --kein-duplikat 3fa2c1d9e0b4
+docker exec -it immich-pflege pflege fingerabdruck                # Bild-Fingerabdrücke berechnen
 docker exec -it immich-pflege pflege duplikate --papierkorb       # mit Rückfrage
 docker exec    immich-pflege pflege duplikate --papierkorb --ja   # ohne Rückfrage
 docker exec -it immich-pflege pflege duplikate -g 3fa2c1d9e0b4 --behalten 3fa2c1d9e0b4=<medien-id> --papierkorb
@@ -197,12 +157,15 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/healthz` | Lebenszeichen (ohne Anmeldung) |
 | GET | `/api/status` | Version, Stand der Bibliothek, Schlüsselprüfung (`?server=false` ohne Immich-Abfrage) |
 | POST | `/api/scan` | Neu einlesen. `{"wait": false}` startet im Hintergrund (202) |
-| GET | `/api/duplicates` | Gruppen (`offset`, `limit`, `include_done`) |
-| POST | `/api/duplicates/apply` | Aktion auf Gruppen |
+| GET | `/api/duplicates` | Gruppen mit Mengen je Art und Monat. Parameter: `art`, `monat`, `benutzeruebergreifend`, `ignoriert`, `offset`, `limit`, `include_done` |
+| POST | `/api/duplicates/apply` | Aktion auf Gruppen (`groups`) oder alle offenen der Auswahl (`all` + `art`/`monat`/`benutzeruebergreifend`) |
+| POST | `/api/duplicates/ignore` | „Kein Duplikat“: `{"groups": [...]}`, mit `"undo": true` wieder aufnehmen |
+| POST | `/api/fingerprints/start` | Fehlende Bild-Fingerabdrücke im Hintergrund berechnen |
 | GET | `/api/no-location` | Medien ohne Ort als Serien mit Mengen je Ort (`orte`) und Monat (`monate`). Parameter: `ort`, `monat`, `overview=true` (nur die Mengen), `max_hours`, `offset`, `limit`, `only_suggestions`, `min_confidence` |
 | POST | `/api/no-location/apply` | Ort übernehmen: `ids`, `series`, `ort`/`monat` (alle Serien eines Ortes oder Monats), `min_confidence` (`hoch`/`mittel`/`niedrig`), optional `place` `{breite, laenge, name}` |
 | GET | `/api/places?q=Siena` | Ortssuche über Immich |
 | GET | `/api/tags` | Regel-Vorschau (`rules=Name`, mehrfach möglich) |
+| GET | `/api/help/{thema}` | Hilfetext als Markdown (`duplikate`, `ohne-ort`, `tags`, `einstellungen`) |
 | GET/PUT | `/api/rules` | Regeln lesen/speichern (`{"regeln": [...]}` oder `{"yaml": "..."}`) |
 | GET/PUT | `/api/settings` | Einstellungen (Keys nur maskiert) |
 | GET | `/api/version` | laufende Version und ob es auf GitHub Neues gibt |

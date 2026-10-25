@@ -33,6 +33,8 @@ from .auth import COOKIE, RENEW_BELOW_S, Sessions, basic_credentials
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
+HELP = Path(__file__).parent.parent / "hilfe"
+HELP_TOPICS = ("duplikate", "ohne-ort", "tags", "einstellungen")
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 OPEN_PATHS = {"/healthz", "/login", "/api/login", "/api/logout", "/favicon.ico"}
 OPEN_PREFIXES = ("/static/",)
@@ -422,6 +424,13 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/tags/apply")
     def tags_apply(body: Optional[TagsApply] = None):
         return svc().tags_apply(body.rules if body else None)
+
+    # ---------------------------------------------------------------- Hilfe
+    @app.get("/api/help/{topic}")
+    def help_text(topic: str):
+        if topic not in HELP_TOPICS:
+            return JSONResponse({"fehler": f"Unbekanntes Hilfethema – vorhanden: {', '.join(HELP_TOPICS)}"}, 404)
+        return Response((HELP / f"{topic}.md").read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
 
     # ------------------------------------------------------ Vorschaubild
     @app.get("/thumb/{asset_id}", include_in_schema=False)

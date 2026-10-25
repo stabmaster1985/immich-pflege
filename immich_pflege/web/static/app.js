@@ -1130,6 +1130,71 @@ async function startUpdate(btn) {
   setTimeout(poll, 15000);
 }
 
+/* --------------------------------------------------------------- Hilfe */
+// Kleiner Markdown-Renderer für die Hilfetexte (Überschriften, Absätze, Listen, Tabellen,
+// **fett**, *kursiv*, `Code`). Der Text wird vorher escaped – kein HTML aus den Dateien.
+function mdInline(text) {
+  return text
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>");
+}
+
+function renderMarkdown(md) {
+  const lines = md.replace(/\r/g, "").split("\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+    const head = line.match(/^(#{1,3})\s+(.*)$/);
+    if (head) { out.push(`<h${head[1].length}>${mdInline(head[2])}</h${head[1].length}>`); i++; continue; }
+    if (line.startsWith("|")) {
+      const rows = [];
+      while (i < lines.length && lines[i].startsWith("|")) { rows.push(lines[i]); i++; }
+      const cells = (r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => mdInline(c.trim()));
+      const body = rows.filter((r, idx) => !(idx === 1 && /^\|[\s:|-]+\|$/.test(r.trim())));
+      const [first, ...rest] = body;
+      out.push(`<div class="table-wrap"><table><thead><tr>${cells(first).map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>` +
+        rest.map((r) => `<tr>${cells(r).map((c) => `<td>${c}</td>`).join("")}</tr>`).join("") + "</tbody></table></div>");
+      continue;
+    }
+    const list = line.match(/^(\s*)([-*]|\d+\.)\s+/);
+    if (list) {
+      const ordered = /\d/.test(list[2]);
+      const items = [];
+      while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) {
+        const indent = lines[i].match(/^\s*/)[0].length;
+        const text = mdInline(lines[i].replace(/^\s*([-*]|\d+\.)\s+/, ""));
+        items.push(indent ? `<ul><li>${text}</li></ul>` : `<li>${text}</li>`);
+        i++;
+      }
+      const tag = ordered ? "ol" : "ul";
+      out.push(`<${tag}>${items.join("").replace(/<\/ul><ul>/g, "")}</${tag}>`);
+      continue;
+    }
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !/^(#|\||\s*([-*]|\d+\.)\s)/.test(lines[i])) { para.push(lines[i]); i++; }
+    out.push(`<p>${mdInline(para.join(" "))}</p>`);
+  }
+  return out.join("\n");
+}
+
+async function openHelp(topic) {
+  const body = $("#help-body");
+  body.innerHTML = "<p>Lade …</p>";
+  $("#help-dlg").showModal();
+  try {
+    const resp = await fetch("api/help/" + topic, { headers: { "X-Requested-With": "pflege" } });
+    if (!resp.ok) throw new Error("Hilfe nicht verfügbar");
+    body.innerHTML = renderMarkdown(await resp.text());
+  } catch (e) {
+    body.replaceChildren(h("div", { class: "banner err" }, e.message));
+  }
+  $("#help-dlg").scrollTop = 0;
+}
+
 /* ------------------------------------------------------ Aktionsleiste */
 function updateActionbar() {
   const info = $("#ab-info");
@@ -1235,6 +1300,7 @@ $("#loc-hours").addEventListener("change", (e) => {
   if (v > 0 && v <= 48) { S.loc.hours = v; loadTab("loc", true); } else { e.target.value = S.loc.hours; }
 });
 $("#tags-reload").addEventListener("click", () => loadTab("tags", true));
+document.querySelectorAll(".help-btn").forEach((b) => b.addEventListener("click", () => openHelp(b.dataset.help)));
 $("#rule-new").addEventListener("click", () => openRule(null));
 $("#rule-examples").addEventListener("click", () => addExamples().catch((e) => toast(e.message, true)));
 $("#rule-yaml").addEventListener("click", openYaml);
