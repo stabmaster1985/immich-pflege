@@ -1,6 +1,6 @@
 # immich-pflege
 
-Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen die API von 3.2.4)**: als Docker-Container mit mobiler Web-Oberfläche, Kommandozeile `pflege` und JSON-API für n8n.
+Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen die API von 3.2.4, geprüft mit 3.3.1)**: als Docker-Container mit mobiler Web-Oberfläche, Kommandozeile `pflege` und JSON-API für n8n.
 
 | Funktion | Was passiert |
 |---|---|
@@ -297,9 +297,9 @@ Die Tests laufen gegen einen **Mock-Immich** (`tests/mock_immich.py`). Er bildet
 DATA_DIR=./data .venv/bin/uvicorn immich_pflege.web.app:create_app --factory --port 2222
 ```
 
-### Hinweise zur Immich-API (geprüft gegen die OpenAPI-Spezifikation v3.2.4)
+### Hinweise zur Immich-API (geprüft gegen die OpenAPI-Spezifikation v3.2.4 und v3.3.1)
 
-- `PUT /api/assets` (Koordinaten setzen) ist in v3 als *deprecated* markiert, ist aber in 3.2.4 der einzige Weg dafür. Der Aufruf steckt an einer Stelle in `client.py` (`set_location`).
+- `PUT /api/assets` (Koordinaten setzen) ist in v3 als *deprecated* markiert, ist aber in 3.2.4 und 3.3.1 der einzige Weg dafür. Der Aufruf steckt an einer Stelle in `client.py` (`set_location`).
 - In `POST /api/search/metadata` sind seit 3.2.0 die einfachen Filter (`isNotInAlbum`, `albumIds`, `personIds`, `tagIds`, `page`) *deprecated* zugunsten von `filter` und `cursor`. Sie funktionieren weiter. Das Tool liest `nextCursor` und fällt auf `nextPage` zurück.
 - Bulk-Aufrufe gehen in Blöcken zu 500 IDs. Ist Immich nicht 3.x, erscheint eine Warnung.
 - Assets mit `visibility` `hidden` (Live-Photo-Videos) oder `locked` sowie Medien im Papierkorb werden ignoriert. Über Partner-Freigaben sichtbare Medien werden nur ihrem Besitzer zugeordnet.
