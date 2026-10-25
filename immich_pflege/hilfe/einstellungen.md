@@ -32,4 +32,18 @@ Neue Fotos erscheinen im Tool erst nach dem Einlesen. Das geht **täglich** zu e
 
 ## Updates
 
-Die Karte **Version** zeigt den laufenden Stand. Gibt es Neues auf GitHub, erscheint am Zahnrad ein roter Punkt. **Jetzt aktualisieren** startet den n8n-Workflow `n8n/immich-pflege-update.json`, dafür die Webhook-Adresse eintragen. Header-Name leer lassen bedeutet: Webhook ohne Authentifizierung.
+Die Karte **Version** zeigt den laufenden Stand. Es gibt zwei Wege für Updates:
+
+### Update-Dienst auf dem Server (empfohlen)
+
+Ein kleiner Dienst auf dem Docker-Server (systemd) übernimmt die Updates. Die App selbst bekommt **keine** Rechte am Server, sie legt nur einen Auftrag in `data/updater/` ab.
+
+1. **Vorbereiten:** Stündlich, oder per „Jetzt auf Updates prüfen“, holt der Dienst neue Versionen von GitHub und baut sie **komplett fertig**. Die laufende Version bleibt dabei unberührt.
+2. **Letzter Blick:** Die Karte zeigt „Version … ist vorbereitet“ mit allen Änderungen, am Zahnrad erscheint ein roter Punkt.
+3. **Umschalten per Klick:** Der Wechsel dauert nur Sekunden. Startet die neue Version nicht sauber, schaltet der Dienst **automatisch auf die alte zurück** und zeigt den Fehler an.
+
+Eingerichtet wird der Dienst einmalig mit `sudo ./updater/install.sh` im Projektordner auf dem Server. Der n8n-Workflow erledigt das bei seinem nächsten Lauf automatisch, wenn er als root arbeitet. Entfernen: `sudo ./updater/install.sh --entfernen`.
+
+### n8n-Workflow
+
+Ohne Update-Dienst startet **Jetzt aktualisieren** den n8n-Workflow `n8n/immich-pflege-update.json`, dafür die Webhook-Adresse eintragen. Header-Name leer lassen bedeutet: Webhook ohne Authentifizierung. Hier wird erst nach dem Klick geholt und gebaut, das dauert 1–3 Minuten.

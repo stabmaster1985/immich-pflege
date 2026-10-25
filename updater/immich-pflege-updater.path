@@ -1,0 +1,9 @@
+[Unit]
+Description=immich-pflege Update-Dienst: Auftrag aus der App
+
+[Path]
+PathChanged=@DIR@/data/updater/request.json
+Unit=immich-pflege-updater.service
+
+[Install]
+WantedBy=multi-user.target

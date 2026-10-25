@@ -243,3 +243,4 @@ progress { display: block; width: 100%; margin-top: 6px; accent-color: var(--acc
 .help table { border-collapse: collapse; font-size: .85rem; min-width: 100%; }
 .help th, .help td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
 .help th { background: var(--chip); }
+pre.log { white-space: pre-wrap; font-size: .75rem; margin: 6px 0 0; max-height: 200px; overflow: auto; }

@@ -28,6 +28,7 @@ from ..logsetup import setup_logging
 from ..rules import RuleError, example_rules, read_rules_raw, save_rules
 from ..service import ActionError, ImmichError, NotConfigured, Pflege, check_server
 from ..scheduler import AutoScan
+from ..updater import BUSY, Updater
 from ..version import Version
 from .auth import COOKIE, RENEW_BELOW_S, Sessions, basic_credentials
 
@@ -83,6 +84,10 @@ class NoLocationApply(BaseModel):
 
 class TagsApply(BaseModel):
     rules: Optional[list[str]] = None
+
+
+class UpdaterApply(BaseModel):
+    bereit: str
 
 
 class LoginRequest(BaseModel):
@@ -308,6 +313,39 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         clients = {n: ImmichClient(url + "/api", k, n, http=http, timeout=15) for n, k in users.items()}
         return {"immich_url": url, **check_server(clients)}
 
+    # ------------------------------------------------- Update-Dienst (Host)
+    def updater() -> Updater:
+        return Updater(svc().settings.data_dir)
+
+    @app.get("/api/updater")
+    def updater_status():
+        return updater().status()
+
+    @app.post("/api/updater/prepare")
+    def updater_prepare():
+        u = updater()
+        st = u.status()
+        if not st["verfuegbar"]:
+            raise ActionError("Update-Dienst auf dem Server ist nicht eingerichtet (updater/install.sh)")
+        if st.get("phase") in BUSY:
+            raise ActionError("Der Update-Dienst arbeitet gerade – bitte kurz warten")
+        u.request("vorbereiten")
+        return {**u.status(), "auftrag": "vorbereiten"}
+
+    @app.post("/api/updater/apply")
+    def updater_apply(body: UpdaterApply):
+        u = updater()
+        st = u.status()
+        if not st["verfuegbar"]:
+            raise ActionError("Update-Dienst auf dem Server ist nicht eingerichtet (updater/install.sh)")
+        if st.get("phase") != "bereit" or not st.get("bereit"):
+            raise ActionError("Es ist keine Version vorbereitet")
+        if body.bereit != st["bereit"]:
+            # „letzter Blick“: nur die Version starten, die angezeigt wurde
+            raise ActionError("Inzwischen wurde eine andere Version vorbereitet – bitte neu laden und prüfen")
+        u.request("umschalten")
+        return {**u.status(), "auftrag": "umschalten"}
+
     # ---------------------------------------------------------- Version/Update
     @app.get("/api/version")
     def api_version():
@@ -315,8 +353,9 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         if v.stale:  # höchstens stündlich, im Hintergrund – die Antwort wartet nicht auf GitHub
             threading.Thread(target=v.refresh, daemon=True).start()
         settings = svc().settings
-        return {**v.get(), "update_available": v.update_available,
-                "update_moeglich": bool(settings.update_webhook_url)}
+        host = Updater(settings.data_dir).status()
+        return {**v.get(), "update_available": v.update_available or host.get("phase") == "bereit",
+                "update_moeglich": bool(settings.update_webhook_url), "dienst": host}
 
     @app.post("/api/version/check")
     def api_version_check():

@@ -1,10 +1,15 @@
-# Version (Commit) aus dem .git-Verzeichnis ablesen – ohne git im Image
+# Version (Commit) ermitteln – ohne git im Image:
+# aus den Build-Argumenten (Update-Dienst baut aus „git archive“) oder aus dem .git-Verzeichnis
 FROM python:3.12-slim AS version
+ARG GIT_COMMIT=""
+ARG GIT_BRANCH=""
+ARG GIT_DATE=""
 WORKDIR /src
-COPY .git ./.git
-COPY immich_pflege/gitinfo.py ./gitinfo.py
-RUN python -c "import json, sys; from pathlib import Path; sys.path.insert(0, '.'); \
-from gitinfo import read_git_version; print(json.dumps(read_git_version(Path('.'))))" > /version.json
+COPY . .
+RUN python -c "import json, os, sys; from pathlib import Path; sys.path.insert(0, 'immich_pflege'); \
+from gitinfo import read_git_version; c = os.environ.get('GIT_COMMIT'); \
+v = {'commit': c, 'branch': os.environ.get('GIT_BRANCH') or None, 'updated_at': os.environ.get('GIT_DATE') or None} \
+if c else read_git_version(Path('.')); print(json.dumps(v))" > /version.json
 
 FROM python:3.12-slim
 

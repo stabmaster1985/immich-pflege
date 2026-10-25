@@ -1079,7 +1079,8 @@ async function loadVersion(force = false) {
   const cur = v.current || {};
   const parts = [`Läuft: ${short(cur.commit)}${cur.branch ? " (" + cur.branch + ")" : ""}`];
   if (cur.updated_at) parts.push("Stand " + fmtDateTime(cur.updated_at));
-  if (!v.enabled) parts.push("Update-Prüfung aus");
+  if (v.dienst && v.dienst.verfuegbar) { /* Stand kommt vom Update-Dienst (siehe unten) */ }
+  else if (!v.enabled) parts.push("Update-Prüfung aus");
   else if (v.error) parts.push("Prüfung fehlgeschlagen: " + v.error);
   else if (v.status === "update") parts.push(`${v.behind} neue ${v.behind === 1 ? "Änderung" : "Änderungen"} auf GitHub`);
   else if (v.status === "current") parts.push("aktuell ✓");
@@ -1088,6 +1089,8 @@ async function loadVersion(force = false) {
   $("#version-commits").replaceChildren(...(v.commits && v.commits.length
     ? [h("ul", { class: "commits" }, v.commits.map((c) => h("li", {}, h("code", {}, short(c.commit)), " ", c.message)))] : []));
   $("#version-check").hidden = !v.enabled;
+  if (v.dienst && v.dienst.verfuegbar) { renderUpdater(v); return v; }
+  $("#version-host").replaceChildren();
   const btn = $("#version-update");
   btn.hidden = !v.update_moeglich;
   btn.className = "btn small" + (v.update_available ? " primary" : "");
@@ -1128,6 +1131,83 @@ async function startUpdate(btn) {
     setTimeout(poll, 10000);
   };
   setTimeout(poll, 15000);
+}
+
+/* Update-Dienst auf dem Docker-Server: vorbereiten, ansehen, umschalten */
+let updaterTimer = null;
+function renderUpdater(v) {
+  const d = v.dienst;
+  const box = $("#version-host");
+  clearTimeout(updaterTimer);
+  $("#version-update").hidden = true;
+  $("#version-check").hidden = true;
+  $("#version-commits").replaceChildren();  // die Liste kommt hier vom Dienst
+  const seen = d.zeit ? "zuletzt " + fmtDateTime(d.zeit) : "";
+  const parts = [h("div", { class: "muted small" }, `Update-Dienst auf dem Server: verbunden · ${seen}`)];
+  const busy = d.phase === "vorbereiten" || d.phase === "umschalten" || d.auftrag_offen;
+  if (busy) {
+    parts.push(h("div", { class: "banner warn" }, d.auftrag_offen && !["vorbereiten", "umschalten"].includes(d.phase)
+      ? "Auftrag übergeben – der Dienst startet gleich …" : d.meldung));
+    updaterTimer = setTimeout(() => loadVersion(), 4000);
+  } else if (d.phase === "bereit") {
+    parts.push(h("div", {}, h("b", {}, `Version ${short(d.bereit)} ist vorbereitet`), " – das Umschalten dauert nur Sekunden."),
+      h("ul", { class: "commits" }, (d.commits || []).map((c) => h("li", {}, h("code", {}, short(c.commit)), " ", c.message))),
+      h("div", { class: "row-gap" },
+        h("button", { type: "button", class: "btn small primary", onclick: (e) => switchVersion(d, e.currentTarget) }, "Jetzt umschalten"),
+        h("button", { type: "button", class: "btn small", onclick: (e) => prepareVersion(e.currentTarget) }, "Erneut prüfen")));
+  } else {
+    if (d.phase === "fehler") {
+      parts.push(h("div", { class: "banner err" }, d.meldung, d.log ? h("pre", { class: "log" }, d.log) : null));
+    } else {
+      parts.push(h("div", {}, d.meldung || "Aktuell."));
+    }
+    parts.push(h("div", { class: "row-gap" },
+      h("button", { type: "button", class: "btn small", onclick: (e) => prepareVersion(e.currentTarget) }, "Jetzt auf Updates prüfen")));
+  }
+  parts.push(h("p", { class: "muted small" }, "Neue Versionen werden stündlich im Hintergrund vorbereitet. Umgeschaltet wird nur per Klick."));
+  box.replaceChildren(...parts);
+  $("#version-out").textContent = "";
+}
+
+async function prepareVersion(btn) {
+  busy(btn, true);
+  try {
+    await api("api/updater/prepare", { method: "POST" });
+    await loadVersion();
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function switchVersion(d, btn) {
+  const ok = await confirmDialog({
+    title: `Auf Version ${short(d.bereit)} umschalten?`,
+    body: [h("p", {}, "Diese Änderungen werden aktiv:"),
+      h("ul", { class: "commits" }, (d.commits || []).map((c) => h("li", {}, h("code", {}, short(c.commit)), " ", c.message))),
+      h("p", { class: "muted" }, "Das Tool ist nur wenige Sekunden weg. Startet die neue Version nicht sauber, schaltet der Dienst automatisch auf die alte zurück.")],
+    okLabel: "Umschalten",
+  });
+  if (!ok) return;
+  const from = ((S.version || {}).current || {}).commit;
+  busy(btn, true);
+  try {
+    await api("api/updater/apply", { method: "POST", body: { bereit: d.bereit } });
+  } catch (e) {
+    toast(e.message, true); busy(btn, false); return;
+  }
+  $("#version-host").replaceChildren(h("div", { class: "banner warn" }, "Schalte um … die Seite lädt gleich von selbst neu."));
+  const started = Date.now();
+  const poll = async () => {
+    const now = await fetch("api/version", { cache: "no-store", headers: { "X-Requested-With": "pflege" } })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (now && now.current && now.current.commit && now.current.commit !== from) return location.reload();
+    if (now && now.dienst && now.dienst.phase === "fehler") { S.version = now; return loadVersion(); }
+    if (Date.now() - started > 5 * 60 * 1000) { toast("Umschalten dauert ungewöhnlich lange – Status prüfen", true); return loadVersion(); }
+    setTimeout(poll, 3000);
+  };
+  setTimeout(poll, 3000);
 }
 
 /* --------------------------------------------------------------- Hilfe */

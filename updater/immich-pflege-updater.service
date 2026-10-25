@@ -1,0 +1,10 @@
+[Unit]
+Description=immich-pflege Update-Dienst (vorbereiten/umschalten)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=PFLEGE_DIR=@DIR@
+ExecStart=/usr/bin/env bash @DIR@/updater/pflege-updater.sh handle
+TimeoutStartSec=30min

@@ -67,6 +67,18 @@ Logs: `docker logs immich-pflege` und `data/pflege.log`.
 
 Wer lieber mit Dateien arbeitet, kann die meisten Werte auch in einer `.env` vorgeben (`IMMICH_URL`, `REVIEW_ALBUM`, `LOCATION_MAX_HOURS`, `LOCATION_INCLUDE_EXTERNAL`, `WEB_USER`/`WEB_PASSWORD`, `UPDATE_*`). API-Keys (`IMMICH_KEY_<NAME>`) gehen per `docker-compose.override.yml`, siehe `.env.example`. Werte aus der `.env` haben Vorrang und erscheinen in der Oberfläche ausgegraut.
 
+### Updates per Klick (Update-Dienst)
+
+Für Updates ohne n8n gibt es einen kleinen Dienst auf dem Docker-Server (systemd, im Ordner `updater/`). Er bereitet neue Versionen stündlich im Hintergrund vor: holen und Image fertig bauen, die laufende Version bleibt unberührt. In der App siehst du unter **⚙ Einstellungen → Version** die Änderungen und schaltest per Klick um. Das dauert Sekunden, und startet die neue Version nicht sauber, geht es automatisch zurück auf die alte.
+
+```bash
+cd ~/immich-pflege
+sudo ./updater/install.sh            # einmalig; macht der n8n-Workflow als root auch automatisch
+sudo ./updater/install.sh --entfernen
+```
+
+Der Container bekommt dafür **keine** Rechte am Docker-Host. App und Dienst tauschen nur Dateien in `data/updater/` aus (Auftrag `request.json`, Stand `status.json`, Protokoll `update.log`).
+
 ### Aktualisieren per n8n
 
 Das läuft wie beim paperless-companion und firefly-dashboard. `n8n/immich-pflege-update.json` ist ein fertiger n8n-Workflow, der das Tool per SSH auf dem Docker-Server aktualisiert. Ablauf:
@@ -169,6 +181,9 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET/PUT | `/api/rules` | Regeln lesen/speichern (`{"regeln": [...]}` oder `{"yaml": "..."}`) |
 | GET/PUT | `/api/settings` | Einstellungen (Keys nur maskiert) |
 | GET | `/api/version` | laufende Version und ob es auf GitHub Neues gibt |
+| GET | `/api/updater` | Stand des Update-Dienstes (vorbereitet, Änderungen, Fehler) |
+| POST | `/api/updater/prepare` | Update-Dienst: neue Version vorbereiten |
+| POST | `/api/updater/apply` | Update-Dienst: vorbereitete Version starten, `{"bereit": "<commit>"}` |
 | POST | `/api/version/update` | Update über den n8n-Webhook anstoßen |
 | POST | `/api/settings/test` | Verbindung und Keys prüfen, ohne zu speichern |
 | POST | `/api/tags/apply` | Tags anwenden |
