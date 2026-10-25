@@ -611,6 +611,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
                 ignoriert: bool = False, offset: int = Query(0, ge=0), limit: int = Query(30, ge=0, le=5000)):
         return svc().timefix_view(art, ignoriert, offset, limit)
 
+    @app.get("/api/timefix/{fix_id}/media")
+    def timefix_media(fix_id: str):
+        return svc().timefix_media(fix_id)
+
     @app.post("/api/staged/timefix")
     def stage_timefix(body: TimeStage):
         return svc().stage_timefix([e.model_dump(exclude_none=True) for e in body.eintraege])

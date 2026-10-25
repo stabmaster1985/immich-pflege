@@ -42,6 +42,8 @@ Medien der **externen Bibliothek**, deren Datei auf der Platte fehlt, weil sie v
 - **Datum laut Dateiname:** `IMG_20190714_123456`, `PXL_…`, `IMG-20240718-WA0003` (WhatsApp, nur Datum) oder `2019-07-14 12.34.56`. Weicht Immichs Aufnahmezeit mehr als einen Tag davon ab, schlägt das Tool den Dateinamen vor.
 - **In der Zukunft** und **Standarddatum** (1970, 1980, 2000-01-01 um Mitternacht, oder vor 1995 von einem Digitalgerät): Hier gibt es keinen Vorschlag. Trage die richtige Zeit selbst ein.
 
+Jede Kachel zeigt die jetzige Zeit und darunter in Grün die neue. **Alle … zeigen** lädt sämtliche Fotos eines Eintrags. Ein Bild antippen öffnet die **Großansicht**, dort wischt man durch den ganzen Eintrag.
+
 Korrigiert wird mit Immichs relativer Zeitverschiebung. **Rückgängig** verschiebt um denselben Betrag zurück. Orte, Serien und Albumvorschläge rechnen danach mit der richtigen Zeit.
 
 ## Stapeln aus Alben

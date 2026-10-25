@@ -1146,6 +1146,14 @@ class Pflege:
                 "filter": {"art": art, "ignoriert": ignored}, "offset": offset,
                 "eintraege": [f.to_dict() for f in page]}
 
+    def timefix_media(self, fix_id: str) -> dict[str, Any]:
+        """Alle Medien eines Eintrags (in der Liste steht nur eine Auswahl)."""
+        _, fixes, _ = self.time_fixes()
+        fix = next((f for f in fixes if f.id == fix_id), None)
+        if fix is None:
+            raise ActionError("Eintrag nicht gefunden – bitte neu laden")
+        return {"id": fix.id, "medien": fix.media(sorted(fix.assets, key=lambda a: (a.local_dt is None, a.local_dt)))}
+
     def stage_timefix(self, selection: list[dict]) -> dict[str, Any]:
         """selection: [{id, minuten?}] – ohne minuten gilt der Vorschlag; ``ziel`` (ISO-Zeit) für Einzelmedien."""
         from datetime import datetime

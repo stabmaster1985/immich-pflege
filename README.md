@@ -127,7 +127,7 @@ Das Menü ist nach Aufgaben sortiert. Auf dem Handy liegt es unten, am großen B
 | **Alben** | Reisen, Ordner, Alben aufräumen |
 | **Vorgemerkt** | Vormerkliste und Verlauf mit Rückgängig |
 
-Oben rechts: **Einlesen** und **⚙ Einstellungen**. Jeder Punkt hat eine eigene Adresse (z. B. `…:2222/#serien`), der Zurück-Knopf funktioniert. Unten erscheint bei Bedarf eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet. Sie lässt sich **als App auf den Startbildschirm legen** (Safari: „Zum Home-Bildschirm“, Chrome: „App installieren“ – als eigenes Fenster nur über HTTPS).
+Oben rechts: **Einlesen** und **⚙ Einstellungen**. **Großansicht:** Kleine Vorschaubilder antippen, bei großen Kacheln auf **Groß**, in der KI-Suche auf ⤢. Dann wischen oder mit den Pfeiltasten durch die ganze Gruppe blättern. Jeder Punkt hat eine eigene Adresse (z. B. `…:2222/#serien`), der Zurück-Knopf funktioniert. Unten erscheint bei Bedarf eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet. Sie lässt sich **als App auf den Startbildschirm legen** (Safari: „Zum Home-Bildschirm“, Chrome: „App installieren“ – als eigenes Fenster nur über HTTPS).
 
 **Jede Seite hat oben ein „?“** mit einer ausführlichen Erklärung: wie Treffer und Vorschläge entstehen, nach welchen Kriterien bewertet wird und wo die Grenzen liegen. Dieselben Texte liegen im Repository:
 
@@ -237,6 +237,7 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/api/stacks` | Stapel-Vorschläge: `album`, `ganz` (ganzes Album je Benutzer) |
 | POST | `/api/staged/stacks` | Stapel vormerken: `album`, `ids` (ohne = alle), `ganz`, `oben` {Vorschlag: Medium}, `aus_album` |
 | GET | `/api/timefix` | Falsche Aufnahmezeiten: `art` (`zeitversatz`, `dateiname`, `zukunft`, `standard`) |
+| GET | `/api/timefix/{id}/media` | alle Medien eines Eintrags (die Liste enthält nur eine Auswahl) |
 | POST | `/api/staged/timefix` | Zeitkorrektur vormerken: `{"eintraege": [{"id", "minuten"? , "ziel"?}]}` |
 | GET | `/api/trash` | Papierkorb beider Benutzer |
 | POST | `/api/trash/restore` | Wiederherstellen: `{"ids": [...]}`, ohne = alles |

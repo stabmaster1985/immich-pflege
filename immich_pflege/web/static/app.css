@@ -232,7 +232,7 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent);
   :root { --bar-h: 84px; }
   .actionbar { flex-wrap: wrap; row-gap: 4px; min-height: 0; }
   .actionbar .ab-info { flex: 1 1 140px; font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .actionbar .ab-buttons { flex: 1; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .actionbar .ab-buttons { flex: 0 1 auto; max-width: 100%; margin-left: auto; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .actionbar .btn.small { padding: 6px 10px; white-space: nowrap; flex: none; }
 }
 @media (min-width: 900px) {
@@ -416,3 +416,32 @@ div.tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 .cover-pick:disabled { cursor: default; }
 .care-album.target { background: color-mix(in srgb, var(--keep) 6%, transparent); }
 .care-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: .9rem; }
+
+/* Großansicht */
+dialog.viewer {
+  width: 100vw; height: 100dvh; max-width: 100vw; max-height: 100dvh; margin: 0; padding: 0; border-radius: 0;
+  background: #000; color: #f2f2f2; box-shadow: none;
+}
+dialog.viewer[open] { display: flex; flex-direction: column; }
+dialog.viewer::backdrop { background: #000; }
+.v-top { display: flex; justify-content: space-between; align-items: center; padding: calc(env(safe-area-inset-top) + 8px) 12px 8px; }
+.v-count { font-size: .85rem; color: #bbb; font-variant-numeric: tabular-nums; }
+.v-btn { border: 0; background: rgba(255,255,255,.14); color: #fff; border-radius: 10px; min-width: 44px; min-height: 44px; font-size: 1.1rem; cursor: pointer; }
+.v-stage { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; touch-action: pan-y pinch-zoom; }
+#v-img { width: 100%; height: 100%; object-fit: contain; user-select: none; }
+.v-nav { position: absolute; top: 50%; transform: translateY(-50%); height: 64px; font-size: 2rem; line-height: 1; }
+.v-prev { left: 8px; }
+.v-next { right: 8px; }
+.v-info { padding: 10px 14px calc(env(safe-area-inset-bottom) + 12px); font-size: .85rem; line-height: 1.45; background: #111; }
+.v-name { font-weight: 700; font-size: .95rem; overflow-wrap: anywhere; }
+.v-path { color: #999; font-size: .75rem; overflow-wrap: anywhere; }
+.v-info .open-links a { color: #aab4ff; font-size: .9rem; }
+.v-info .v-open { display: none; }
+/* „Groß“ in den Kacheln und Lupe in kleinen Kacheln */
+.v-open { border: 0; background: none; color: var(--accent); font-weight: 600; font-size: .8rem; padding: 4px 0; cursor: pointer; }
+.v-open.zoom {
+  position: absolute; right: 4px; top: 4px; width: 28px; height: 28px; border-radius: 8px; padding: 0;
+  background: rgba(0,0,0,.6); color: #fff; font-size: .95rem; line-height: 28px; text-align: center;
+}
+.strip img { cursor: zoom-in; }
+.cover-pick img { cursor: pointer; }

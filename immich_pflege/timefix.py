@@ -63,13 +63,15 @@ class TimeFix:
     def id(self) -> str:
         return "z" + hashlib.sha1((self.art + ",".join(sorted(a.id for a in self.assets))).encode()).hexdigest()[:11]
 
+    def media(self, assets: list[Asset] | None = None) -> list[dict[str, Any]]:
+        return [{**a.summary(), "neue_zeit": shifted(a, self.minutes)} for a in (self.assets if assets is None else assets)]
+
     def to_dict(self) -> dict[str, Any]:
         step = max(1, len(self.assets) // 6)
-        sample = self.assets[::step][:6]
         return {
             "id": self.id, "art": self.art, "art_text": ARTEN[self.art], "grund": self.grund,
             "minuten": self.minutes, "anzahl": len(self.assets), **self.extra,
-            "medien": [{**a.summary(), "neue_zeit": shifted(a, self.minutes)} for a in sample],
+            "medien": self.media(self.assets[::step][:6]),
         }
 
 

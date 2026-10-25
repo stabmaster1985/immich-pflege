@@ -404,6 +404,19 @@
     </form>
   </dialog>
 
+  <dialog id="viewer" class="viewer" aria-label="Großansicht">
+    <div class="v-top">
+      <span id="v-count" class="v-count"></span>
+      <button type="button" id="v-close" class="v-btn" aria-label="Schließen">✕</button>
+    </div>
+    <div class="v-stage" id="v-stage">
+      <img id="v-img" alt="">
+      <button type="button" id="v-prev" class="v-btn v-nav v-prev" aria-label="Vorheriges Bild">‹</button>
+      <button type="button" id="v-next" class="v-btn v-nav v-next" aria-label="Nächstes Bild">›</button>
+    </div>
+    <div class="v-info" id="v-info"></div>
+  </dialog>
+
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="static/app.js"></script>
 </body>

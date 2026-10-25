@@ -101,6 +101,7 @@ function fmtDur(s) {
 // Vorschaubild; Videos bekommen ihre Länge als Plakette („▶ 1:23“)
 function thumb(m, alt) {
   const img = h("img", { src: m.thumb || ("thumb/" + m.id), loading: "lazy", decoding: "async", alt: alt || m.dateiname || "" });
+  img._m = m;  // für die Großansicht
   if (m.typ !== "video") return img;
   return h("span", { class: "thumb-wrap" }, img,
     h("span", { class: "vid-badge", title: m.dauer_s ? `Video, ${fmtDur(m.dauer_s)}` : "Video" }, "▶" + (m.dauer_s ? " " + fmtDur(m.dauer_s) : "")));
@@ -119,9 +120,68 @@ function tile(attrs, ...children) {
 function openLinks(m) {
   const web = S.status && S.status.link_url;
   return h("div", { class: "open-links" },
+    h("button", { type: "button", class: "v-open", title: "Groß ansehen" }, "Groß"),
     h("a", { href: "immich://asset?id=" + encodeURIComponent(m.id), title: "In der Immich-App öffnen" }, "App ↗"),
     web ? h("a", { href: `${web}/photos/${encodeURIComponent(m.id)}`, target: "_blank", rel: "noopener", title: "In Immich im Browser öffnen" }, "Web ↗") : null);
 }
+
+/* -------------------------------------------------------- Großansicht */
+const zoomBtn = () => h("button", { type: "button", class: "v-open zoom", title: "Groß ansehen", "aria-label": "Groß ansehen" }, "⤢");
+// Jedes Vorschaubild (img._m) lässt sich groß ansehen: in Streifen per Antippen, in Kacheln über „Groß“.
+// Geblättert wird innerhalb derselben Gruppe (Raster bzw. Streifen).
+const VW = { list: [], i: 0 };
+
+function openViewerFrom(el) {
+  const img = el._m ? el : (el.closest(".tile, .smart-tile, .stage-fig, .thumb-wrap") || el.parentElement).querySelector("img");
+  if (!img || !img._m) return;
+  const box = img.closest(".grid, .strip, .smart-grid");
+  // box._list: ganze Gruppe, auch wenn nur die ersten Kacheln angezeigt werden
+  const list = box && box._list ? box._list : box ? [...box.querySelectorAll("img")].map((x) => x._m).filter(Boolean) : [img._m];
+  VW.list = list;
+  VW.i = Math.max(0, list.findIndex((x) => x.id === img._m.id));
+  renderViewer();
+  const dlg = $("#viewer");
+  if (!dlg.open) dlg.showModal();
+}
+
+function renderViewer() {
+  const m = VW.list[VW.i];
+  if (!m) return;
+  const img = $("#v-img");
+  img.src = "thumb/" + m.id;  // kleines Bild sofort, das große lädt darüber
+  const big = new Image();
+  big.onload = () => { if (VW.list[VW.i] === m) img.src = big.src; };
+  big.src = "thumb/" + m.id + "?size=preview";
+  img.alt = m.dateiname || "";
+  const next = VW.list[VW.i + 1];
+  if (next) new Image().src = "thumb/" + next.id + "?size=preview";
+  $("#v-count").textContent = VW.list.length > 1 ? `${VW.i + 1} / ${VW.list.length}` : "";
+  $("#v-prev").hidden = VW.i === 0;
+  $("#v-next").hidden = VW.i >= VW.list.length - 1;
+  const when = m.neue_zeit ? `${fmtTaken(m.aufnahme)} → ${fmtTaken(m.neue_zeit)}` : fmtTaken(m.aufnahme);
+  $("#v-info").replaceChildren(...[
+    h("div", { class: "v-name" }, m.dateiname || ""),
+    h("div", {}, [when, m.benutzer, m.extern ? "extern" : "", m.typ === "video" ? `Video${m.dauer_s ? " " + fmtDur(m.dauer_s) : ""} – abspielen in Immich` : ""].filter(Boolean).join(" · ")),
+    m.ort ? h("div", {}, "📍 " + m.ort) : null,
+    m.pfad ? h("div", { class: "v-path" }, m.pfad) : null,
+    openLinks(m)].filter(Boolean));
+}
+
+function viewerStep(d) {
+  const i = VW.i + d;
+  if (i < 0 || i >= VW.list.length) return;
+  VW.i = i;
+  renderViewer();
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target;
+  if (!(t instanceof Element) || t.closest("#viewer")) return;
+  const zoom = t.closest(".v-open");
+  if (zoom) { e.preventDefault(); e.stopPropagation(); openViewerFrom(zoom); return; }
+  // Streifen (Beispielbilder, Falsche Zeit, Vorgemerkt): Bild antippen
+  if (t.tagName === "IMG" && t._m && t.closest(".strip") && !t.closest("button, [role=button], a")) openViewerFrom(t);
+}, true);
 
 // Album öffnen: Immich-App (immich://album?id=…) oder Weboberfläche (/albums/<id>)
 function albumLinks(al) {
@@ -628,6 +688,7 @@ function renderSeries(ser) {
   const showAll = l.open.has(ser.id) || ser.medien.length <= PREVIEW_TILES + 1;
   const shown = showAll ? ser.medien : ser.medien.slice(0, PREVIEW_TILES);
   const grid = h("div", { class: "grid" });
+  grid._list = ser.medien;
   for (const m of shown) {
     const mv = m.vorschlag;
     const can = selectable(m);
@@ -967,7 +1028,7 @@ function renderSmart() {
     const inside = g.cut !== null && i < g.cut;
     grid.append(tile({ class: "smart-tile" + (inside ? " in" : g.cut === i ? " cut" : g.cut !== null ? " out" : ""), title: `${i + 1}. ${m.dateiname}`,
       onclick: () => { g.cut = i; renderSmart(); } },
-    thumb(m), g.cut === i ? h("span", { class: "badge" }, "ab hier nicht") : null));
+    thumb(m), g.cut === i ? h("span", { class: "badge" }, "ab hier nicht") : null, zoomBtn()));
   });
   box.replaceChildren(
     h("label", { class: "f" }, "Tag", tagIn),
@@ -1639,9 +1700,32 @@ function renderTimeFix(it) {
     h("span", { class: "muted" }, n(it.anzahl, "Medium", "Medien")),
     h("button", { type: "button", class: "btn small edit", onclick: () => keepCleanup(it, c.ignored) }, c.ignored ? "Wieder zeigen" : "Passt so")),
     h("div", { class: "muted small" }, it.grund));
-  const strip = h("div", { class: "strip" }, it.medien.map((m) => h("figure", { class: "stage-fig" }, thumb(m),
-    h("figcaption", { title: m.dateiname }, m.neue_zeit ? "→ " + fmtTaken(m.neue_zeit) : fmtTaken(m.aufnahme)))));
-  card.append(strip);
+  // Kacheln wie bei „Ohne Ort“: groß genug, um das Motiv zu erkennen; antippen = Großansicht
+  c.timeAll = c.timeAll || {};  // Eintrag -> alle Medien (in der Liste steht nur eine Auswahl)
+  const media = c.timeAll[it.id] || it.medien;
+  const all = !!c.timeAll[it.id] || it.anzahl <= it.medien.length;
+  const grid = h("div", { class: "grid" });
+  grid._list = media;
+  for (const m of media) {
+    grid.append(tile({ class: "tile", title: m.pfad, onclick: (e) => openViewerFrom(e.currentTarget.querySelector("img")) },
+      thumb(m),
+      h("div", { class: "meta" },
+        h("div", { class: "name" }, m.dateiname),
+        h("div", {}, fmtTaken(m.aufnahme)),
+        m.neue_zeit ? h("div", { class: "sug" }, "→ " + fmtTaken(m.neue_zeit)) : null,
+        h("div", {}, m.benutzer + (m.extern ? " · extern" : "")),
+        openLinks(m))));
+  }
+  card.append(grid);
+  if (!all) {
+    card.append(h("button", { type: "button", class: "btn more", onclick: async (e) => {
+      busy(e.currentTarget, true);
+      try {
+        c.timeAll[it.id] = (await api(`api/timefix/${it.id}/media`)).medien;
+        card.replaceWith(renderTimeFix(it));
+      } catch (err) { toast(err.message, true); busy(e.currentTarget, false); }
+    } }, `Alle ${it.anzahl} zeigen`));
+  }
   if (!c.ignored) {
     const row = h("div", { class: "row-gap", style: "margin-top:8px" });
     if (it.anzahl === 1) {
@@ -2265,7 +2349,7 @@ async function loadTripMedia(t, box) {
         el.className = "smart-tile " + (off.has(m.id) ? "out" : "in");
         if (label) label.textContent = tripSelText(t);
       } },
-    thumb(m), m.im_album ? h("span", { class: "badge ok" }, "✓ im Album") : null);
+    thumb(m), m.im_album ? h("span", { class: "badge ok" }, "✓ im Album") : null, zoomBtn());
     grid.append(el);
   }
   box.replaceChildren(h("p", { class: "muted small" }, "Antippen nimmt ein Bild heraus (grau) bzw. wieder hinein. Herausgenommene gehören danach nicht mehr zu dieser Reise."), grid);
@@ -2764,6 +2848,25 @@ function loadCounts() {
 $("#scan-btn").append(icon("scan"), h("span", { class: "btn-l" }, "Einlesen"));
 $("#set-btn").append(icon("gear"));
 $("#scan-btn").addEventListener("click", () => rescan());
+$("#v-close").addEventListener("click", () => $("#viewer").close());
+$("#v-prev").addEventListener("click", () => viewerStep(-1));
+$("#v-next").addEventListener("click", () => viewerStep(1));
+$("#viewer").addEventListener("keydown", (e) => {
+  if (e.key === "ArrowLeft") viewerStep(-1);
+  if (e.key === "ArrowRight") viewerStep(1);
+});
+(() => {  // wischen
+  let x0 = null;
+  const st = $("#v-stage");
+  st.addEventListener("touchstart", (e) => { x0 = e.touches.length === 1 ? e.touches[0].clientX : null; }, { passive: true });
+  st.addEventListener("touchend", (e) => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    if (Math.abs(dx) > 50) viewerStep(dx < 0 ? 1 : -1);
+    x0 = null;
+  });
+  st.addEventListener("click", (e) => { if (e.target === st) $("#viewer").close(); });
+})();
 $("#set-btn").addEventListener("click", () => go("set"));
 window.addEventListener("popstate", () => go(location.hash.slice(1), false));
 $("#scan-full").addEventListener("click", (e) => rescan(true, e.currentTarget));

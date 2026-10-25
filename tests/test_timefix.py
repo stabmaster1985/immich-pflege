@@ -61,6 +61,12 @@ def test_detects_offset_and_singles(web, state):
     wa = next(e for e in r["eintraege"] if e["art"] == "dateiname")
     assert wa["medien"][0]["neue_zeit"].startswith("2023-08-15 18:00")
     assert next(e for e in r["eintraege"] if e["art"] == "zukunft")["minuten"] is None
+    # in der Liste nur eine Auswahl, für die Großansicht alle
+    assert len(cam["medien"]) == 6
+    alle = web.get(f"/api/timefix/{cam['id']}/media").json()["medien"]
+    assert len(alle) == 60 and all(m["neue_zeit"] for m in alle)
+    assert alle == sorted(alle, key=lambda m: m["aufnahme"])
+    assert web.get("/api/timefix/zgibtsnicht/media").status_code == 400
 
 
 def test_stage_apply_and_undo(web, state):
