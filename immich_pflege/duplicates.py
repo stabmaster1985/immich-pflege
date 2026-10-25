@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
@@ -16,19 +17,52 @@ log = logging.getLogger(__name__)
 
 # Punktwertung in der gewünschten Rangfolge; jede Stufe schlägt alle folgenden zusammen.
 WEIGHTS = [
-    ("favorit", "Favorit", 32),
-    ("im_album", "im Album", 16),
-    ("gps", "hat GPS", 8),
-    ("immich", "Immich-Vorschlag", 4),
-    ("extern", "externe Bibliothek", 2),
+    ("favorit", "Favorit", 64),
+    ("im_album", "im Album", 32),
+    ("gps", "hat GPS", 16),
+    ("immich", "Immich-Vorschlag", 8),
+    ("extern", "externe Bibliothek", 4),
+    ("fassung", "bevorzugte Fassung", 2),
     ("aufloesung", "höchste Auflösung", 1),
 ]
+
+# Dateiformate und Fassungen
+RAW_EXT = {"arw", "cr2", "cr3", "crw", "nef", "nrw", "orf", "raf", "rw2", "dng", "pef", "srw", "raw", "3fr",
+           "erf", "kdc", "mrw", "x3f", "iiq"}
+ORIGINAL_EXT = RAW_EXT | {"heic", "heif", "hif", "avif"}  # Original statt daraus erzeugter Kopie (JPG/PNG)
+EDITED_RE = re.compile(r"^img_e(\d)", re.IGNORECASE)  # iPhone: IMG_E1234 = bearbeitete Fassung von IMG_1234
+EDIT_KEEP = ("bearbeitung", "original")
+
+
+def split_name(file_name: str) -> tuple[str, str, bool]:
+    """(Basisname ohne Endung und ohne Bearbeitungs-Kennung, Endung, ist bearbeitete Fassung)."""
+    stem, _, ext = file_name.lower().rpartition(".")
+    if not stem:
+        stem, ext = ext, ""
+    edited = bool(EDITED_RE.match(stem))
+    return EDITED_RE.sub(r"img_\1", stem), ext, edited
+
+
+def pair_kind(a: Asset, b: Asset) -> str | None:
+    """Art eines Paars mit gleichem Basisnamen und gleicher Aufnahmezeit, aber anderem Namen."""
+    _, ext_a, ed_a = split_name(a.file_name)
+    _, ext_b, ed_b = split_name(b.file_name)
+    if (ext_a in RAW_EXT) != (ext_b in RAW_EXT):
+        return "raw_paar"
+    if ed_a != ed_b:
+        return "bearbeitung"
+    if ext_a != ext_b:
+        return "format"
+    return None
 
 QUELLEN = {
     "immich": "Immich-Duplikaterkennung",
     "pruefsumme": "identische Prüfsumme",
     "name_zeit": "gleicher Dateiname + Aufnahmezeit",
     "bildhash": "fast gleicher Bild-Fingerabdruck",
+    "format": "gleiche Aufnahme in anderem Format",
+    "bearbeitung": "Original und bearbeitete Fassung",
+    "raw_paar": "RAW und JPG derselben Aufnahme",
 }
 
 AKTIONEN = ("album", "papierkorb")
@@ -37,9 +71,14 @@ AKTIONEN = ("album", "papierkorb")
 ARTEN = {
     "identisch": "identisch",  # alle Dateien Byte für Byte gleich (gleiche Prüfsumme)
     "sehr_wahrscheinlich": "sehr wahrscheinlich",  # Name + Zeit gleich oder Bild-Fingerabdruck fast gleich
+    "format": "anderes Format",  # z. B. IMG_1234.HEIC + IMG_1234.JPG
+    "bearbeitung": "Original + Bearbeitung",  # z. B. IMG_1234.HEIC + IMG_E1234.HEIC
+    "raw_paar": "RAW + JPG",  # Kamera-RAW und JPG derselben Aufnahme – oft gewollt
     "aehnlich": "ähnlich",  # nur Immich-KI: ähnliches Motiv, z. B. auch Serienbilder
 }
-STRONG_SOURCES = {"pruefsumme", "name_zeit", "bildhash"}
+STRONG_SOURCES = {"pruefsumme", "name_zeit", "bildhash", "format", "bearbeitung", "raw_paar"}
+# Arten, die nicht als „offen“ zählen und nur bei ausdrücklicher Auswahl unter „Alle …“ fallen
+OPTIONAL_KINDS = {"raw_paar"}
 
 
 class UnionFind:
@@ -103,6 +142,9 @@ class DuplicateGroup:
         checksums = {a.checksum for a in self.assets}
         if len(checksums) == 1 and "" not in checksums:
             return "identisch"
+        for kind in ("raw_paar", "bearbeitung", "format"):
+            if kind in self.sources:
+                return kind
         if self.sources & STRONG_SOURCES:
             return "sehr_wahrscheinlich"
         return "aehnlich"
@@ -141,7 +183,18 @@ class DuplicateGroup:
         }
 
 
-def _score_group(group: DuplicateGroup) -> None:
+def _preferred_version(group: DuplicateGroup, a: Asset, edit_keep: str) -> bool:
+    _, ext, edited = split_name(a.file_name)
+    if any(split_name(x.file_name)[2] for x in group.assets) and not all(
+            split_name(x.file_name)[2] for x in group.assets):
+        return edited if edit_keep == "bearbeitung" else not edited
+    exts = {split_name(x.file_name)[1] for x in group.assets}
+    if exts & ORIGINAL_EXT and exts - ORIGINAL_EXT:
+        return ext in ORIGINAL_EXT  # HEIC/RAW statt daraus erzeugtem JPG
+    return False
+
+
+def _score_group(group: DuplicateGroup, edit_keep: str = "bearbeitung") -> None:
     max_px = max(a.pixels for a in group.assets)
     for a in group.assets:
         flags = {
@@ -150,6 +203,7 @@ def _score_group(group: DuplicateGroup) -> None:
             "gps": a.has_gps,
             "immich": a.id in group.immich_suggested,
             "extern": a.is_external,
+            "fassung": _preferred_version(group, a, edit_keep),
             "aufloesung": a.pixels == max_px and max_px > 0,
         }
         points = sum(w for k, _, w in WEIGHTS if flags[k])
@@ -164,7 +218,8 @@ def group_id(asset_ids: Iterable[str]) -> str:
     return hashlib.sha1(",".join(sorted(asset_ids)).encode()).hexdigest()[:12]
 
 
-def find_groups(lib: Library, image_pairs: Iterable[tuple[str, str]] = ()) -> list[DuplicateGroup]:
+def find_groups(lib: Library, image_pairs: Iterable[tuple[str, str]] = (),
+                edit_keep: str = "bearbeitung") -> list[DuplicateGroup]:
     uf = UnionFind()
     pair_sources: list[tuple[list[str], str]] = [
         ([a, b], "bildhash") for a, b in image_pairs if a in lib.assets and b in lib.assets]
@@ -178,14 +233,23 @@ def find_groups(lib: Library, image_pairs: Iterable[tuple[str, str]] = ()) -> li
 
     by_checksum: dict[str, list[str]] = {}
     by_name_time: dict[tuple[str, str], list[str]] = {}
+    by_base_time: dict[tuple[str, str, str], list[Asset]] = {}
     for a in lib.assets.values():
         if a.checksum:
             by_checksum.setdefault(a.checksum, []).append(a.id)
         if a.file_name and a.local_dt:
-            key = (a.file_name.lower(), a.local_dt.replace(microsecond=0).isoformat())
-            by_name_time.setdefault(key, []).append(a.id)
+            when = a.local_dt.replace(microsecond=0).isoformat()
+            by_name_time.setdefault((a.file_name.lower(), when), []).append(a.id)
+            by_base_time.setdefault((split_name(a.file_name)[0], when, a.type), []).append(a)
     pair_sources += [(ids, "pruefsumme") for ids in by_checksum.values() if len(ids) > 1]
     pair_sources += [(ids, "name_zeit") for ids in by_name_time.values() if len(ids) > 1]
+    # Paare: gleicher Basisname + gleiche Aufnahmezeit, aber anderes Format oder andere Fassung
+    for members in by_base_time.values():
+        for i in range(len(members)):
+            for j in range(i + 1, len(members)):
+                kind = pair_kind(members[i], members[j])
+                if kind:
+                    pair_sources.append(([members[i].id, members[j].id], kind))
 
     for ids, _ in pair_sources:
         uf.union_all(ids)
@@ -205,7 +269,7 @@ def find_groups(lib: Library, image_pairs: Iterable[tuple[str, str]] = ()) -> li
             sources=group_sources.get(root, set()),
             immich_suggested={i for i in immich_suggested if i in ids},
         )
-        _score_group(g)
+        _score_group(g, edit_keep)
         groups.append(g)
     groups.sort(key=lambda g: (g.assets[0].local_date_time or ""), reverse=True)
     return groups

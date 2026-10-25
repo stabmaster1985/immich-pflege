@@ -15,6 +15,7 @@ Neue Fotos erscheinen im Tool erst nach dem Einlesen. Das geht **täglich** zu e
 ## Duplikate
 
 - **Prüf-Album:** Name des Albums für nicht behaltene Kopien.
+- **Bei Original + Bearbeitung behalten:** die bearbeitete Fassung (`IMG_E…`, Standard) oder das Original.
 - **Bild-Fingerabdruck:** Findet ähnliche Kopien, etwa per WhatsApp verschickte Fotos. Lädt dafür einmalig das kleine Vorschaubild jedes Fotos.
 
 ## Fotos ohne Ort

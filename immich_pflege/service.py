@@ -11,7 +11,7 @@ import httpx
 from . import __version__
 from .client import ImmichClient, ImmichError
 from .config import Settings
-from .duplicates import (AKTIONEN, ARTEN, DuplicateGroup, IgnoreList, clear_immich_duplicates, execute_steps,
+from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, IgnoreList, clear_immich_duplicates, execute_steps,
                          find_groups, plan_group)
 from .imagehash import HashProgress, HashStore, compute_missing, similar_pairs
 from .library import Library, scan_library
@@ -187,18 +187,21 @@ class Pflege:
         return IgnoreList(self.settings.data_dir / "duplikate_ignoriert.json")
 
     def duplicate_groups(self, include_ignored: bool = False) -> list[DuplicateGroup]:
-        groups = find_groups(self.library(), self.image_pairs())
+        groups = find_groups(self.library(), self.image_pairs(), self.settings.dup_edit_keep)
         if include_ignored:
             return groups
         ignored = self.ignore_list()
         return [g for g in groups if not ignored.contains(g)]
 
     @staticmethod
-    def _filter_groups(groups, art=None, monat=None, cross_user=False):
+    def _filter_groups(groups, art=None, monat=None, cross_user=False, include_optional=False):
+        """Ohne Art-Filter fallen optionale Arten (RAW + JPG) weg, außer include_optional."""
         if art and art not in ARTEN:
             raise ActionError(f"Art muss {', '.join(ARTEN)} sein")
         if art:
             groups = [g for g in groups if g.kind == art]
+        elif not include_optional:
+            groups = [g for g in groups if g.kind not in OPTIONAL_KINDS]
         if monat:
             groups = [g for g in groups if g.month == monat]
         if cross_user:
@@ -210,23 +213,24 @@ class Pflege:
                         ignored: bool = False) -> dict:
         """Gruppen mit Filtern. ``ignored=True`` zeigt nur die als „kein Duplikat“ markierten."""
         lib = self.library()
-        all_groups = find_groups(lib, self.image_pairs())
+        all_groups = find_groups(lib, self.image_pairs(), self.settings.dup_edit_keep)
         ignore = self.ignore_list()
         n_ignored = sum(1 for g in all_groups if ignore.contains(g))
         base = [g for g in all_groups if ignore.contains(g) == ignored]
         if not include_done:
             base = [g for g in base if not g.done()]
-        groups = self._filter_groups(base, art, monat, cross_user)
+        groups = self._filter_groups(base, art, monat, cross_user, include_optional=True)
+        counted = self._filter_groups(base, art, monat, cross_user)  # ohne RAW + JPG, außer gewählt
         page = groups[offset: offset + limit] if limit > 0 else groups[offset:]
         # Mengen je Art (für den aktuellen Monat) und je Monat (für die aktuelle Art)
-        for_kinds = self._filter_groups(base, monat=monat, cross_user=cross_user)
+        for_kinds = self._filter_groups(base, monat=monat, cross_user=cross_user, include_optional=True)
         months: dict[str, int] = {}
-        for g in self._filter_groups(base, art=art, cross_user=cross_user):
+        for g in self._filter_groups(base, art=art, cross_user=cross_user, include_optional=True):
             months[g.month] = months.get(g.month, 0) + 1
         return {
             "stand": lib.scanned_at,
             "gesamt": len(groups),
-            "offen": sum(1 for g in groups if not g.done()),
+            "offen": sum(1 for g in counted if not g.done()),
             "benutzeruebergreifend": sum(1 for g in groups if len(g.users) > 1),
             "ignoriert": n_ignored,
             "arten": {k: {"name": label, "anzahl": sum(1 for g in for_kinds if g.kind == k),
@@ -270,7 +274,7 @@ class Pflege:
             raise ActionError("Keine Gruppen angegeben")
         with self._lock:
             lib = self.library()
-            groups = {g.id: g for g in find_groups(lib, self.image_pairs())}
+            groups = {g.id: g for g in find_groups(lib, self.image_pairs(), self.settings.dup_edit_keep)}
             missing = [i for i in group_ids if i not in groups]
             if missing:
                 raise ActionError(f"Gruppe(n) {', '.join(missing)} nicht gefunden – bitte neu laden")

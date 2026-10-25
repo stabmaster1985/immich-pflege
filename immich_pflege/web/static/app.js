@@ -244,8 +244,10 @@ function renderDupFilters(r) {
       onchange: (e) => { d.ignored = e.target.checked; loadTab("dup", true); } }), `ausgeblendete (${r.ignoriert})`));
 }
 
-const SOURCE_LABEL = { immich: "Immich-KI", pruefsumme: "Prüfsumme", name_zeit: "Name + Zeit", bildhash: "Bild-Fingerabdruck" };
-const KIND_CLASS = { identisch: "conf-hoch", sehr_wahrscheinlich: "conf-mittel", aehnlich: "conf-niedrig" };
+const SOURCE_LABEL = { immich: "Immich-KI", pruefsumme: "Prüfsumme", name_zeit: "Name + Zeit", bildhash: "Bild-Fingerabdruck",
+  format: "Format", bearbeitung: "Bearbeitung", raw_paar: "RAW + JPG" };
+const KIND_CLASS = { identisch: "conf-hoch", sehr_wahrscheinlich: "conf-mittel", format: "conf-mittel",
+  bearbeitung: "conf-mittel", raw_paar: "conf-niedrig", aehnlich: "conf-niedrig" };
 
 async function ignoreGroup(g, undo) {
   if (!undo) {
@@ -930,6 +932,7 @@ async function loadSettings() {
   $("#set-ext").checked = d.location_include_external; lock("#set-ext", "location_include_external");
   $("#set-shots").checked = d.location_skip_screenshots; lock("#set-shots", "location_skip_screenshots");
   $("#set-fp").checked = d.dup_image_hash; lock("#set-fp", "dup_image_hash");
+  $("#set-edit").value = d.dup_edit_keep; lock("#set-edit", "dup_edit_keep");
   $("#set-web-user").value = d.web_user; lock("#set-web-user", "web_user");
   $("#set-web-pw").value = ""; lock("#set-web-pw", "web_password");
   $("#set-logout").hidden = !d.login_aktiv;
@@ -1000,6 +1003,7 @@ function readSettingsForm() {
   put("location_include_external", $("#set-ext").checked);
   put("location_skip_screenshots", $("#set-shots").checked);
   put("dup_image_hash", $("#set-fp").checked);
+  put("dup_edit_keep", $("#set-edit").value);
   if (!d.gesperrt.includes("users")) body.benutzer = readUsers();
   put("auto_scan", $("#set-auto").value);
   put("auto_scan_time", $("#set-auto-time").value);

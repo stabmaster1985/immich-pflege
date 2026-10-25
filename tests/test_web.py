@@ -78,7 +78,8 @@ def test_album_all(web, state):
 
 def test_duplicate_filters_and_kinds(web):
     r = web.get("/api/duplicates").json()
-    assert {k: v["anzahl"] for k, v in r["arten"].items()} == {"identisch": 1, "sehr_wahrscheinlich": 1, "aehnlich": 1}
+    assert {k: v["anzahl"] for k, v in r["arten"].items()} == {"identisch": 1, "sehr_wahrscheinlich": 1, "format": 0, "bearbeitung": 0,
+                                                                "raw_paar": 0, "aehnlich": 1}
     assert r["monate"] == [{"key": "2024-07", "name": "Juli 2024", "anzahl": 3}]
     assert web.get("/api/duplicates?art=identisch").json()["gesamt"] == 1
     assert web.get("/api/duplicates?benutzeruebergreifend=true").json()["gesamt"] == 1
@@ -87,6 +88,21 @@ def test_duplicate_filters_and_kinds(web):
     plan = web.post("/api/duplicates/apply", json={"action": "album", "all": True, "art": "identisch",
                                                     "dry_run": True}).json()
     assert plan["gruppen"] == 1 and plan["album"] == 1
+
+
+def test_raw_pairs_are_optional(web, state):
+    state.add_asset("frank", "DSC0001.ARW", "2024-08-01T10:00:00.000Z", make="SONY", model="ILCE-7M4")
+    state.add_asset("frank", "DSC0001.JPG", "2024-08-01T10:00:00.000Z", make="SONY", model="ILCE-7M4")
+    web.post("/api/scan")
+    r = web.get("/api/duplicates").json()
+    assert r["gesamt"] == 4 and r["offen"] == 3  # RAW + JPG wird gezeigt, zählt aber nicht als offen
+    assert r["arten"]["raw_paar"]["anzahl"] == 1
+    plan = web.post("/api/duplicates/apply", json={"action": "album", "all": True, "dry_run": True}).json()
+    assert plan["gruppen"] == 3  # „Alle“ ohne Art lässt RAW + JPG aus
+    plan = web.post("/api/duplicates/apply", json={"action": "album", "all": True, "art": "raw_paar",
+                                                    "dry_run": True}).json()
+    assert plan["gruppen"] == 1
+    assert web.get("/api/duplicates?art=raw_paar").json()["offen"] == 1
 
 
 def test_not_a_duplicate(web, state):

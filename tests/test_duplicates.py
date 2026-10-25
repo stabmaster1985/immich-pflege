@@ -165,3 +165,47 @@ def test_ignore_list(tmp_path):
     assert not IgnoreList(path).contains(find_groups(library(a, b, c))[0])
     ign.remove(g.asset_ids)
     assert not IgnoreList(path).contains(g)
+
+
+T = "2024-07-16T10:00:00Z"
+
+
+def test_split_name():
+    from immich_pflege.duplicates import split_name
+    assert split_name("IMG_1234.HEIC") == ("img_1234", "heic", False)
+    assert split_name("IMG_E1234.HEIC") == ("img_1234", "heic", True)
+    assert split_name("DSC0001.ARW") == ("dsc0001", "arw", False)
+    assert split_name("ohne_endung") == ("ohne_endung", "", False)
+
+
+def test_heic_jpg_pair_keeps_original_format():
+    heic = asset(name="IMG_1234.HEIC", local=T, width=4032, height=3024)
+    jpg = asset(name="IMG_1234.JPG", local=T, width=4032, height=3024, file_size=9_000_000)
+    other_time = asset(name="IMG_1234.JPG", local="2024-07-16T10:00:05Z")
+    groups = find_groups(library(heic, jpg, other_time))
+    assert len(groups) == 1
+    g = groups[0]
+    assert g.kind == "format" and g.sources == {"format"}
+    assert g.suggested_keep == heic.id and "bevorzugte Fassung" in g.scores[heic.id].reasons
+
+
+def test_edit_pair_follows_setting():
+    orig = asset(name="IMG_1234.HEIC", local=T)
+    edit = asset(name="IMG_E1234.HEIC", local=T)
+    g = find_groups(library(orig, edit))[0]
+    assert g.kind == "bearbeitung" and g.suggested_keep == edit.id
+    g = find_groups(library(orig, edit), edit_keep="original")[0]
+    assert g.suggested_keep == orig.id
+    # Favorit schlägt die bevorzugte Fassung
+    orig.favorite = True
+    assert find_groups(library(orig, edit))[0].suggested_keep == orig.id
+
+
+def test_raw_jpg_pair_and_no_photo_video_pairs():
+    raw = asset(name="DSC0001.ARW", local=T, make="SONY")
+    jpg = asset(name="DSC0001.JPG", local=T, make="SONY")
+    g = find_groups(library(raw, jpg))[0]
+    assert g.kind == "raw_paar" and g.suggested_keep == raw.id
+    photo = asset(name="IMG_0001.HEIC", local=T)
+    video = asset(name="IMG_0001.MOV", local=T, type="VIDEO")
+    assert find_groups(library(photo, video)) == []

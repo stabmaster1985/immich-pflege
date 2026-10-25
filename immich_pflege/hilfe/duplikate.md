@@ -8,6 +8,7 @@ Das Tool sucht doppelte Fotos und Videos über **beide Benutzer** und über **Up
 |---|---|
 | **Prüfsumme** | Die Dateien sind Byte für Byte gleich, z. B. dasselbe Foto bei beiden Benutzern oder im Upload und in der externen Bibliothek. |
 | **Name + Zeit** | Gleicher Dateiname (Groß/klein egal) und gleiche Aufnahmezeit auf die Sekunde, z. B. dieselbe Kameradatei einmal hochgeladen und einmal in der externen Bibliothek. |
+| **Format / Fassung** | Gleicher Name ohne Endung und gleiche Aufnahmezeit, aber anderes Format oder andere Fassung: `IMG_1234.HEIC` + `IMG_1234.JPG`, `IMG_1234.HEIC` + `IMG_E1234.HEIC` (iPhone-Bearbeitung), `DSC0001.ARW` + `DSC0001.JPG`. Fotos und Videos werden nie gepaart. |
 | **Bild-Fingerabdruck** | Das Bild sieht fast gleich aus, obwohl die Datei anders ist, z. B. eine per WhatsApp verschickte, verkleinerte Kopie ohne Kameradaten. |
 | **Immich-KI** | Immichs eigene Duplikaterkennung (Bildähnlichkeit per Machine Learning), jeweils innerhalb eines Benutzers. |
 
@@ -19,6 +20,9 @@ Das Tool sucht doppelte Fotos und Videos über **beide Benutzer** und über **Up
 |---|---|---|
 | **identisch** | Alle Dateien haben dieselbe Prüfsumme. | Gefahrlos, kann gesammelt erledigt werden. |
 | **sehr wahrscheinlich** | Name + Zeit gleich oder Bild-Fingerabdruck fast gleich. | Kurz ansehen, meist eindeutig. |
+| **anderes Format** | Dieselbe Aufnahme als HEIC und JPG, z. B. exportiert oder „Maximale Kompatibilität“. | Meist reicht das Original. |
+| **Original + Bearbeitung** | Das iPhone legt beim Bearbeiten `IMG_E…` neben das Original. | Je nach Einstellung eine Fassung behalten. |
+| **RAW + JPG** | Kamera speichert beide Formate. Das ist oft gewollt. | Zählt **nicht** als offen und fällt nur unter „Alle …“, wenn du die Art ausdrücklich wählst. Mit „Kein Duplikat“ dauerhaft ausblenden. |
 | **ähnlich** | Nur Immich-KI: ähnliches Motiv. Das können auch Serienbilder sein, die du behalten willst. | Einzeln prüfen. |
 
 ## Welches Medium bleibt
@@ -27,14 +31,17 @@ Jede Stufe schlägt alle niedrigeren zusammen:
 
 | Kriterium | Punkte |
 |---|---|
-| Favorit | 32 |
-| in einem Album (das Prüf-Album zählt nicht) | 16 |
-| hat GPS | 8 |
-| Immich schlägt es vor | 4 |
-| liegt in einer externen Bibliothek | 2 |
+| Favorit | 64 |
+| in einem Album (das Prüf-Album zählt nicht) | 32 |
+| hat GPS | 16 |
+| Immich schlägt es vor | 8 |
+| liegt in einer externen Bibliothek | 4 |
+| bevorzugte Fassung (siehe unten) | 2 |
 | höchste Auflösung der Gruppe | 1 |
 
-Bei Gleichstand gewinnt die größere Auflösung, dann die größere Datei. **Tippe auf ein Bild**, um selbst zu wählen, welches bleibt.
+Bei Gleichstand gewinnt die größere Auflösung, dann die größere Datei.
+
+**Bevorzugte Fassung:** Bei Original und Bearbeitung entscheidet die Einstellung, Standard ist die bearbeitete Fassung. Bei unterschiedlichen Formaten gewinnt das Originalformat (HEIC, RAW, DNG) vor der daraus erzeugten JPG- oder PNG-Kopie. **Tippe auf ein Bild**, um selbst zu wählen, welches bleibt.
 
 ## Aktionen
 

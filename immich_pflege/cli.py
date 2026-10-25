@@ -14,6 +14,7 @@ from rich.table import Table
 
 from . import __version__
 from .config import ConfigError, Settings
+from .duplicates import ARTEN
 from .logsetup import setup_logging
 from .rules import RuleError
 from .service import CONFIRM_TRASH, ActionError, ImmichError, Pflege
@@ -156,7 +157,8 @@ def duplikate(
     behalten: Optional[list[str]] = typer.Option(
         None, "--behalten", help="Vorschlag überschreiben: GRUPPE=MEDIUM-ID (mehrfach möglich)"),
     erledigte: bool = typer.Option(False, "--erledigte", help="Auch erledigte Gruppen anzeigen"),
-    art: Optional[str] = typer.Option(None, "--art", help="Nur diese Art: identisch, sehr_wahrscheinlich, aehnlich"),
+    art: Optional[str] = typer.Option(None, "--art", help="Nur diese Art: identisch, sehr_wahrscheinlich, format, "
+                                                         "bearbeitung, raw_paar, aehnlich"),
     monat: Optional[str] = typer.Option(None, "--monat", help="Nur Gruppen aus diesem Monat (JJJJ-MM)"),
     uebergreifend: bool = typer.Option(False, "--benutzeruebergreifend", help="Nur Gruppen mit Kopien beider Benutzer"),
     kein_duplikat: Optional[list[str]] = typer.Option(None, "--kein-duplikat",
@@ -171,8 +173,8 @@ def duplikate(
     if neu:
         with err.status("Lese Bibliothek ein …"):
             _run(svc.scan)
-    if art and art not in ("identisch", "sehr_wahrscheinlich", "aehnlich"):
-        err.print("[red]--art: identisch, sehr_wahrscheinlich oder aehnlich[/red]")
+    if art and art not in ARTEN:
+        err.print(f"[red]--art: {', '.join(ARTEN)}[/red]")
         raise typer.Exit(2)
     if kein_duplikat:
         res = _run(lambda: svc.ignore_duplicates(list(kein_duplikat)))
