@@ -13,11 +13,20 @@ Das Tool schlägt aus euren Daten Tags vor und zählt genau, wie viele Medien no
 | 📥 Screenshots | `Quelle/Screenshot` | Bildschirmfotos |
 | 📥 WhatsApp-Bilder | `Quelle/WhatsApp` | Dateinamen wie `IMG-20240718-WA0003` |
 
-**Vormerken** übernimmt einen Vorschlag, **Vormerken (n)** unten alle. **Kein Interesse** blendet ihn dauerhaft aus (unter „ausgeblendete“ zurückholbar). Kommen später neue passende Fotos dazu, erscheint der Vorschlag wieder mit der neuen Anzahl.
+**Prüfen & taggen** öffnet alle Treffer, auch Tausende, als kleines Raster, nach Monaten gruppiert (neueste zuerst):
+
+- **Antippen** wählt ein Bild ab (grau mit ✕), noch einmal antippen wählt es wieder aus.
+- Das **Häkchen am Monat** wählt den ganzen Monat ab oder an. **Alle** und **Keine** gelten für alles. Mit **Springe zu …** kommst du schnell zu einem Monat.
+- Unter **Antippen: groß ansehen** öffnet ein Tippen die Großansicht. Dort wischst du durch den Monat.
+- Unter **Größe S/M/L** stellst du die Kachelgröße ein. Bei S passen auf dem Handy etwa 7 Bilder in eine Reihe.
+- Die Vorschaubilder lädt das Tool erst, wenn ihr Monat in die Nähe kommt. Darum öffnet sich die Ansicht auch bei 4.000 Treffern sofort.
+- Unten steht **… taggen** mit der Zahl der ausgewählten Bilder. Getaggt werden genau diese.
+
+**Alle taggen** übernimmt den Vorschlag ohne Prüfen, **Alle taggen (n)** unten alle Vorschläge. **Kein Interesse** blendet ihn dauerhaft aus (unter „ausgeblendete“ zurückholbar). Kommen später neue passende Fotos dazu, erscheint der Vorschlag wieder mit der neuen Anzahl.
 
 ## Archivieren statt löschen
 
-Screenshots, WhatsApp-Bilder, Quittungen oder Dokumente stören beim Durchblättern, sollen aber nicht weg. Dafür gibt es **Archivieren**: Die Medien verschwinden aus der Zeitleiste, bleiben aber in der Suche, in Alben und im Archiv von Immich. Den Knopf gibt es bei den Vorschlägen **Screenshots** und **WhatsApp-Bilder** und bei der **KI-Suche**, z. B. für alle Treffer zu „Quittung“. **Rückgängig** holt sie zurück in die Zeitleiste.
+Screenshots, WhatsApp-Bilder, Quittungen oder Dokumente stören beim Durchblättern, sollen aber nicht weg. Dafür gibt es **Archivieren**: Die Medien verschwinden aus der Zeitleiste, bleiben aber in der Suche, in Alben und im Archiv von Immich. Den Knopf gibt es bei den Vorschlägen **Screenshots** und **WhatsApp-Bilder** (öffnet dieselbe Prüf-Ansicht, um einzelne auszunehmen) und bei der **KI-Suche**, z. B. für alle Treffer zu „Quittung“. **Rückgängig** holt sie zurück in die Zeitleiste.
 
 ## Mit der KI-Suche finden
 

@@ -231,6 +231,8 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/api/suggestions/smart` | KI-Suche: `begriff` (aus der Liste) oder `suche` (eigener Text), optional `tag` |
 | POST | `/api/staged/suggestions`, `/api/staged/smart` | Vorschläge (`ids`) bzw. KI-Treffer (`tag`, `ids`) vormerken |
 | POST | `/api/staged/archive` | Archivieren vormerken: `vorschlag` (ID) oder `ids`, optional `label` |
+| GET | `/api/suggestions/{id}/media` | alle Treffer eines Vorschlags zum Prüfen (`aktion`: `tag` oder `archiv`), neueste zuerst |
+| POST | `/api/staged/suggestions/{id}/auswahl` | Vorschlag ohne abgewählte Medien vormerken: `ohne` (IDs), `aktion` (`tag`/`archiv`) |
 | POST | `/api/suggestions/hide` | „Kein Interesse“: `ids`, mit `undo` zurück |
 | GET | `/api/album-care` | Alben aufräumen: doppelt, fast gleich, leer, mini, schlechtes Titelbild |
 | POST | `/api/staged/album-care` | vormerken: `id`, `aktion` (`zusammenfuehren`/`loeschen`/`titelbild`), `ziel`, `loeschen`, `titelbild` (eigene Wahl) |

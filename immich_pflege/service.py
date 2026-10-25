@@ -29,7 +29,7 @@ from .library import Library, apply_album_membership, read_albums, scan_library
 from .models import Asset
 from .location import (LEVELS, LocationChange, analyze, execute_location_changes, level_at_least,
                        month_facets, month_key, month_label, place_facets, place_key, resolve_locations)
-from .rules import (Resolver, Rule, RuleError, apply as apply_rules, dump_rules, load_rules, parse_rules,
+from .rules import (Resolver, Rule, RuleError, apply as apply_rules, dump_rules, evaluate_rule, load_rules, parse_rules,
                     preview as preview_rules, tag_ids)
 from .suggestions import BEGRIFFE, HiddenList, data_suggestions, smart_results
 from .stacking import execute_stacks, propose as propose_stacks, whole_album
@@ -722,6 +722,48 @@ class Pflege:
             self.staging.add("tag", f"🏷 {s['titel']} → {s['tag']}", {"regel_def": s["regel"], "tags": [s["tag"]]},
                              s.get("beispiele", []), s["neu"], key=i)
         return {"vorgemerkt": len(ids)}
+
+    def _suggestion_ids(self, sugg_id: str, action: str) -> tuple[dict[str, Any], Rule, list[str]]:
+        """Was ein Vorschlag betrifft: noch nicht getaggte Treffer bzw. noch nicht archivierte."""
+        pairs = {d["id"]: (d, r) for d, r in self._suggestion_rules()}
+        if sugg_id not in pairs:
+            raise ActionError("Vorschlag nicht (mehr) vorhanden – bitte neu laden")
+        d, rule = pairs[sugg_id]
+        lib = self.library()
+        if action == "archiv":
+            return d, rule, self._archivable(lib, rule)
+        new = set().union(*(m.new_ids for m in evaluate_rule(rule, lib, Resolver(self.clients))))
+        return d, rule, [i for i in lib.assets if i in new]
+
+    def suggestion_media(self, sugg_id: str, action: str = "tag") -> dict[str, Any]:
+        """Alle Medien eines Vorschlags zum Prüfen, neueste zuerst (knapp gehalten, auch für Tausende)."""
+        d, rule, ids = self._suggestion_ids(sugg_id, action)
+        lib = self.library()
+        assets = sorted((lib.assets[i] for i in ids), key=lambda a: a.local_dt or datetime.min, reverse=True)
+        return {"id": sugg_id, "titel": d["titel"], "tag": rule.tags[0], "aktion": action, "medien": [
+            {"id": a.id, "dateiname": a.file_name, "aufnahme": a.local_dt.isoformat(sep=" ") if a.local_dt else None,
+             "benutzer": a.owner, "typ": "video" if a.type == "VIDEO" else "foto", "extern": a.is_external,
+             "dauer_s": round(a.duration_ms / 1000, 1) if a.duration_ms else None} for a in assets]}
+
+    def stage_suggestion_selection(self, sugg_id: str, without: list[str], action: str = "tag") -> dict[str, Any]:
+        """Vorschlag ohne die abgewählten Medien vormerken (taggen oder archivieren)."""
+        d, rule, ids = self._suggestion_ids(sugg_id, action)
+        off = set(without)
+        chosen = [i for i in ids if i not in off]
+        if not chosen:
+            raise ActionError("Alles abgewählt – nichts vorzumerken")
+        lib = self.library()
+        if action == "archiv":
+            return self._stage_archive(lib, chosen, d["titel"], key=sugg_id)
+        tag = rule.tags[0]
+        if not off:  # nichts abgewählt: wie „Taggen“ (Regel, beim Übertragen neu ausgewertet)
+            return self.stage_suggestions([sugg_id])
+        by_user: dict[str, list[str]] = {}
+        for i in chosen:
+            by_user.setdefault(lib.assets[i].owner, []).append(i)
+        self.staging.add("tag", f"🏷 {d['titel']} → {tag}: {len(chosen)} von {len(ids)} Medien (geprüft)",
+                         {"medien": by_user, "tags": [tag]}, [lib.assets[i].summary() for i in chosen[:8]], len(chosen), key=sugg_id)
+        return {"vorgemerkt": len(chosen)}
 
     def stage_smart(self, tag: str, ids: list[str], label: str | None = None) -> dict[str, Any]:
         tag = "/".join(p.strip() for p in (tag or "").split("/") if p.strip())

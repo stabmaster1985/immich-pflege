@@ -134,7 +134,7 @@ const VW = { list: [], i: 0 };
 function openViewerFrom(el) {
   const img = el._m ? el : (el.closest(".tile, .smart-tile, .stage-fig, .thumb-wrap") || el.parentElement).querySelector("img");
   if (!img || !img._m) return;
-  const box = img.closest(".grid, .strip, .smart-grid");
+  const box = img.closest(".grid, .strip, .smart-grid, .rv-grid");
   // box._list: ganze Gruppe, auch wenn nur die ersten Kacheln angezeigt werden
   const list = box && box._list ? box._list : box ? [...box.querySelectorAll("img")].map((x) => x._m).filter(Boolean) : [img._m];
   VW.list = list;
@@ -960,9 +960,10 @@ function renderSuggestion(s) {
     h("div", { class: "muted small" }, `${s.grund} · ${s.neu} noch ohne Tag${s.schon_getaggt ? `, ${s.schon_getaggt} schon getaggt` : ""}`),
     s.beispiele.length ? h("div", { class: "strip" }, s.beispiele.map((m) => thumb(m))) : null,
     g.hidden ? null : h("div", { class: "row-gap", style: "margin-top:8px" },
-      s.neu ? h("button", { type: "button", class: "btn small primary", onclick: (e) => stageSuggestions([s], e.currentTarget) }, `Taggen (${s.neu})`) : null,
+      s.neu ? h("button", { type: "button", class: "btn small primary", onclick: (e) => openReview(s, "tag", e.currentTarget) }, `Prüfen & taggen (${s.neu})`) : null,
+      s.neu ? h("button", { type: "button", class: "btn small", title: "Ohne Prüfen: alle Treffer taggen", onclick: (e) => stageSuggestions([s], e.currentTarget) }, "Alle taggen") : null,
       s.art === "quelle" && s.archivierbar ? h("button", { type: "button", class: "btn small", title: "Aus der Zeitleiste nehmen – bleibt in Suche und Alben",
-        onclick: (e) => stageArchive({ vorschlag: s.id }, e.currentTarget) }, `Archivieren (${s.archivierbar})`) : null));
+        onclick: (e) => openReview(s, "archiv", e.currentTarget) }, `Archivieren … (${s.archivierbar})`) : null));
 }
 
 async function stageSuggestions(list, btn) {
@@ -988,6 +989,130 @@ async function stageArchive(body, btn) {
       S.sug.smart.medien = S.sug.smart.medien.filter((m) => !gone.has(m.id)); S.sug.cut = null; renderSmart();
     }
   } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
+
+/* ----------------------------------------- Treffer prüfen (auch Tausende) */
+// Alle Treffer eines Vorschlags als dichtes Raster, nach Monaten gruppiert. Ganze Monate oder einzelne
+// Bilder abwählen; Kacheln entstehen erst, wenn ihr Monat in die Nähe des sichtbaren Bereichs kommt.
+const RV = { s: null, aktion: "tag", medien: [], off: new Set(), months: [], mode: "waehlen", size: "m", obs: null };
+const RV_PX = { s: 46, m: 84, l: 140 };
+const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+
+async function openReview(s, aktion, btn) {
+  busy(btn, true);
+  let r;
+  try {
+    r = await api(`api/suggestions/${s.id}/media?aktion=${aktion}`);
+  } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  try { RV.size = localStorage.getItem("pflege-rv-size") || "m"; } catch (_) { /* egal */ }
+  Object.assign(RV, { s, aktion, medien: r.medien, off: new Set(), mode: "waehlen" });
+  const groups = new Map();
+  for (const m of r.medien) {
+    const key = m.aufnahme ? m.aufnahme.slice(0, 7) : "ohne";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(m);
+  }
+  RV.months = [...groups].map(([key, list]) => ({ key, list,
+    label: key === "ohne" ? "Ohne Datum" : `${MONTHS[parseInt(key.slice(5, 7), 10) - 1]} ${key.slice(0, 4)}` }));
+  $("#rv-title").textContent = aktion === "archiv" ? `${s.titel}: archivieren` : `${s.titel} → ${r.tag}`;
+  renderReview();
+  $("#review").showModal();
+}
+
+function rvCols() {
+  const w = $("#rv-body").clientWidth || window.innerWidth;
+  return Math.max(3, Math.floor((w + 4) / (RV_PX[RV.size] + 4)));
+}
+
+function renderReview() {
+  document.querySelectorAll("[data-rv-mode]").forEach((b) => b.classList.toggle("on", b.dataset.rvMode === RV.mode));
+  document.querySelectorAll("[data-rv-size]").forEach((b) => b.classList.toggle("on", b.dataset.rvSize === RV.size));
+  const body = $("#rv-body");
+  body.style.setProperty("--rv-px", RV_PX[RV.size] + "px");
+  if (RV.obs) RV.obs.disconnect();
+  RV.obs = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) { fillMonth(e.target); RV.obs.unobserve(e.target); }
+  }, { root: body, rootMargin: "1200px 0px" });
+  const cols = rvCols();
+  const jump = $("#rv-jump");
+  jump.replaceChildren(h("option", { value: "" }, "Springe zu …"), ...RV.months.map((mo, i) => {
+    const off = mo.list.filter((m) => RV.off.has(m.id)).length;
+    return h("option", { value: i }, `${mo.label} (${mo.list.length}${off ? `, ${off} ab` : ""})`);
+  }));
+  body.replaceChildren(...RV.months.map((mo, i) => {
+    const grid = h("div", { class: "rv-grid", "data-i": i,
+      style: `min-height:${Math.ceil(mo.list.length / cols) * (RV_PX[RV.size] + 4)}px` });
+    RV.obs.observe(grid);
+    return h("section", { class: "rv-month" }, monthHead(mo), grid);
+  }));
+  rvCount();
+}
+
+function monthHead(mo) {
+  const off = mo.list.filter((m) => RV.off.has(m.id)).length;
+  const box = h("input", { type: "checkbox", checked: off < mo.list.length, "aria-label": "Monat auswählen",
+    onchange: (e) => {
+      for (const m of mo.list) e.target.checked ? RV.off.delete(m.id) : RV.off.add(m.id);
+      refreshMonth(mo);
+    } });
+  box.indeterminate = off > 0 && off < mo.list.length;
+  return h("label", { class: "rv-mhead" }, box, h("b", {}, mo.label),
+    h("span", { class: "muted small" }, `${mo.list.length}${off ? ` · ${off} abgewählt` : ""}`));
+}
+
+function fillMonth(grid) {
+  const mo = RV.months[+grid.dataset.i];
+  grid.style.minHeight = "";
+  grid._list = mo.list;  // Großansicht blättert im Monat
+  grid.replaceChildren(...mo.list.map((m) => {
+    const img = thumb(m);
+    const el = h("button", { type: "button", class: "rv-tile" + (RV.off.has(m.id) ? " off" : ""), title: `${m.dateiname} · ${fmtTaken(m.aufnahme)} · ${m.benutzer}`,
+      onclick: () => {
+        if (RV.mode === "ansehen") { openViewerFrom(el.querySelector("img")); return; }
+        RV.off.has(m.id) ? RV.off.delete(m.id) : RV.off.add(m.id);
+        el.classList.toggle("off", RV.off.has(m.id));
+        const sec = el.closest(".rv-month");
+        sec.replaceChild(monthHead(mo), sec.firstChild);
+        rvCount();
+      } }, img);
+    return el;
+  }));
+}
+
+function refreshMonth(mo) {
+  const i = RV.months.indexOf(mo);
+  const grid = $(`#rv-body .rv-grid[data-i="${i}"]`);
+  if (grid && !grid.style.minHeight) grid.querySelectorAll(".rv-tile").forEach((el, k) => el.classList.toggle("off", RV.off.has(mo.list[k].id)));
+  const sec = grid.closest(".rv-month");
+  sec.replaceChild(monthHead(mo), sec.firstChild);
+  rvCount();
+}
+
+function rvCount() {
+  const total = RV.medien.length, chosen = total - RV.off.size;
+  const de = (x) => x.toLocaleString("de-DE");
+  $("#rv-count").textContent = `${de(chosen)} von ${de(total)} ausgewählt · ${RV.months.length} ${RV.months.length === 1 ? "Monat" : "Monate"}`;
+  $("#rv-foot-info").textContent = RV.off.size ? `${de(RV.off.size)} abgewählt` : "alle ausgewählt";
+  const go = $("#rv-go");
+  go.textContent = RV.aktion === "archiv" ? `${de(chosen)} archivieren` : `${de(chosen)} taggen`;
+  go.disabled = !chosen;
+}
+
+async function stageReview(btn) {
+  busy(btn, true);
+  try {
+    const r = await api(`api/staged/suggestions/${RV.s.id}/auswahl`, { method: "POST", body: { ohne: [...RV.off], aktion: RV.aktion } });
+    $("#review").close();
+    toast(RV.aktion === "archiv" ? `${n(r.vorgemerkt, "Medium", "Medien")} zum Archivieren vorgemerkt` : `${n(r.vorgemerkt, "Medium", "Medien")} zum Taggen vorgemerkt`);
+    S.stage.loaded = false;
+    await Promise.all([loadSuggestions(), loadTab("stage", true)]);
+    loadCounts();
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
+
+function setAllReview(on) {
+  if (on) RV.off.clear(); else RV.medien.forEach((m) => RV.off.add(m.id));
+  RV.months.forEach(refreshMonth);
 }
 
 async function hideSuggestion(s, undo) {
@@ -2849,6 +2974,24 @@ $("#scan-btn").append(icon("scan"), h("span", { class: "btn-l" }, "Einlesen"));
 $("#set-btn").append(icon("gear"));
 $("#scan-btn").addEventListener("click", () => rescan());
 $("#v-close").addEventListener("click", () => $("#viewer").close());
+$("#rv-close").addEventListener("click", () => $("#review").close());
+$("#rv-go").addEventListener("click", (e) => stageReview(e.currentTarget));
+$("#rv-all").addEventListener("click", () => setAllReview(true));
+$("#rv-jump").addEventListener("change", (e) => {
+  const sec = $("#rv-body").querySelectorAll(".rv-month")[+e.target.value];
+  if (sec) $("#rv-body").scrollTop = sec.offsetTop - $("#rv-body").offsetTop;
+  e.target.value = "";
+});
+$("#rv-none").addEventListener("click", () => setAllReview(false));
+document.querySelectorAll("[data-rv-mode]").forEach((b) => b.addEventListener("click", () => {
+  RV.mode = b.dataset.rvMode;
+  document.querySelectorAll("[data-rv-mode]").forEach((x) => x.classList.toggle("on", x === b));
+}));
+document.querySelectorAll("[data-rv-size]").forEach((b) => b.addEventListener("click", () => {
+  RV.size = b.dataset.rvSize;
+  try { localStorage.setItem("pflege-rv-size", RV.size); } catch (_) { /* egal */ }
+  renderReview();
+}));
 $("#v-prev").addEventListener("click", () => viewerStep(-1));
 $("#v-next").addEventListener("click", () => viewerStep(1));
 $("#viewer").addEventListener("keydown", (e) => {

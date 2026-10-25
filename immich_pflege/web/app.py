@@ -151,6 +151,11 @@ class SuggestionStage(BaseModel):
     ids: list[str]
 
 
+class SuggestionSelection(BaseModel):
+    ohne: list[str] = Field(default_factory=list)  # abgewählte Medien
+    aktion: Literal["tag", "archiv"] = "tag"
+
+
 class SmartStage(BaseModel):
     tag: str = Field(max_length=200)
     ids: list[str]
@@ -630,6 +635,14 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/staged/suggestions")
     def stage_suggestions(body: SuggestionStage):
         return svc().stage_suggestions(body.ids)
+
+    @app.get("/api/suggestions/{sugg_id}/media")
+    def suggestion_media(sugg_id: str, aktion: Literal["tag", "archiv"] = "tag"):
+        return svc().suggestion_media(sugg_id, aktion)
+
+    @app.post("/api/staged/suggestions/{sugg_id}/auswahl")
+    def stage_suggestion_selection(sugg_id: str, body: SuggestionSelection):
+        return svc().stage_suggestion_selection(sugg_id, body.ohne, body.aktion)
 
     @app.post("/api/staged/smart")
     def stage_smart(body: SmartStage):

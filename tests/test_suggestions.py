@@ -89,3 +89,29 @@ def test_archive_suggestion_and_smart_and_undo(web, state):
         assert e["typ"] == "archiv"
         web.post(f"/api/history/{e['id']}/undo")
     assert not any(a["visibility"] == "archive" for a in state.assets.values())
+
+
+def test_review_all_media_and_stage_selection(web, state):
+    r = web.get("/api/suggestions").json()
+    italy = next(s for s in r["vorschlaege"] if s["tag"] == "Reisen/Italien")
+    media = web.get(f"/api/suggestions/{italy['id']}/media").json()
+    assert media["tag"] == "Reisen/Italien" and len(media["medien"]) == 25
+    dates = [m["aufnahme"] for m in media["medien"]]
+    assert dates == sorted(dates, reverse=True)  # neueste zuerst
+    assert set(media["medien"][0]) >= {"id", "dateiname", "aufnahme", "benutzer", "typ"}
+    off = [m["id"] for m in media["medien"][:5]]
+    res = web.post(f"/api/staged/suggestions/{italy['id']}/auswahl", json={"ohne": off}).json()
+    assert res["vorgemerkt"] == 20
+    entry = web.get("/api/staged").json()["eintraege"][0]
+    assert "20 von 25" in entry["titel"]
+    assert italy["id"] not in {s["id"] for s in web.get("/api/suggestions").json()["vorschlaege"]}
+    web.post("/api/staged/apply", json={})
+    tagged = {aid for aid, a in state.assets.items() if a["_tags"]}
+    assert len(tagged) == 20 and not tagged & set(off)
+    # alles abgewählt -> Fehler; unbekannter Vorschlag -> Fehler
+    wa = next(s for s in r["vorschlaege"] if s["tag"] == "Quelle/WhatsApp")
+    all_wa = [m["id"] for m in web.get(f"/api/suggestions/{wa['id']}/media", params={"aktion": "archiv"}).json()["medien"]]
+    assert len(all_wa) == 12
+    assert web.post(f"/api/staged/suggestions/{wa['id']}/auswahl", json={"ohne": all_wa, "aktion": "archiv"}).status_code == 400
+    assert web.post(f"/api/staged/suggestions/{wa['id']}/auswahl", json={"ohne": all_wa[:2], "aktion": "archiv"}).json()["vorgemerkt"] == 10
+    assert web.get("/api/suggestions/vgibtsnicht/media").status_code == 400
