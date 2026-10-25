@@ -1169,6 +1169,8 @@ async function loadSettings() {
   $("#set-rep-tg-token").value = ""; lock("#set-rep-tg-token", "report_telegram_token");
   $("#set-rep-tg-token").placeholder = d.report_telegram_token_gesetzt ? "gespeichert" : "nicht gesetzt";
   $("#set-rep-tg-chat").value = d.report_telegram_chat; lock("#set-rep-tg-chat", "report_telegram_chat");
+  $("#set-mem").checked = d.memories; lock("#set-mem", "memories");
+  $("#set-mem-time").value = d.memories_time; lock("#set-mem-time", "memories_time");
   updateReportFields();
   $("#set-upd-token").value = ""; lock("#set-upd-token", "update_github_token");
   $("#set-upd-token").placeholder = d.update_github_token_gesetzt ? "gespeichert" : "nicht gesetzt";
@@ -1248,6 +1250,8 @@ function readSettingsForm() {
   put("report_time", $("#set-rep-time").value);
   put("report_ntfy_url", $("#set-rep-ntfy-url").value.trim());
   put("report_telegram_chat", $("#set-rep-tg-chat").value.trim());
+  put("memories", $("#set-mem").checked);
+  put("memories_time", $("#set-mem-time").value);
   if ($("#set-rep-ntfy-token").value.trim()) put("report_ntfy_token", $("#set-rep-ntfy-token").value.trim());
   if ($("#set-rep-tg-token").value.trim()) put("report_telegram_token", $("#set-rep-tg-token").value.trim());
   if ($("#set-upd-token").value.trim()) put("update_github_token", $("#set-upd-token").value.trim());
@@ -1286,6 +1290,17 @@ function updateReportFields() {
   $("#set-rep-fields").hidden = ch === "aus";
   $("#set-rep-ntfy").hidden = ch !== "ntfy";
   $("#set-rep-tg").hidden = ch !== "telegram";
+}
+
+async function sendTestMemories(btn) {
+  busy(btn, true);
+  try {
+    await api("api/settings", { method: "PUT", body: readSettingsForm() });
+    await api("api/memories/test", { method: "POST" });
+    toast("„An diesem Tag“ gesendet – schau aufs Handy");
+  } catch (e) {
+    toast(e.message, true);
+  } finally { busy(btn, false); }
 }
 
 async function sendTestReport(btn) {
@@ -2664,6 +2679,7 @@ $("#set-test").addEventListener("click", (e) => testConnection(e.currentTarget))
 $("#set-auto").addEventListener("change", updateAutoFields);
 $("#set-rep-channel").addEventListener("change", updateReportFields);
 $("#set-rep-test").addEventListener("click", (e) => sendTestReport(e.currentTarget));
+$("#set-mem-test").addEventListener("click", (e) => sendTestMemories(e.currentTarget));
 $("#set-logout").addEventListener("click", async () => {
   await fetch("/api/logout", { method: "POST" }).catch(() => null);
   location.href = "/login";

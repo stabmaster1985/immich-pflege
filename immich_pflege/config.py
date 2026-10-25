@@ -122,6 +122,8 @@ class Settings:
     auto_scan_hours: int = 6
     auto_stage_locations: bool = False  # nach dem automatischen Einlesen sichere Orte vormerken
     report_channel: str = "aus"  # Wochenbericht: aus | ntfy | telegram
+    memories: bool = False  # täglich „An diesem Tag“ über denselben Kanal
+    memories_time: str = "08:00"
     report_day: int = 0  # 0 = Montag
     report_time: str = "08:00"
     report_ntfy_url: str = ""  # z. B. https://ntfy.sh/mein-thema
@@ -228,6 +230,8 @@ class Settings:
                                       lambda v: _bool(v, False)),
             report_channel=pick("REPORT_CHANNEL", "report_channel", "aus", parse_report_channel),
             report_day=pick("REPORT_DAY", "report_day", 0, parse_weekday),
+            memories=pick("MEMORIES", "memories", False, lambda v: _bool(v, False)),
+            memories_time=pick("MEMORIES_TIME", "memories_time", "08:00", parse_time),
             report_time=pick("REPORT_TIME", "report_time", "08:00", parse_time),
             report_ntfy_url=pick("REPORT_NTFY_URL", "report_ntfy_url", "", parse_webhook_url),
             report_ntfy_token=pick("REPORT_NTFY_TOKEN", "report_ntfy_token", "", lambda v: str(v).strip()),
@@ -298,6 +302,8 @@ class Settings:
             "auto_stage_locations": self.auto_stage_locations,
             "report_channel": self.report_channel,
             "report_day": self.report_day,
+            "memories": self.memories,
+            "memories_time": self.memories_time,
             "report_time": self.report_time,
             "report_ntfy_url": self.report_ntfy_url,
             "report_ntfy_token_gesetzt": bool(self.report_ntfy_token),
@@ -365,6 +371,8 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
     attempt("auto_stage_locations", lambda v: _bool(v, False))
     attempt("report_channel", parse_report_channel)
     attempt("report_day", parse_weekday)
+    attempt("memories", lambda v: _bool(v, False))
+    attempt("memories_time", parse_time)
     attempt("report_time", parse_time)
     attempt("report_ntfy_url", lambda v: parse_webhook_url(v) if str(v or "").strip() else "")
     attempt("report_telegram_chat", lambda v: str(v or "").strip())

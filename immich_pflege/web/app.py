@@ -233,7 +233,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     app.state.service.background_albums = background_albums
     app.state.auto_scan = AutoScan(lambda: app.state.service)
     app.state.reporter = Reporter(lambda: app.state.service, http=ext_http)
-    app.state.auto_scan.jobs.append(app.state.reporter.tick)
+    app.state.auto_scan.jobs += [app.state.reporter.tick, app.state.reporter.memories_tick]
     app.state.version = version or Version("", http=ext_http)
     sessions = Sessions(first.data_dir)
 
@@ -708,6 +708,13 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.get("/api/report")
     def report():
         return {**app.state.reporter.info(), "text": build_text(svc().dashboard())}
+
+    @app.post("/api/memories/test")
+    def memories_test():
+        try:
+            return {"gesendet": True, "text": app.state.reporter.send_memories(test=True)}
+        except ReportError as exc:
+            return JSONResponse({"fehler": f"An diesem Tag: {exc}"}, 502)
 
     @app.post("/api/report/test")
     def report_test():

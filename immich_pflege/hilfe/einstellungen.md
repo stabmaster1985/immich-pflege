@@ -33,6 +33,8 @@ Einmal pro Woche eine kurze Nachricht aufs Handy: offene Duplikate, verortbare F
 
 Verpasst der Container den Termin, holt er ihn beim nächsten Start nach, solange es dieselbe Woche ist.
 
+**An diesem Tag:** Über denselben Kanal kommt auf Wunsch jeden Morgen eine Nachricht mit den Fotos vom selben Kalendertag aus früheren Jahren, z. B. „vor 2 Jahren (2024): 23 Fotos – Siena“. Antippen öffnet bei ntfy das schönste Foto direkt in der Immich-App (Favorit, sonst ein Foto aus einem Album). Bei Telegram steht ein Link zur Weboberfläche darunter. An Tagen ohne frühere Fotos kommt nichts. Screenshots, archivierte Fotos und das Prüf-Album zählen nicht. **Heute testen** schickt die heutige Nachricht sofort.
+
 ## Duplikate
 
 - **Prüf-Album:** Name des Albums für nicht behaltene Kopien.

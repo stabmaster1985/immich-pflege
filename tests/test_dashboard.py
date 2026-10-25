@@ -90,3 +90,20 @@ def test_build_text_all_done():
     d = {"gesamt": {"medien": 5, "groesse": 0}, "offen": {k: 0 for k in (
         "duplikate", "ort_vorschlaege", "ort_sicher", "alben", "aufraeumen", "aufraeumen_groesse", "zeit", "vorgemerkt")}}
     assert "Alles aufgeräumt" in build_text(d)
+
+
+def test_memories_daily(env, http, ext, sent):
+    svc = Pflege(Settings.load({**env, "REPORT_CHANNEL": "ntfy", "REPORT_NTFY_URL": "https://n.example/x",
+                                "MEMORIES": "true", "MEMORIES_TIME": "08:00"}), http=http)
+    svc.library()
+    clock = {"now": datetime(2026, 7, 14, 5, 30, tzinfo=timezone.utc)}  # 07:30 Berlin (Sommerzeit)
+    rep = Reporter(lambda: svc, http=ext, now=lambda: clock["now"])
+    assert rep.memories_tick() is False
+    clock["now"] = datetime(2026, 7, 14, 6, 5, tzinfo=timezone.utc)
+    assert rep.memories_tick() is True
+    url, title, text = sent[-1]
+    assert "vor 2 Jahren (2024): 2 Fotos – Florenz" in text and title.startswith("=?UTF-8?B?")
+    assert rep.memories_tick() is False  # heute schon gesendet
+    clock["now"] = datetime(2026, 7, 21, 6, 5, tzinfo=timezone.utc)  # Tag ohne frühere Fotos
+    assert rep.memories_tick() is False and len(sent) == 1
+
