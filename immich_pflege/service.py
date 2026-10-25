@@ -88,7 +88,9 @@ class Pflege:
         }
         self._lib: Library | None = None
         self._lock = threading.RLock()
+        self._scan_lock = threading.RLock()
         self.scanning = False
+        self.progress = ""  # was beim Einlesen gerade passiert (für die Oberfläche)
         self.last_error: str | None = None
         self.hash_store = HashStore(settings.data_dir / "bildhash.json")
         self.hash_progress = HashProgress()
@@ -109,6 +111,8 @@ class Pflege:
     # ------------------------------------------------------------ Bibliothek
     def cached_library(self) -> Library | None:
         """Bibliothek aus Speicher oder Zwischenspeicher – ohne bei Immich einzulesen."""
+        if self._lib is not None:  # ohne Sperre: während des Einlesens gilt der bisherige Stand
+            return self._lib
         with self._lock:
             if self._lib is None:
                 cached = Library.load(self.settings.cache_file)
@@ -121,9 +125,11 @@ class Pflege:
     def library(self, refresh: bool = False) -> Library:
         if not self.clients:
             raise NotConfigured()
-        with self._lock:
-            if refresh:
-                return self.scan()
+        if not refresh and self._lib is not None:  # nicht auf ein laufendes Einlesen warten
+            return self._lib
+        if refresh:
+            return self.scan()
+        with self._scan_lock:  # erstes Laden: nicht zweimal parallel einlesen
             return self.cached_library() or self.scan()
 
     def scan(self, full: bool = False) -> Library:
@@ -131,24 +137,30 @@ class Pflege:
         ``full``, beim ersten Mal oder wenn das letzte vollständige Einlesen eine Woche her ist."""
         if not self.clients:
             raise NotConfigured()
-        with self._lock:
+        # Eigene Sperre fürs Einlesen (nie zwei gleichzeitig); die Daten-Sperre nur kurz beim Austausch –
+        # so warten Listen, Vormerken und Übertragen nicht minutenlang auf ein komplettes Einlesen.
+        with self._scan_lock:
             self.scanning = True
-            previous = self.cached_library()
-            if previous and not full:
-                last_full = datetime.fromisoformat(previous.full_scan_at or previous.scanned_at)
-                full = datetime.now(last_full.tzinfo) - last_full > FULL_SCAN_EVERY
+            self.progress = "Einlesen startet"
             try:
+                previous = self.cached_library()
+                if previous and not full:
+                    last_full = datetime.fromisoformat(previous.full_scan_at or previous.scanned_at)
+                    full = datetime.now(last_full.tzinfo) - last_full > FULL_SCAN_EVERY
                 lib = scan_library(self.clients, self.settings.review_album, previous,
-                                   read_album_contents=not self.background_albums, incremental=not full)
+                                   read_album_contents=not self.background_albums, incremental=not full,
+                                   progress=self._set_progress)
             except ImmichError as exc:
                 self.last_error = str(exc)
                 raise
             finally:
                 self.scanning = False
+                self.progress = ""
             self.last_error = None
             lib.immich_url = self.settings.immich_url
-            self._lib = lib
-            lib.save(self.settings.cache_file)
+            with self._lock:
+                self._lib = lib
+                lib.save(self.settings.cache_file)
         if not lib.albums_ready:
             self._albums_thread = threading.Thread(target=self._read_albums, args=(lib,), name="alben-lesen", daemon=True)
             self._albums_thread.start()
@@ -159,11 +171,15 @@ class Pflege:
         self.warm_up_background()
         return lib
 
+    def _set_progress(self, text: str) -> None:
+        self.progress = text
+
     def _read_albums(self, lib: Library) -> None:
         try:
             skip = {a for a in lib.review_albums.values() if a}
             # vollständiges Einlesen: auch Albuminhalte frisch, nicht aus dem Zwischenspeicher
-            albums = read_albums(self.clients, lib.users, skip, lib.albums if lib.incremental else None)
+            albums = read_albums(self.clients, lib.users, skip, lib.albums if lib.incremental else None,
+                                 progress=self._set_progress)
         except ImmichError as exc:
             log.error("Alben konnten nicht gelesen werden: %s", exc)
             albums = None
@@ -174,6 +190,8 @@ class Pflege:
             lib.albums_ready = True
             if self._lib is lib:
                 self._save()
+        if not self.scanning:
+            self.progress = ""
         if self._lib is lib:
             self.sync_folders()
 
@@ -183,12 +201,14 @@ class Pflege:
 
     def sync_folders(self) -> int:
         """Abgeglichene Ordner: neue Dateien automatisch ins Album (nur hinzufügen, im Verlauf rückgängig)."""
+        lib = self._lib
+        synced = self.synced_folders()
+        if lib is None or not lib.albums_ready or not synced.data:
+            return 0
+        twins = self.twins()  # vor der Sperre: kann dauern, Anfragen sollen nicht warten
         with self._lock:
-            lib = self._lib
-            if lib is None or not lib.albums_ready:
-                return 0
             added = 0
-            for plan in pending_sync(lib, self.synced_folders(), self.twins()):
+            for plan in pending_sync(lib, synced, twins):
                 try:
                     res = execute_plan(lib, self.clients, plan)
                 except (ImmichError, AlbumError) as exc:
@@ -300,6 +320,8 @@ class Pflege:
             "vorgemerkt": self.staging.summary(),
             "regeldatei": str(self.settings.rules_file),
             "einlesen_laeuft": self.scanning,
+            "fortschritt": self.progress,
+            "alben_laeuft": bool(lib and not lib.albums_ready),
             "letzter_fehler": self.last_error,
             "bibliothek": None,
             "warnungen": [],

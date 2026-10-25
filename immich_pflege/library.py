@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .client import ImmichClient, ImmichError
 from .models import Asset
@@ -135,7 +135,8 @@ def _album_signature(al: dict[str, Any]) -> str:
 
 
 def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any]],
-                skip: set[str], previous: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
+                skip: set[str], previous: dict[str, dict[str, Any]] | None = None,
+                progress: Callable[[str], None] | None = None) -> dict[str, dict[str, Any]]:
     """Alle Alben, die einer der Benutzer sieht (eigene und geteilte), mit Besitzer, Rollen
     und Mitgliedern. ``skip``: Prüf-Alben. Unveränderte Alben aus ``previous`` werden nicht
     erneut abgefragt."""
@@ -187,9 +188,15 @@ def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any
         # Jeder Benutzer liefert zumindest seine eigenen Medien im Album
         return job[0], clients[job[1]].album_asset_ids(job[0])
 
+    report = progress or (lambda text: None)
+    total = len({j[0] for j in jobs})
     with ThreadPoolExecutor(max_workers=ALBUM_WORKERS) as pool:
+        done: set[str] = set()
         for album_id, ids in pool.map(fetch, jobs):
             albums[album_id]["medien"] |= ids
+            done.add(album_id)
+            if len(done) % 10 == 0:
+                report(f"Alben lesen: {len(done)} von {total}")
         # Fehlt noch etwas (z. B. Julias Fotos in Franks nicht geteiltem Album, über die Partnerfreigabe
         # hineingelegt), über die Zeitleiste des Albums nachlesen – die zeigt alle Medien jedes Besitzers.
         fetched = {j[0] for j in jobs}
@@ -203,6 +210,8 @@ def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any
                 log.warning("Album %s: Inhalt anderer Besitzer nicht lesbar (%s)", job[0], exc)
                 return job[0], set()
 
+        if gaps:
+            report(f"Alben mit Fotos anderer Besitzer: {len(gaps)}")
         for album_id, ids in pool.map(fetch_all, gaps):
             albums[album_id]["medien"] |= ids
             if len(albums[album_id]["medien"]) < albums[album_id]["anzahl"]:
@@ -231,13 +240,16 @@ INCREMENTAL_MARGIN = timedelta(hours=1)  # Überlappung, damit nichts zwischen z
 
 
 def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: Library | None = None,
-                 read_album_contents: bool = True, incremental: bool = False) -> Library:
+                 read_album_contents: bool = True, incremental: bool = False,
+                 progress: Callable[[str], None] | None = None) -> Library:
     """Liest alle Assets, Album-Zugehörigkeit und Immich-Duplikate aller Benutzer ein.
 
     ``read_album_contents=False``: Album-Inhalte später lesen (siehe ``read_albums``); bis dahin
     gelten die vom letzten Einlesen.
     ``incremental``: nur Medien holen, die sich seit ``previous`` geändert haben oder in den
-    Papierkorb gegangen sind; endgültig gelöschte findet erst das nächste vollständige Einlesen."""
+    Papierkorb gegangen sind; endgültig gelöschte findet erst das nächste vollständige Einlesen.
+    ``progress``: bekommt laufend einen kurzen Text, was gerade passiert (für die Oberfläche)."""
+    report = progress or (lambda text: None)
     started = time.monotonic()
     incremental = bool(incremental and previous and set(previous.users) == set(clients))
     since = ""
@@ -263,6 +275,7 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
         users[name] = {"id": me["id"], "email": me.get("email"), "name": me.get("name")}
         uid = me["id"]
         log.info("Lese Bibliothek von %s ein …", name)
+        report(f"Medien von {name}")
 
         own: dict[str, Asset] = {}
         skipped = 0
@@ -285,6 +298,8 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
             if old is not None:
                 own[raw["id"]].in_album = old.in_album
             changed += 1
+            if changed % 1000 == 0:
+                report(f"Medien von {name}: {changed:,}".replace(",", "."))
         if incremental:
             for raw in client.search_metadata(withDeleted=True, trashedAfter=since):
                 if raw.get("isTrashed") and own.pop(raw["id"], None) is not None:
@@ -292,6 +307,7 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
         t_media = time.monotonic() - t0
 
         t0 = time.monotonic()
+        report(f"Album-Zugehörigkeit von {name}")
         # Beim Einlesen nur der Änderungen ergibt sich „im Album“ aus den gelesenen Alben
         not_in_album = None if incremental else client.search_ids(isNotInAlbum=True)
         album_id = find_review_album(client, review_album)

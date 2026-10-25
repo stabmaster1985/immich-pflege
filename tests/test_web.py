@@ -268,3 +268,33 @@ def test_review_endpoints_rules_and_location(web, settings):
     assert len(loc["medien"]) == 2 and all(m["ort_neu"] for m in loc["medien"])
     res = web.post("/api/staged/no-location", json={"ids": [loc["medien"][0]["id"]], "label": "Test"}).json()
     assert res["vorgemerkt"] == 1
+
+
+def test_ui_stays_responsive_while_scanning(web, monkeypatch):
+    """Ein langes Einlesen läuft im Hintergrund; Status (mit Fortschritt) und Listen antworten derweil sofort."""
+    import threading
+    import time
+    from immich_pflege import service as service_mod
+
+    web.post("/api/scan")  # erster Stand
+    real = service_mod.scan_library
+    gate = threading.Event()
+
+    def slow(*args, **kwargs):
+        kwargs["progress"]("Medien von frank: 1.000")
+        gate.wait(10)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(service_mod, "scan_library", slow)
+    assert web.post("/api/scan", json={"wait": False, "full": True}).status_code == 202
+    time.sleep(0.2)
+    t0 = time.monotonic()
+    st = web.get("/api/status?server=false").json()
+    assert st["einlesen_laeuft"] and st["fortschritt"] == "Medien von frank: 1.000"
+    assert web.get("/api/duplicates").status_code == 200  # bisheriger Stand, kein Warten
+    assert web.post("/api/scan", json={"wait": False}).status_code == 409  # nicht doppelt
+    assert time.monotonic() - t0 < 3
+    gate.set()
+    web.app.state.scan_thread.join(10)
+    st = web.get("/api/status?server=false").json()
+    assert not st["einlesen_laeuft"] and st["fortschritt"] == "" and st["bibliothek"]["gesamt"] == 12

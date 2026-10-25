@@ -254,6 +254,8 @@ async function loadStatus(server = true) {
   const st = S.status;
   if (st.vorgemerkt) setCount("stage", st.vorgemerkt.anzahl);
   const parts = [];
+  if (st.einlesen_laeuft) parts.push("⟳ Einlesen" + (st.fortschritt ? ": " + st.fortschritt : " …"));
+  else if (st.alben_laeuft) parts.push("⟳ " + (st.fortschritt || "Alben lesen …"));
   if (st.bibliothek) parts.push("Stand " + fmtDateTime(st.bibliothek.stand), st.bibliothek.gesamt + " Medien");
   else parts.push("Noch nicht eingelesen");
   if (st.auto_einlesen && st.auto_einlesen.modus !== "aus" && st.auto_einlesen.naechstes) {
@@ -277,23 +279,70 @@ async function loadStatus(server = true) {
     S.loc.hours = st.ort_max_stunden;
     $("#loc-hours").value = st.ort_max_stunden;
   }
+  // läuft gerade ein Einlesen (z. B. automatisch oder vor dem Neuladen der Seite gestartet): mitverfolgen
+  if ((st.einlesen_laeuft || st.alben_laeuft) && !scanWatching) watchScan();
+  return st;
 }
 
+// Einlesen läuft im Hintergrund (ein großes komplettes Einlesen dauert Minuten – länger, als Browser
+// oder Proxy auf eine Antwort warten). Die Oberfläche fragt den Fortschritt ab und lädt danach neu.
 async function rescan(full = false, btn = $("#scan-btn")) {
   busy(btn, true);
   try {
-    const r = await api("api/scan", { method: "POST", body: { wait: true, full } });
-    toast(`${r.gesamt} Medien in ${r.dauer_s.toFixed(1).replace(".", ",")} s eingelesen` + (r.nur_aenderungen ? " (nur Änderungen)" : " (vollständig)"));
-    S.dup.loaded = S.loc.loaded = S.alb.loaded = S.tags.loaded = S.cln.loaded = S.ovw.loaded = false;
-    await loadStatus(false);
-    await loadTab(S.tab, true);
-    loadCounts();
+    try {
+      await api("api/scan", { method: "POST", body: { wait: false, full } });
+    } catch (e) {
+      if (e.status !== 409) throw e;  // läuft schon: einfach mit beobachten
+    }
+    toast(full ? "Komplettes Einlesen läuft im Hintergrund – du kannst weiterarbeiten" : "Einlesen läuft im Hintergrund …");
+    await watchScan(true);
   } catch (e) {
     toast("Einlesen fehlgeschlagen: " + e.message, true);
   } finally {
     busy(btn, false);
   }
 }
+
+let scanWatching = null;
+function watchScan(started = false) {
+  if (!scanWatching) scanWatching = doWatchScan(started).finally(() => { scanWatching = null; });
+  return scanWatching;
+}
+
+// started: selbst gestartet (kann schon fertig sein, bevor die erste Abfrage kommt)
+async function doWatchScan(started) {
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  $("#scan-btn").disabled = true;
+  let scanned = started, reloaded = false;
+  try {
+    for (;;) {
+      await pause(2000);
+      let st;
+      try { st = await loadStatus(false); } catch (_) { continue; }  // kurze Aussetzer überstehen
+      if (!st) continue;
+      if (st.einlesen_laeuft) { scanned = true; continue; }
+      if (scanned && !reloaded) {
+        reloaded = true;
+        if (st.letzter_fehler) { toast("Einlesen fehlgeschlagen: " + st.letzter_fehler, true); return; }
+        const b = st.bibliothek;
+        if (b) toast(`${b.gesamt.toLocaleString("de-DE")} Medien in ${String(b.dauer_s).replace(".", ",")} s eingelesen`);
+        S.dup.loaded = S.loc.loaded = S.alb.loaded = S.tags.loaded = S.cln.loaded = S.ovw.loaded = false;
+        loadTab(S.tab, true);
+        loadCounts();
+      }
+      if (!st.alben_laeuft) {  // Alben werden nach dem Einlesen im Hintergrund gelesen
+        S.alb.loaded = S.ovw.loaded = false;
+        if (["alb", "ovw"].includes(S.tab) || (S.tab === "cln" && ["alben", "stapel"].includes(S.cln.bereich))) loadTab(S.tab, true);
+        loadCounts();
+        return;
+      }
+    }
+  } finally {
+    $("#scan-btn").disabled = false;
+  }
+}
+
+
 
 /* --------------------------------------------------------- Duplikate */
 async function loadDuplicates(reset) {
