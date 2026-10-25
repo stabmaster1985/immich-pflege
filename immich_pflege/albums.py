@@ -13,6 +13,7 @@ Ablauf:
 
 from __future__ import annotations
 
+import bisect
 import hashlib
 import json
 import logging
@@ -20,6 +21,7 @@ import re
 import threading
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import cached_property
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Iterable
@@ -80,7 +82,7 @@ class Trip:
     target: AlbumMatch | None = None
     matches: list[AlbumMatch] = field(default_factory=list)
 
-    @property
+    @cached_property
     def ids(self) -> set[str]:
         return {a.id for a in self.assets}
 
@@ -210,14 +212,14 @@ def find_trips(lib: Library, min_km: float, min_media: int,
         else:
             merged.append(s)
 
+    times = [a.taken_utc for a in usable]
     trips: list[Trip] = []
     for gps in merged:
-        start = gps[0].taken_utc - timedelta(seconds=EDGE_S)
-        end = gps[-1].taken_utc + timedelta(seconds=EDGE_S)
+        lo = bisect.bisect_left(times, gps[0].taken_utc - timedelta(seconds=EDGE_S))
+        hi = bisect.bisect_right(times, gps[-1].taken_utc + timedelta(seconds=EDGE_S))
         users = {a.owner for a in gps}
         gps_ids = {a.id for a in gps}
-        members = [a for a in usable if start <= a.taken_utc <= end and a.owner in users
-                   and (a.id in gps_ids or not a.has_gps)]
+        members = [a for a in usable[lo:hi] if a.owner in users and (a.id in gps_ids or not a.has_gps)]
         if len(gps) < MIN_GPS or len(members) < min_media:
             continue
         trip = Trip(assets=members, gps=gps)
@@ -269,7 +271,20 @@ def _dates_overlap(album: dict[str, Any], trip: Trip) -> bool:
     return s - DATE_SLACK <= trip.end and trip.start <= e + DATE_SLACK
 
 
-def match_albums(trip: Trip, lib: Library) -> None:
+class AlbumIndex:
+    """Einmal pro Berechnung: Mitglieder als Mengen, Medium -> Alben, normalisierte Namen."""
+
+    def __init__(self, lib: Library):
+        self.members = {aid: set(al["medien"]) for aid, al in lib.albums.items()}
+        self.names = {aid: _norm(al["name"]) for aid, al in lib.albums.items()}
+        self.by_asset: dict[str, list[str]] = {}
+        for aid, members in self.members.items():
+            for m in members:
+                self.by_asset.setdefault(m, []).append(aid)
+
+
+def match_albums(trip: Trip, lib: Library, index: AlbumIndex | None = None) -> None:
+    index = index or AlbumIndex(lib)
     ids = trip.ids
     words = set()
     for a in trip.gps:
@@ -277,16 +292,16 @@ def match_albums(trip: Trip, lib: Library) -> None:
             if v:
                 words |= _norm(v)
     years = {str(trip.start.year), str(trip.end.year)}
+    hits = Counter(al for i in ids for al in index.by_asset.get(i, ()))
+    covered = {i for i in ids if i in index.by_asset}
     matches: list[AlbumMatch] = []
-    covered: set[str] = set()
-    for al in lib.albums.values():
-        members = set(al["medien"])
-        inside = len(ids & members)
-        name = _norm(al["name"])
+    for aid, al in lib.albums.items():
+        inside = hits.get(aid, 0)
+        name = index.names[aid]
         by_name = bool(name & words) and (bool(name & years) or _dates_overlap(al, trip))
         if not inside and not by_name:
             continue
-        covered |= ids & members
+        members = index.members[aid]
         matches.append(AlbumMatch(al, inside, inside / len(ids), inside / len(members) if members else 0.0, by_name))
     matches.sort(key=lambda m: (m.inside, m.by_name), reverse=True)
     trip.matches = matches
@@ -306,8 +321,9 @@ def match_albums(trip: Trip, lib: Library) -> None:
 def suggest(lib: Library, min_km: float, min_media: int,
             exclude: set[str] | None = None) -> tuple[list[Home], list[Trip]]:
     homes, trips = find_trips(lib, min_km, min_media, exclude)
+    index = AlbumIndex(lib)
     for t in trips:
-        match_albums(t, lib)
+        match_albums(t, lib, index)
     return homes, trips
 
 

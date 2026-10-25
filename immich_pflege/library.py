@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -115,12 +116,23 @@ def find_review_album(client: ImmichClient, name: str) -> str | None:
     return None
 
 
+ALBUM_WORKERS = 6  # parallele Abfragen der Album-Inhalte
+
+
+def _album_signature(al: dict[str, Any]) -> str:
+    """Ändert sich, sobald Medien hinzukommen oder entfernt werden."""
+    return f"{al.get('assetCount')}|{al.get('updatedAt')}|{al.get('lastModifiedAssetTimestamp')}"
+
+
 def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any]],
-                skip: set[str]) -> dict[str, dict[str, Any]]:
+                skip: set[str], previous: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
     """Alle Alben, die einer der Benutzer sieht (eigene und geteilte), mit Besitzer, Rollen
-    und Mitgliedern. ``skip``: Prüf-Alben."""
+    und Mitgliedern. ``skip``: Prüf-Alben. Unveränderte Alben aus ``previous`` werden nicht
+    erneut abgefragt."""
     names = {u["id"]: n for n, u in users.items()}
+    previous = previous or {}
     albums: dict[str, dict[str, Any]] = {}
+    jobs: list[tuple[str, str]] = []  # (Album, Benutzer), deren Inhalt abgefragt werden muss
     for name, client in clients.items():
         for al in client.albums():
             if al["id"] in skip:
@@ -138,19 +150,36 @@ def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any
                 owner = names.get(owner_id)
                 if owner:
                     roles[owner] = "owner"
+                sig = _album_signature(al)
+                old = previous.get(al["id"])
                 entry = albums[al["id"]] = {
                     "id": al["id"], "name": al.get("albumName") or "", "besitzer": owner,
                     "rollen": roles, "anzahl": al.get("assetCount") or 0,
-                    "start": al.get("startDate"), "ende": al.get("endDate"), "medien": set(),
+                    "start": al.get("startDate"), "ende": al.get("endDate"), "stand": sig,
+                    "medien": set(old["medien"]) if old and old.get("stand") == sig else None,
                 }
-            # Jeder Benutzer liefert zumindest seine eigenen Medien im Album
-            entry["medien"] |= client.album_asset_ids(al["id"])
+            if entry["medien"] is None or entry.get("_neu"):
+                entry["_neu"] = True
+                if entry["anzahl"]:
+                    jobs.append((al["id"], name))
+    for entry in albums.values():
+        if entry.pop("_neu", False):
+            entry["medien"] = set()
+
+    def fetch(job: tuple[str, str]) -> tuple[str, set[str]]:
+        # Jeder Benutzer liefert zumindest seine eigenen Medien im Album
+        return job[0], clients[job[1]].album_asset_ids(job[0])
+
+    with ThreadPoolExecutor(max_workers=ALBUM_WORKERS) as pool:
+        for album_id, ids in pool.map(fetch, jobs):
+            albums[album_id]["medien"] |= ids
+    log.info("%d Alben, davon %d neu abgefragt", len(albums), len({j[0] for j in jobs}))
     for entry in albums.values():
         entry["medien"] = sorted(entry["medien"])
     return albums
 
 
-def scan_library(clients: dict[str, ImmichClient], review_album: str) -> Library:
+def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: Library | None = None) -> Library:
     """Liest alle Assets, Album-Zugehörigkeit und Immich-Duplikate aller Benutzer ein."""
     started = time.monotonic()
     warnings: list[str] = []
@@ -215,8 +244,8 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str) -> Library
         log.info("%s: %d Medien (%d ignoriert: Papierkorb/versteckt)", name, len(own), skipped)
         assets.update(own)
 
-    albums = read_albums(clients, users, {a for a in review_albums.values() if a})
-    log.info("%d Alben gelesen", len(albums))
+    albums = read_albums(clients, users, {a for a in review_albums.values() if a},
+                         previous.albums if previous else None)
 
     duration = round(time.monotonic() - started, 2)
     log.info("Einlesen fertig: %d Medien in %.1f s", len(assets), duration)

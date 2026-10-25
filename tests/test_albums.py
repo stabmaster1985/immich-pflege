@@ -126,3 +126,22 @@ def test_cli_preview_and_create(env, http, state, monkeypatch):
     r = runner.invoke(cli.app, ["alben", "--anlegen", tid, "--name", "Kopenhagen"])
     assert r.exit_code == 0 and "25 Medien hinzugefügt" in r.output, r.output
     assert any(a["albumName"] == "Kopenhagen" for a in state.albums.values())
+
+
+def test_rescan_reuses_unchanged_albums(env, http, state):
+    svc = Pflege(Settings.load(env), http=http)
+    svc.library()
+
+    def album_queries():
+        return [c for c in state.calls if c[1] == "/api/search/metadata" and (c[3] or {}).get("albumIds")]
+
+    first = len(album_queries())
+    assert first == 3  # Toskana (julia), Wien (frank und julia, geteilt)
+    svc.scan()
+    assert len(album_queries()) == first  # nichts geändert -> nicht erneut gefragt
+    wien = next(a for a in state.albums.values() if a["albumName"] == "Wien")
+    extra = state.add_asset("julia", "NEU.JPG", "2024-05-10T20:00:00.000Z")
+    state.assets[extra]["_albums"].add(wien["id"])
+    lib = svc.scan()
+    assert len(album_queries()) == first + 2  # nur Wien, für beide Benutzer
+    assert extra in lib.albums[wien["id"]]["medien"]

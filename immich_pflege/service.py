@@ -75,6 +75,7 @@ class Pflege:
         self._hash_thread: threading.Thread | None = None
         self._pairs_cache: tuple[tuple, list[tuple[str, str]]] | None = None
         self._staging: StagingStore | None = None
+        self._trips_cache: tuple[tuple, Any] | None = None
 
     # ------------------------------------------------------------ Bibliothek
     def cached_library(self) -> Library | None:
@@ -102,7 +103,7 @@ class Pflege:
         with self._lock:
             self.scanning = True
             try:
-                lib = scan_library(self.clients, self.settings.review_album)
+                lib = scan_library(self.clients, self.settings.review_album, self.cached_library())
             except ImmichError as exc:
                 self.last_error = str(exc)
                 raise
@@ -552,7 +553,12 @@ class Pflege:
     def _trips(self):
         """Reisen ohne vorgemerkte; ``ignored`` = als „kein Album“ markiert."""
         lib = self.library()
-        homes, trips = suggest(lib, self.settings.album_min_km, self.settings.album_min_media)
+        # Berechnung nur neu, wenn sich Bibliothek, Alben oder Einstellungen geändert haben
+        key = (id(lib), lib.scanned_at, len(lib.assets), sum(len(a["medien"]) for a in lib.albums.values()),
+               len(lib.albums), self.settings.album_min_km, self.settings.album_min_media)
+        if not self._trips_cache or self._trips_cache[0] != key:
+            self._trips_cache = (key, suggest(lib, self.settings.album_min_km, self.settings.album_min_media))
+        homes, trips = self._trips_cache[1]
         staged = self.staging.id_sets("album")
         ignore = self.album_ignore_list()
         out = [(t, ignore.contains(t.ids)) for t in trips if not overlaps(t.ids, staged)]
