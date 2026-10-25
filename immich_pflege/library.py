@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import time
@@ -17,6 +18,7 @@ from .models import Asset
 log = logging.getLogger(__name__)
 
 CACHE_VERSION = 2  # 2: mit Alben
+_UIDS = itertools.count(1)
 IGNORED_VISIBILITY = {"hidden", "locked"}  # Live-Photo-Videos bzw. gesperrter Ordner
 
 
@@ -42,6 +44,7 @@ class Library:
     immich_url: str = ""
     rev: int = 0  # Änderungszähler (nicht gespeichert): ungültig machen von Zwischenergebnissen
     albums_ready: bool = True  # False, solange die Album-Inhalte im Hintergrund gelesen werden
+    uid: int = field(default_factory=lambda: next(_UIDS))  # eindeutig je Einlesen (id() kann wiederkehren)
 
     def assets_of(self, user: str) -> list[Asset]:
         return [a for a in self.assets.values() if a.owner == user]

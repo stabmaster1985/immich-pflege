@@ -86,7 +86,8 @@ class Pflege:
         self.hash_progress = HashProgress()
         self._hash_thread: threading.Thread | None = None
         self._pairs_cache: tuple[tuple, list[tuple[str, str]]] | None = None
-        self._staging: StagingStore | None = None
+        # gleich anlegen: bei verzögertem Anlegen konnten Vorberechnung und Anfrage zwei Listen erzeugen
+        self._staging = StagingStore(settings.data_dir / "vorgemerkt.json")
         self.history = HistoryStore(settings.data_dir / "verlauf.json")
         self._trips_cache: tuple[tuple, Any] | None = None
         self._groups_cache: tuple[tuple, list[DuplicateGroup]] | None = None
@@ -245,7 +246,7 @@ class Pflege:
         if not self.settings.dup_image_hash:
             return []
         lib = self.library()
-        key = (id(lib), lib.rev, len(self.hash_store.data))
+        key = (lib.uid, lib.rev, len(self.hash_store.data))
         hashing = self._hash_thread is not None and self._hash_thread.is_alive()
         # Während der Berechnung nicht bei jedem neuen Fingerabdruck neu vergleichen – erst danach
         if hashing and self._pairs_cache and self._pairs_cache[0][:2] == key[:2]:
@@ -267,7 +268,7 @@ class Pflege:
         """Alle Gruppen, zwischengespeichert bis sich Bibliothek oder Fingerabdrücke ändern."""
         lib = self.library()
         pairs = self.image_pairs()
-        key = (id(lib), lib.rev, self._pairs_cache[0] if self._pairs_cache else None, self.settings.dup_edit_keep)
+        key = (lib.uid, lib.rev, self._pairs_cache[0] if self._pairs_cache else None, self.settings.dup_edit_keep)
         with self._calc_lock:
             cache = self._groups_cache
             if not cache or cache[0] != key:
@@ -410,7 +411,7 @@ class Pflege:
         hours = max_hours or self.settings.location_max_hours
         lib = self.library()
         staged = frozenset(self.staging.asset_ids("ort"))
-        key = (id(lib), lib.rev, hours, self.settings.location_include_external,
+        key = (lib.uid, lib.rev, hours, self.settings.location_include_external,
                self.settings.location_skip_screenshots, staged)
         with self._calc_lock:
             cache = self._analysis_cache
@@ -523,8 +524,6 @@ class Pflege:
     # -------------------------------------------------------------- Vormerken
     @property
     def staging(self) -> StagingStore:
-        if self._staging is None:
-            self._staging = StagingStore(self.settings.data_dir / "vorgemerkt.json")
         return self._staging
 
     def stage_no_location(self, label: str | None = None, **selection) -> dict[str, Any]:
@@ -656,7 +655,7 @@ class Pflege:
 
     def cleanup_items(self):
         lib = self.library()
-        key = (id(lib), lib.rev, self._hash_key())
+        key = (lib.uid, lib.rev, self._hash_key())
         with self._calc_lock:
             if not self._cleanup_cache or self._cleanup_cache[0] != key:
                 self._cleanup_cache = (key, find_items(lib, self.hash_store))
@@ -747,7 +746,7 @@ class Pflege:
     # -------------------------------------------------------- Aufnahmezeit
     def time_fixes(self):
         lib = self.library()
-        key = (id(lib), lib.rev)
+        key = (lib.uid, lib.rev)
         with self._calc_lock:
             if not self._time_cache or self._time_cache[0] != key:
                 self._time_cache = (key, find_fixes(lib))
@@ -814,7 +813,7 @@ class Pflege:
         lib = self.library()
         # Berechnung nur neu, wenn sich Bibliothek, Alben oder Einstellungen geändert haben
         manual = [Home(h["breite"], h["laenge"], h["name"], 0, manual=True) for h in self.settings.album_home]
-        key = (id(lib), lib.rev, self.settings.album_min_km, self.settings.album_min_media,
+        key = (lib.uid, lib.rev, self.settings.album_min_km, self.settings.album_min_media,
                tuple((h.latitude, h.longitude) for h in manual))
         with self._calc_lock:
             if not self._trips_cache or self._trips_cache[0] != key:

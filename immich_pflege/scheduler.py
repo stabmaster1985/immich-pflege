@@ -103,8 +103,8 @@ class AutoScan:
         try:
             r = svc.stage_no_location(label=f"Automatisch {day}: sichere Orte", min_confidence="hoch")
             log.info("Automatisch %d sichere Orte vorgemerkt", r["vorgemerkt"])
-        except ActionError:
-            pass  # nichts Neues
+        except ActionError as exc:
+            log.info("Automatisch vormerken: %s", exc)  # meist: nichts Neues
         except ImmichError as exc:
             log.warning("Sichere Orte nicht vorgemerkt: %s", exc)
 
