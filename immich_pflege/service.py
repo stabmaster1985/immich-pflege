@@ -1401,6 +1401,28 @@ class Pflege:
             "erledigt": [{"monat": m, **v} for m, v in sorted(months.items())[-12:]],
         }
 
+    def nav_counts(self) -> dict[str, Any]:
+        """Offene Einträge je Menüpunkt (None = gerade nicht bekannt, z. B. Alben werden noch gelesen)."""
+        self.library()
+        cln = self.cleanup_view(limit=1)["arten"]
+        albums_ready = not self.albums_pending()
+        folders = self.folders_view() if albums_ready else None
+        care = self.album_care_view() if albums_ready else None
+        return {
+            "dup": self.duplicates_view(limit=1)["offen"],
+            "serien": cln["serien"]["anzahl"],
+            "speicher": cln["speicher"]["anzahl"],
+            "qualitaet": cln["qualitaet"]["anzahl"],
+            "verwaist": cln["verwaist"]["anzahl"],
+            "ort": self.no_location_view(overview=True)["mit_vorschlag"],
+            "zeit": sum(self.timefix_view(limit=1)["arten"].values()),
+            "tags": len(self.suggestions_view()["vorschlaege"]),
+            "reisen": self.albums_view(limit=1)["offen"] if albums_ready else None,
+            "ordner": folders["status"]["neu"] + folders["status"]["ergaenzen"] if folders and "status" in folders else None,
+            "albenpflege": sum(a["anzahl"] for a in care["arten"].values()) if care and "arten" in care else None,
+            "stage": self.staging.summary()["anzahl"],
+        }
+
     # ------------------------------------------------------------ Papierkorb
     def trash_view(self) -> dict[str, Any]:
         if not self.clients:

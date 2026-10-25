@@ -53,7 +53,7 @@ Unter jedem Bild stehen zwei Links:
 
 ## Aktionen
 
-Aktionen werden zuerst nur **vorgemerkt**: Die Gruppe verschwindet aus der Liste, ausgeführt wird erst unter **✓ Vorgemerkt** → **Übertragen**.
+Aktionen werden zuerst nur **vorgemerkt**: Die Gruppe verschwindet aus der Liste, ausgeführt wird erst unter **Vorgemerkt** → **Übertragen**.
 
 - **Ins Prüf-Album:** Die nicht behaltenen Kopien kommen in das Album „Duplikat-Prüfung“ ihres Besitzers. Das Album wird bei Bedarf angelegt. Gelöscht wird dabei nichts.
 - **Papierkorb:** Die nicht behaltenen Kopien kommen in den Immich-Papierkorb und sind dort noch wiederherstellbar. Vorher musst du ausdrücklich bestätigen. Es gelten Schutzregeln:
@@ -65,7 +65,7 @@ Aktionen werden zuerst nur **vorgemerkt**: Die Gruppe verschwindet aus der Liste
 ## Bild-Fingerabdruck
 
 - **Wie er entsteht:** Aus Immichs kleinem Vorschaubild wird ein 64-Bit-Fingerabdruck des Helligkeitsverlaufs berechnet (dHash). Zwei Bilder gelten als fast gleich, wenn sich höchstens 6 der 64 Bits unterscheiden.
-- **Wann er rechnet:** Die Berechnung läuft nach jedem Einlesen im Hintergrund, aber nur für neue oder geänderte Bilder. Der Fortschritt steht oben im Tab.
+- **Wann er rechnet:** Die Berechnung läuft nach jedem Einlesen im Hintergrund, aber nur für neue oder geänderte Bilder. Der Fortschritt steht oben bei den Duplikaten.
 - **Gegen Fehlalarme durch Serienbilder** zählen Treffer nur zwischen verschiedenen Benutzern, zwischen Upload und externer Bibliothek oder wenn einer Kopie die Kameradaten fehlen (typisch für Messenger-Kopien).
 - **Abschalten:** unter ⚙ Einstellungen → Duplikate.
 

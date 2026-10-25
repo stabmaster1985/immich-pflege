@@ -240,3 +240,13 @@ def test_basic_auth(env, http):
         assert c.get("/api/status?server=false", auth=("frank", "geheim")).status_code == 200
         bad = base64.b64encode(b"\xff\xfe").decode()
         assert c.get("/", headers={"Authorization": "Basic " + bad}).status_code == 401
+
+
+def test_nav_counts(web):
+    web.post("/api/scan")
+    r = web.get("/api/nav-counts")
+    assert r.status_code == 200
+    c = r.json()
+    assert set(c) == {"dup", "serien", "speicher", "qualitaet", "verwaist", "ort", "zeit", "tags",
+                      "reisen", "ordner", "albenpflege", "stage"}
+    assert c["dup"] >= 1 and c["stage"] == 0

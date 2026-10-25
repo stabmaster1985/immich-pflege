@@ -694,6 +694,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         return svc().stage_albums([t.model_dump(exclude_unset=True) for t in body.trips])
 
     # ------------------------------------------------- Übersicht, Papierkorb
+    @app.get("/api/nav-counts")
+    def nav_counts():
+        return svc().nav_counts()
+
     @app.get("/api/dashboard")
     def dashboard():
         return {**svc().dashboard(), "bericht": app.state.reporter.info()}

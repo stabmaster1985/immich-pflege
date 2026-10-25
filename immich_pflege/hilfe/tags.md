@@ -1,6 +1,6 @@
 # Tags
 
-Tags an viele Fotos auf einmal vergeben – meist reicht ein Haken bei einem Vorschlag. **Tags werden nur ergänzt, nie entfernt**, und jede Übertragung lässt sich im Verlauf (Tab ✓) **rückgängig** machen.
+Tags an viele Fotos auf einmal vergeben – meist reicht ein Haken bei einem Vorschlag. **Tags werden nur ergänzt, nie entfernt**, und jede Übertragung lässt sich im Verlauf (Menü **Vorgemerkt**) **rückgängig** machen.
 
 ## Vorschläge
 
@@ -34,7 +34,7 @@ Voraussetzung: In Immich ist das maschinelle Lernen (Smart Search) aktiv.
 
 ## Erweitert: eigene Regeln
 
-Für Sonderfälle gibt es weiterhin eigene Regeln (unten im Tab aufklappen).
+Für Sonderfälle gibt es weiterhin eigene Regeln (ganz unten aufklappen).
 
 ### Regeln anlegen
 
@@ -58,7 +58,7 @@ Alle Bedingungen einer Regel müssen zutreffen. Eine Regel ohne Bedingung ist ni
 
 ### Vorschau und Vormerken
 
-Pro Regel siehst du **Treffer**, **schon getaggt** und **neu**, dazu Beispielbilder der neuen Treffer. Regeln anhaken und **Tags vormerken**. Übertragen wird unter **✓ Vorgemerkt**. Fehlende Tags legt das Tool in Immich an, getrennt pro Benutzer.
+Pro Regel siehst du **Treffer**, **schon getaggt** und **neu**, dazu Beispielbilder der neuen Treffer. Regeln anhaken und **Tags vormerken**. Übertragen wird unter **Vorgemerkt**. Fehlende Tags legt das Tool in Immich an, getrennt pro Benutzer.
 
 ### Für Fortgeschrittene
 

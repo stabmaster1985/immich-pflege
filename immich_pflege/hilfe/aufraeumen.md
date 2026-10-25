@@ -1,6 +1,6 @@
 # Aufräumen
 
-Der Tab sammelt alles, was Platz kostet oder offensichtlich daneben ist. Oben wählst du den **Bereich**. Wie überall gilt: erst **vormerken**, unter **✓ Vorgemerkt** prüfen, dann übertragen. Im Verlauf lässt sich jede Übertragung **rückgängig** machen.
+Hier steht alles, was Platz kostet oder offensichtlich daneben ist. Die Bereiche findest du im Menü: **Aufräumen** (Serienbilder, Speicherfresser, Unscharf & dunkel, Verwaiste Dateien, Papierkorb), **Ordnen** (Falsche Zeit, Stapeln) und **Alben** (Alben aufräumen). Wie überall gilt: erst **vormerken**, unter **Vorgemerkt** prüfen, dann übertragen. Im Verlauf lässt sich jede Übertragung **rückgängig** machen.
 
 **Behalten** bzw. **Passt so** blendet einen Eintrag dauerhaft aus. Unter „behaltene“ holst du ihn zurück.
 

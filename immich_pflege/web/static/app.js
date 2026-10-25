@@ -175,7 +175,7 @@ async function loadStatus(server = true) {
     return;
   }
   const st = S.status;
-  if (st.vorgemerkt) $("#count-stage").textContent = st.vorgemerkt.anzahl ? `(${st.vorgemerkt.anzahl})` : "";
+  if (st.vorgemerkt) setCount("stage", st.vorgemerkt.anzahl);
   const parts = [];
   if (st.bibliothek) parts.push("Stand " + fmtDateTime(st.bibliothek.stand), st.bibliothek.gesamt + " Medien");
   else parts.push("Noch nicht eingelesen");
@@ -210,7 +210,7 @@ async function rescan(full = false, btn = $("#scan-btn")) {
     S.dup.loaded = S.loc.loaded = S.alb.loaded = S.tags.loaded = S.cln.loaded = S.ovw.loaded = false;
     await loadStatus(false);
     await loadTab(S.tab, true);
-    loadOtherCounts();
+    loadCounts();
   } catch (e) {
     toast("Einlesen fehlgeschlagen: " + e.message, true);
   } finally {
@@ -242,7 +242,7 @@ async function loadDuplicates(reset) {
   $("#dup-summary").textContent = d.ignored
     ? `${n(r.gesamt, "ausgeblendete Gruppe", "ausgeblendete Gruppen")} („kein Duplikat“)`
     : `${r.offen} offen · ${n(r.gesamt, "Gruppe", "Gruppen")} · ${r.benutzeruebergreifend} benutzerübergreifend`;
-  if (!d.art && !d.monat && !d.crossUser && !d.ignored) $("#count-dup").textContent = r.offen ? `(${r.offen})` : "";
+  if (!d.art && !d.monat && !d.crossUser && !d.ignored) setCount("dup", r.offen);
   renderFingerprint(r.fingerabdruck);
   $("#dup-more").hidden = d.groups.length >= d.total;
   updateActionbar();
@@ -339,7 +339,7 @@ async function applyAllDuplicates(action, btn) {
     body: [h("p", {}, `${n(plan.gruppen, "Gruppe", "Gruppen")} (${scope}) mit dem jeweiligen Behalten-Vorschlag:`),
       h("ul", {}, plan.papierkorb ? h("li", {}, h("b", {}, plan.papierkorb), " für den Papierkorb") : null,
         plan.album ? h("li", {}, h("b", {}, plan.album), " fürs Prüf-Album") : null),
-      h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter ✓ Vorgemerkt.")],
+      h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter Vorgemerkt.")],
     okLabel: "Vormerken",
   });
   if (!ok) return;
@@ -433,7 +433,7 @@ async function applyDuplicates(action, btn) {
   const reasons = [...new Set(plan.schritte.filter((s) => s.aktion === "album" && s.grund !== "Kopie").map((s) => s.grund))];
   const body = [h("p", {}, `${n(plan.gruppen, "Gruppe", "Gruppen")}:`), h("ul", {}, items)];
   if (action === "papierkorb" && reasons.length) body.push(h("p", { class: "muted" }, "Statt Papierkorb ins Prüf-Album: " + reasons.join("; ")));
-  body.push(h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter ✓ Vorgemerkt."));
+  body.push(h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter Vorgemerkt."));
   if (!plan.papierkorb && !plan.album) { toast("Nichts zu tun – alles schon erledigt."); return; }
   const ok = await confirmDialog({ title: "Vormerken?", body, okLabel: "Vormerken" });
   if (!ok) return;
@@ -500,7 +500,7 @@ async function loadLocation(reset) {
     `Vorschläge: ${by.hoch} sicher, ${by.mittel} wahrscheinlich, ${by.niedrig} unsicher` +
     (r.screenshots_ausgeblendet ? ` · ${r.screenshots_ausgeblendet} Screenshots ausgeblendet` : "") +
     (r.extern_erlaubt ? "" : " · externe Bibliotheken gesperrt");
-  $("#count-loc").textContent = r.mit_vorschlag ? `(${r.mit_vorschlag})` : "";
+  setCount("ort", r.mit_vorschlag);
   $("#loc-more").hidden = overview || l.series.length >= l.total;
   updateActionbar();
 }
@@ -868,8 +868,7 @@ function renderTags() {
 }
 
 function updateTagsCount() {
-  const total = (S.sug.items.length || 0) + (S.tags.openRules || 0);
-  $("#count-tags").textContent = total ? `(${total})` : "";
+  if (!S.sug.hidden) setCount("tags", (S.sug.items.length || 0) + (S.tags.openRules || 0));
 }
 
 /* ------------------------------------------------------ Tag-Vorschläge */
@@ -1109,7 +1108,7 @@ async function applyTags(btn) {
     title: "Tags vormerken?",
     body: [h("p", {}, "Tags werden nur ergänzt, nie entfernt."),
       h("ul", {}, rules.map((r) => h("li", {}, `${r.name}: ${r.neu} Medien → ${r.tags.join(", ")}`))),
-      h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter ✓ Vorgemerkt.")],
+      h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter Vorgemerkt.")],
     okLabel: "Vormerken",
   });
   if (!ok) return;
@@ -1348,8 +1347,8 @@ async function loadVersion(force = false) {
     return null;
   }
   S.version = v;
-  $(".tabs button.gear").classList.toggle("dot", !!v.update_available);
-  $(".tabs button.gear").title = v.update_available ? "Einstellungen – Update verfügbar" : "Einstellungen";
+  $("#set-btn").classList.toggle("dot", !!v.update_available);
+  $("#set-btn").title = v.update_available ? "Einstellungen – Update verfügbar" : "Einstellungen";
   if (S.tab !== "set" && !force) return v;
   const cur = v.current || {};
   const parts = [`Läuft: ${short(cur.commit)}${cur.branch ? " (" + cur.branch + ")" : ""}`];
@@ -1554,8 +1553,6 @@ async function openHelp(topic) {
 
 /* ---------------------------------------------------------- Aufräumen */
 const PAGE_CLN = 30;
-const CLN_BEREICHE = { speicher: "Speicherfresser", serien: "Serienbilder", qualitaet: "Unscharf & dunkel", verwaist: "Verwaiste Dateien", zeit: "Falsche Zeit", stapel: "Stapeln aus Alben", alben: "Alben aufräumen", papierkorb: "Papierkorb" };
-
 async function loadCleanup(reset) {
   const c = S.cln;
   if (c.bereich === "papierkorb") return loadTrash();
@@ -1594,20 +1591,14 @@ async function loadCleanup(reset) {
   }
   $("#cln-summary").textContent = c.ignored ? `${n(r.gesamt, "ausgeblendeter Eintrag", "ausgeblendete Einträge")}`
     : `${n(r.gesamt, "Eintrag", "Einträge")} · ${fmtBig(r.groesse)} würden frei`;
-  const open = Object.values(r.arten).reduce((s, a) => s + a.anzahl, 0) + Object.values(time.arten).reduce((s, x) => s + x, 0);
-  $("#count-cln").textContent = open ? `(${open})` : "";
+  for (const [k, a] of Object.entries(r.arten)) setCount(k, a.anzahl);
+  setCount("zeit", Object.values(time.arten).reduce((s, x) => s + x, 0));
   $("#cln-more").hidden = c.items.length >= c.total;
   updateActionbar();
 }
 
 function renderCleanupFilters(r, time) {
   const c = S.cln;
-  const timeCount = Object.values(time.arten).reduce((s, x) => s + x, 0);
-  const area = h("select", { onchange: (e) => { c.bereich = e.target.value; c.kategorie = null; loadTab("cln", true); } },
-    ...Object.entries(CLN_BEREICHE).map(([k, v]) => h("option", { value: k }, k === "zeit" ? `${v} (${timeCount})`
-      : !r.arten[k] ? v  // Papierkorb und Stapeln: Zahlen erst beim Öffnen
-        : `${v} (${r.arten[k].anzahl}${r.arten[k].groesse ? ", " + fmtBig(r.arten[k].groesse) : ""})`)));
-  area.value = c.bereich;
   const cats = ["papierkorb", "stapel", "alben"].includes(c.bereich) ? [] : c.bereich === "zeit"
     ? Object.entries(time.arten).map(([k, v]) => [k, { name: time.namen[k], anzahl: v }])
     : Object.entries(r.kategorien).filter(([, v]) => v.art === c.bereich);
@@ -1616,7 +1607,6 @@ function renderCleanupFilters(r, time) {
     ...cats.map(([k, v]) => h("option", { value: k }, `${v.name} (${v.anzahl})`)));
   cat.value = c.kategorie || "";
   $("#cln-filters").replaceChildren(...[
-    h("label", { class: "field grow" }, "Bereich", area),
     cats.length > 1 ? h("label", { class: "field grow" }, "Art", cat) : null,
     h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: c.ignored,
       onchange: (e) => { c.ignored = e.target.checked; loadTab("cln", true); } }),
@@ -1737,7 +1727,7 @@ async function stageCleanup(action, items, btn) {
       action === "papierkorb" ? h("p", { class: "muted" }, c.bereich === "verwaist"
         ? "Die Dateien fehlen schon auf der Platte – der Papierkorb entfernt nur den Eintrag in Immich."
         : "Medien aus externen Bibliotheken kommen nie in den Papierkorb, sondern ins Prüf-Album.") : null,
-      h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter ✓ Vorgemerkt.")],
+      h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter Vorgemerkt.")],
     okLabel: "Vormerken",
   });
   if (!ok) return;
@@ -1968,7 +1958,7 @@ async function stageStacks(props, btn) {
   const ok = await confirmDialog({ title: "Stapeln vormerken?",
     body: [h("p", {}, `${n(props.length, "Stapel", "Stapel")} aus ${n(media, "Medium", "Medien")}. Gelöscht wird nichts – in Immich liegt das obere Bild in der Zeitleiste, die anderen dahinter.`),
       c.fromAlbum ? h("p", {}, "Danach werden sie aus dem Album genommen.") : null,
-      h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter ✓ Vorgemerkt.")].filter(Boolean),
+      h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter Vorgemerkt.")].filter(Boolean),
     okLabel: "Vormerken" });
   if (!ok) return;
   busy(btn, true);
@@ -2033,17 +2023,11 @@ async function restoreTrash(ids, btn) {
 }
 
 /* ----------------------------------------------------------- Übersicht */
-const OPEN_LINKS = [
-  ["duplikate", "Duplikat-Gruppen offen", "dup"],
-  ["ort_vorschlaege", "Fotos verortbar", "loc"],
-  ["alben", "Reisen ohne Album", "alb"],
-  ["aufraeumen", "zum Aufräumen", "cln"],
-  ["zeit", "falsche Aufnahmezeiten", "cln", "zeit"],
-  ["vorgemerkt", "vorgemerkt", "stage"],
-];
 
 async function loadOverview() {
-  const d = await api("api/dashboard");
+  const [d, counts] = await Promise.all([api("api/dashboard"), api("api/nav-counts").catch(() => ({}))]);
+  for (const [k, value] of Object.entries(counts)) if (value !== null) S.counts[k] = value;
+  renderNav();
   S.ovw.loaded = true;
   const box = $("#ovw-body");
   const g = d.gesamt;
@@ -2057,14 +2041,17 @@ async function loadOverview() {
     h("tbody", {}, ...Object.entries(d.benutzer).map(([u, v]) => h("tr", {}, h("td", {}, u),
       h("td", {}, v.medien.toLocaleString("de-DE")), h("td", {}, v.videos.toLocaleString("de-DE")),
       h("td", {}, v.extern.toLocaleString("de-DE")), h("td", {}, fmtBig(v.groesse))))));
-  const open = h("div", { class: "open-list" }, ...OPEN_LINKS.filter(([k]) => d.offen[k]).map(([k, label, tab, bereich]) =>
-    h("button", { type: "button", class: "open-item", onclick: () => { if (bereich) { S.cln.bereich = bereich; S.cln.loaded = false; } showTab(tab); } },
-      h("b", {}, d.offen[k].toLocaleString("de-DE")), " " + label + (k === "aufraeumen" ? ` (${fmtBig(d.offen.aufraeumen_groesse)})` : ""), h("span", { class: "muted" }, " ›"))));
+  // Zu tun: jeder Menüpunkt mit offenen Einträgen
+  const todo = h("div", { class: "todo-grid" }, ...NAV.filter((sec) => sec.id !== "start").flatMap((sec) => sec.views
+    .filter(([id]) => S.counts[id])
+    .map(([id, label]) => h("button", { type: "button", class: "todo", onclick: () => go(id) },
+      icon(sec.icon), h("b", {}, S.counts[id].toLocaleString("de-DE")),
+      h("span", {}, label)))));
   const rep = d.bericht;
   box.replaceChildren(...[
     tiles,
-    h("h2", { class: "stage-head" }, "Offen"),
-    open.childElementCount ? open : h("p", { class: "muted" }, "Alles aufgeräumt 🎉"),
+    h("h2", { class: "stage-head" }, "Zu tun"),
+    todo.childElementCount ? todo : h("p", { class: "muted" }, "Alles aufgeräumt 🎉"),
     h("h2", { class: "stage-head" }, "Benutzer"), users,
     h("h2", { class: "stage-head" }, "Aufnahmen je Jahr"), yearChart(d.jahre),
     d.erledigt.length ? h("h2", { class: "stage-head" }, "Erledigt je Monat") : null,
@@ -2110,7 +2097,6 @@ const ALB_STATUS = { neu: "Neues Album", ergaenzen: "Album ergänzen", vorhanden
 
 async function loadAlbums(reset) {
   const a = S.alb;
-  document.querySelectorAll("#tab-alb .seg button").forEach((b) => b.classList.toggle("on", b.dataset.quelle === a.quelle));
   if (a.quelle === "ordner") return loadFolders();
   if (reset) { a.trips = []; a.sel.clear(); a.choice = {}; a.ohne = {}; a.open = {}; $("#alb-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
   const params = new URLSearchParams({ offset: a.trips.length, limit: PAGE_ALB, ignoriert: a.ignored });
@@ -2145,7 +2131,7 @@ async function loadAlbums(reset) {
   $("#alb-summary").textContent = home
     ? `Zuhause: ${home} · Reise ab ${r.min_km} km und ${r.min_medien} Medien · ${n(r.alben, "Album", "Alben")} beider Benutzer abgeglichen`
     : "";
-  if (!a.status && !a.jahr && !a.ignored) $("#count-alb").textContent = r.offen ? `(${r.offen})` : "";
+  if (!a.status && !a.jahr && !a.ignored) setCount("reisen", r.offen);
   $("#alb-more").hidden = a.trips.length >= a.total;
   updateActionbar();
 }
@@ -2299,7 +2285,7 @@ async function stageTrips(trips, btn) {
         const c = tripChoice(t);
         const al = t.kandidaten.find((k) => k.id === c.album);
         return h("li", {}, al ? `${t.name}: „${al.name}“ ergänzen` : `${t.name}: neues Album „${(c.name || t.name).trim()}“`);
-      })), h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter ✓ Vorgemerkt.")],
+      })), h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter Vorgemerkt.")],
       okLabel: "Vormerken",
     });
     if (!ok) return;
@@ -2334,6 +2320,7 @@ const STAGE_ACTION = { papierkorb: "Papierkorb", album: "Prüf-Album", keine: "�
 async function afterStage(tab) {
   S.stage.loaded = false;
   await Promise.all([loadTab(tab, true), loadTab("stage", true)]);
+  loadCounts();
 }
 
 async function loadStaged() {
@@ -2383,8 +2370,9 @@ async function undoHistory(e, btn) {
   try {
     const r = await api(`api/history/${e.id}/undo`, { method: "POST" });
     toast(r.fehler.length ? `Rückgängig mit ${r.fehler.length} Fehlern` : "Rückgängig gemacht", !!r.fehler.length);
-    S.dup.loaded = S.loc.loaded = S.alb.loaded = S.tags.loaded = false;
+    S.dup.loaded = S.loc.loaded = S.alb.loaded = S.tags.loaded = S.cln.loaded = false;
     await loadTab("stage", true);
+    loadCounts();
   } catch (err) {
     toast(err.message, true);
     busy(btn, false);
@@ -2407,7 +2395,7 @@ function stageMedia(e) {
 function renderStaged() {
   const st = S.stage;
   const cnt = st.info ? st.info.anzahl : 0;
-  $("#count-stage").textContent = cnt ? `(${cnt})` : "";
+  setCount("stage", cnt);
   const list = $("#stage-list");
   list.replaceChildren();
   $("#stage-summary").textContent = cnt
@@ -2483,6 +2471,7 @@ async function applyStaged(ids, btn) {
     const sources = new Set(entries.map((e) => STAGE_SOURCE[e.typ]));
     await Promise.all([loadTab("stage", true), ...[...sources].filter((t) => S[t].loaded).map((t) => loadTab(t, true))]);
     loadStatus(false);
+    loadCounts();
   } catch (err) {
     toast(err.message, true);
   } finally {
@@ -2606,6 +2595,9 @@ function updateActionbar() {
     }
   }
   $("#ab-buttons").replaceChildren(...buttons);
+  const show = buttons.some((b) => !b.disabled);
+  $("#actionbar").hidden = !show;
+  document.body.classList.toggle("has-ab", show);
 }
 
 /* -------------------------------------------------------------- Tabs */
@@ -2635,30 +2627,145 @@ async function doLoadTab(tab, force) {
   } catch (e) {
     const box = e.setup
       ? h("div", { class: "banner warn" }, "Noch nicht eingerichtet. ",
-        h("button", { type: "button", class: "btn small", onclick: () => showTab("set") }, "Zu den Einstellungen"))
+        h("button", { type: "button", class: "btn small", onclick: () => go("set") }, "Zu den Einstellungen"))
       : h("div", { class: "banner err" }, "Laden fehlgeschlagen: " + e.message);
     $(TAB_TARGET[tab]).replaceChildren(box);
   }
   updateActionbar();
 }
 
-function showTab(tab) {
+function showTab(tab, force = false) {
   S.tab = tab;
-  document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === tab ? "true" : "false"));
   document.querySelectorAll(".tab").forEach((s) => { s.hidden = s.id !== "tab-" + tab; });
-  try { localStorage.setItem("pflege-tab", tab); } catch (_) { /* egal */ }
   updateActionbar();
-  return loadTab(tab);
+  return loadTab(tab, force);
 }
 
-function loadOtherCounts() {
+/* -------------------------------------------------------------- Menü */
+const ICON = {
+  home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H10v6H4a1 1 0 0 1-1-1z"/>',
+  spark: '<path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"/><path d="M19 14.5l.8 2.2 2.2.8-2.2.8L19 20.5l-.8-2.2-2.2-.8 2.2-.8z"/>',
+  tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+  album: '<rect x="3" y="7" width="14" height="14" rx="2"/><path d="M7 3h12a2 2 0 0 1 2 2v12"/><path d="M3 17l4-4 3 3 2-2 5 5"/>',
+  list: '<path d="M10 6h11M10 12h11M10 18h11"/><path d="M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  scan: '<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/>',
+};
+
+function icon(name) {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("viewBox", "0 0 24 24");
+  s.setAttribute("class", "ico");
+  s.setAttribute("aria-hidden", "true");
+  s.innerHTML = ICON[name];
+  return s;
+}
+
+// Bereiche des Menüs; jeder Unterpunkt zeigt ein Panel (tab) mit Voreinstellung
+const NAV = [
+  { id: "start", label: "Start", icon: "home", views: [["start", "Übersicht", { tab: "ovw" }]] },
+  { id: "fotos", label: "Aufräumen", icon: "spark", views: [
+    ["dup", "Duplikate", { tab: "dup" }],
+    ["serien", "Serienbilder", { tab: "cln", bereich: "serien" }],
+    ["speicher", "Speicherfresser", { tab: "cln", bereich: "speicher" }],
+    ["qualitaet", "Unscharf & dunkel", { tab: "cln", bereich: "qualitaet" }],
+    ["verwaist", "Verwaiste Dateien", { tab: "cln", bereich: "verwaist" }],
+    ["papierkorb", "Papierkorb", { tab: "cln", bereich: "papierkorb" }]] },
+  { id: "ordnen", label: "Ordnen", icon: "tag", views: [
+    ["ort", "Ohne Ort", { tab: "loc" }],
+    ["zeit", "Falsche Zeit", { tab: "cln", bereich: "zeit" }],
+    ["tags", "Tags", { tab: "tags" }],
+    ["stapel", "Stapeln", { tab: "cln", bereich: "stapel" }]] },
+  { id: "alben", label: "Alben", icon: "album", views: [
+    ["reisen", "Reisen", { tab: "alb", quelle: "reisen" }],
+    ["ordner", "Ordner", { tab: "alb", quelle: "ordner" }],
+    ["albenpflege", "Alben aufräumen", { tab: "cln", bereich: "alben" }]] },
+  { id: "stage", label: "Vorgemerkt", icon: "list", views: [["stage", "Vorgemerkt", { tab: "stage" }]] },
+];
+const VIEWS = {};
+for (const sec of NAV) for (const [id, label, preset] of sec.views) VIEWS[id] = { id, label, preset, sec };
+VIEWS.set = { id: "set", label: "Einstellungen", preset: { tab: "set" }, sec: null };
+S.view = "dup";
+S.counts = {};
+S.lastView = {};
+
+function setCount(view, value) {
+  if (S.counts[view] === value) return;
+  S.counts[view] = value;
+  renderNav();
+}
+
+const badge = (value) => (value ? h("span", { class: "badge-n" }, value > 999 ? "999+" : String(value)) : null);
+const secCount = (sec) => sec.views.reduce((s, [id]) => s + (S.counts[id] || 0), 0);
+
+function renderNav() {
+  const cur = VIEWS[S.view] || VIEWS.dup;
+  const items = NAV.map((sec) => {
+    const active = cur.sec === sec;
+    const main = h("button", { type: "button", class: "nav-main", "aria-current": active ? "page" : null,
+      onclick: () => go(S.lastView[sec.id] || sec.views[0][0]) },
+    icon(sec.icon), h("span", { class: "nav-l" }, sec.label), badge(sec.id === "start" ? 0 : secCount(sec)));
+    const subs = sec.views.length > 1 ? h("div", { class: "nav-subs" }, ...sec.views.map(([id, label]) =>
+      h("button", { type: "button", class: "nav-sub", "aria-current": S.view === id ? "page" : null, onclick: () => go(id) },
+        h("span", {}, label), badge(S.counts[id])))) : null;
+    return h("div", { class: "nav-sec" + (active ? " active" : "") }, main, subs);
+  });
+  const set = h("button", { type: "button", class: "nav-main nav-set", "aria-current": S.view === "set" ? "page" : null, onclick: () => go("set") },
+    icon("gear"), h("span", { class: "nav-l" }, "Einstellungen"));
+  const brand = h("div", { class: "nav-brand" }, $(".brand .logo").cloneNode(true), "Immich-Pflege");
+  $("#mainnav").replaceChildren(brand, ...items, set);
+  const sub = $("#subnav");
+  if (cur.sec && cur.sec.views.length > 1) {
+    sub.hidden = false;
+    sub.replaceChildren(...cur.sec.views.map(([id, label]) =>
+      h("button", { type: "button", class: "sub-chip", "aria-current": S.view === id ? "page" : null, onclick: () => go(id) },
+        label, badge(S.counts[id]))));
+    const on = sub.querySelector('[aria-current="page"]');
+    if (on && on.scrollIntoView) on.scrollIntoView({ block: "nearest", inline: "nearest" });
+  } else {
+    sub.hidden = true;
+    sub.replaceChildren();
+  }
+  $("#page-title").textContent = !cur.sec ? cur.label : cur.sec.id === "start" ? "Immich-Pflege" : cur.sec.label;
+  $("#set-btn").setAttribute("aria-current", S.view === "set" ? "page" : "false");
+}
+
+function go(view, push = true) {
+  const v = VIEWS[view] || VIEWS.dup;
+  const p = v.preset;
+  let force = false;
+  if (p.bereich && S.cln.bereich !== p.bereich) { S.cln.bereich = p.bereich; S.cln.kategorie = null; S.cln.loaded = false; force = p.tab === S.tab; }
+  if (p.quelle && S.alb.quelle !== p.quelle) { S.alb.quelle = p.quelle; S.alb.loaded = false; force = p.tab === S.tab; }
+  const changed = S.view !== v.id;
+  S.view = v.id;
+  if (v.sec) S.lastView[v.sec.id] = v.id;
+  if (push && location.hash !== "#" + v.id) history.pushState(null, "", "#" + v.id);
+  try { localStorage.setItem("pflege-view", v.id); } catch (_) { /* egal */ }
+  renderNav();
+  if (changed) window.scrollTo(0, 0);
+  return showTab(p.tab, force);
+}
+
+let countsTimer = null;
+function loadCounts() {
   if (S.status && !S.status.eingerichtet) return;
-  for (const t of ["dup", "loc", "cln", "alb", "tags", "stage"]) if (t !== S.tab) loadTab(t).then(updateActionbar);
+  clearTimeout(countsTimer);
+  countsTimer = setTimeout(async () => {
+    try {
+      const r = await api("api/nav-counts");
+      for (const [k, value] of Object.entries(r)) if (value !== null) S.counts[k] = value;
+      renderNav();
+      if (r.reisen === null) setTimeout(loadCounts, 10000); // Alben werden noch gelesen
+    } catch (_) { /* Zähler sind nur Beiwerk */ }
+  }, 300);
 }
 
 /* ------------------------------------------------------------- Start */
-document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+$("#scan-btn").append(icon("scan"), h("span", { class: "btn-l" }, "Einlesen"));
+$("#set-btn").append(icon("gear"));
 $("#scan-btn").addEventListener("click", () => rescan());
+$("#set-btn").addEventListener("click", () => go("set"));
+window.addEventListener("popstate", () => go(location.hash.slice(1), false));
 $("#scan-full").addEventListener("click", (e) => rescan(true, e.currentTarget));
 $("#dup-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadDuplicates(false).finally(() => busy(e.currentTarget, false)); });
 $("#loc-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadLocation(false).finally(() => busy(e.currentTarget, false)); });
@@ -2672,9 +2779,6 @@ $("#loc-hours").addEventListener("change", (e) => {
   if (v > 0 && v <= 48) { S.loc.hours = v; loadTab("loc", true); } else { e.target.value = S.loc.hours; }
 });
 $("#cln-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadCleanup(false).finally(() => busy(e.currentTarget, false)); });
-document.querySelectorAll("#tab-alb .seg button").forEach((b) => b.addEventListener("click", () => {
-  S.alb.quelle = b.dataset.quelle; loadTab("alb", true);
-}));
 $("#alb-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadAlbums(false).finally(() => busy(e.currentTarget, false)); });
 $("#tags-reload").addEventListener("click", () => loadTab("tags", true));
 $("#smart-go").addEventListener("click", () => { const q = $("#smart-q").value.trim(); if (q) loadSmart({ suche: q }); });
@@ -2704,18 +2808,22 @@ if ("serviceWorker" in navigator) {
 }
 
 (async function init() {
-  let tab = "dup";
-  try { tab = localStorage.getItem("pflege-tab") || "dup"; } catch (_) { /* egal */ }
+  let view = location.hash.slice(1);
+  if (!VIEWS[view]) {
+    try { view = localStorage.getItem("pflege-view") || "start"; } catch (_) { view = "start"; }
+  }
+  renderNav();
   await loadStatus(true);
   loadVersion();
   setTimeout(loadVersion, 6000); // Ergebnis der Hintergrundprüfung abholen
   setInterval(loadVersion, 3600 * 1000);
   if (S.status && !S.status.eingerichtet) {
-    await showTab("set");
+    await go("set", false);
     return;
   }
-  await showTab(["ovw", "dup", "loc", "cln", "alb", "tags", "stage", "set"].includes(tab) ? tab : "dup");
-  // Nach dem ersten Laden (ggf. Einlesen) Status aktualisieren und Zähler der anderen Tabs holen
+  history.replaceState(null, "", "#" + (VIEWS[view] ? view : "start"));
+  await go(view, false);
+  // Nach dem ersten Laden (ggf. Einlesen) Status und Zähler fürs Menü holen
   loadStatus(false);
-  loadOtherCounts();
+  loadCounts();
 })();

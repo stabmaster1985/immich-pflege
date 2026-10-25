@@ -1,10 +1,10 @@
 # Vorgemerkt
 
-In der Oberfläche geht keine Änderung sofort an Immich. Was du in den Tabs **Duplikate**, **Ohne Ort**, **Aufräumen**, **Alben** oder **Tags** bestätigst, wird erst **vorgemerkt**. Gesammelt wird es im Tab **✓**.
+In der Oberfläche geht keine Änderung sofort an Immich. Was du unter **Aufräumen**, **Ordnen** oder **Alben** bestätigst, wird erst **vorgemerkt**. Gesammelt wird es im Menüpunkt **Vorgemerkt**, die Zahl daran zeigt, wie viel wartet.
 
 ## Ablauf
 
-1. **Vormerken:** In den Tabs wie gewohnt auswählen und bestätigen. Das Vorgemerkte verschwindet sofort aus der Übersicht, damit du mit dem Rest weitermachen kannst. In Immich ändert sich noch nichts.
+1. **Vormerken:** Wie gewohnt auswählen und bestätigen. Das Vorgemerkte verschwindet sofort aus der Übersicht, damit du mit dem Rest weitermachen kannst. In Immich ändert sich noch nichts.
 2. **Prüfen:** Unter **✓** steht jeder Eintrag mit Vorschaubildern:
    - Duplikate: grün umrandet ist das Bild, das bleibt. Darunter steht, wohin die Kopien gehen (Prüf-Album oder Papierkorb).
    - Orte: unter jedem Bild steht der neue Ort.

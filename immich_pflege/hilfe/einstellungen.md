@@ -15,7 +15,7 @@ Alle Einstellungen werden hier gemacht und in `data/einstellungen.json` gespeich
 
 Neue Fotos erscheinen im Tool erst nach dem Einlesen. Das geht **täglich** zu einer Uhrzeit oder **alle X Stunden**, in der gewählten Zeitzone und mit Sommer- und Winterzeit. Ein verpasster Termin, z. B. weil der Container aus war, wird nachgeholt. Schlägt das Einlesen fehl, versucht es das Tool nach 15 Minuten erneut.
 
-**Danach sichere Ortsvorschläge vormerken:** Nach jedem automatischen Einlesen landen die sicheren Ortsvorschläge unter **✓ Vorgemerkt**, als Eintrag „Automatisch …: sichere Orte“. Übertragen wird erst, wenn du es dort bestätigst. Dafür braucht es keinen n8n-Workflow mehr.
+**Danach sichere Ortsvorschläge vormerken:** Nach jedem automatischen Einlesen landen die sicheren Ortsvorschläge unter **Vorgemerkt**, als Eintrag „Automatisch …: sichere Orte“. Übertragen wird erst, wenn du es dort bestätigst. Dafür braucht es keinen n8n-Workflow mehr.
 
 ## Albumvorschläge
 

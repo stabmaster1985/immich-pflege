@@ -11,7 +11,7 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 | **Tags** | Fertige Vorschläge zum Abhaken (Länder, Kameras, Screenshots, WhatsApp) und Suche mit Immichs KI (Hund, Strand, Quittung …): erstes unpassendes Bild antippen, alles davor wird getaggt. Eigene Regeln für Sonderfälle. Tags werden nur ergänzt, nie entfernt. **Archivieren** nimmt Screenshots, WhatsApp-Bilder, Quittungen u. Ä. aus der Zeitleiste, ohne zu löschen. |
 | **Übersicht** | Kennzahlen je Benutzer, offene Aufgaben, Aufnahmen je Jahr, Erledigtes je Monat. Auf Wunsch wöchentlich als Nachricht per ntfy oder Telegram, dazu täglich „An diesem Tag“. |
 
-Alles startet als **Vorschau**. In der Oberfläche wird Bestätigtes zuerst nur **vorgemerkt** und verschwindet aus der Übersicht. Unter **✓ Vorgemerkt** prüfst du alles noch einmal und überträgst es dann per Klick an Immich. Jede Übertragung steht im **Verlauf** und lässt sich dort rückgängig machen (außer Orten, siehe Hilfe).
+Alles startet als **Vorschau**. In der Oberfläche wird Bestätigtes zuerst nur **vorgemerkt** und verschwindet aus der Übersicht. Unter **Vorgemerkt** prüfst du alles noch einmal und überträgst es dann per Klick an Immich. Jede Übertragung steht im **Verlauf** und lässt sich dort rückgängig machen (außer Orten, siehe Hilfe).
 
 **Alle Einstellungen und Regeln werden in der Oberfläche gemacht.** Dateien musst du nicht bearbeiten.
 
@@ -67,7 +67,7 @@ Gespeichert wird in `data/einstellungen.json`. Keys werden nie an den Browser zu
 
 **Anmeldung:** Ist ein Login gesetzt, erscheint eine Anmeldeseite. Mit „Angemeldet bleiben“ (vorausgewählt) gilt die Anmeldung 90 Tage und verlängert sich bei Benutzung von selbst, ohne Häkchen endet sie mit dem Browser (höchstens 12 h). Wer den Login in den Einstellungen setzt, bleibt dabei angemeldet. Ein neues Passwort meldet alle Geräte ab. Nach 5 Fehlversuchen ist die Anmeldung 5 Minuten gesperrt. **Abmelden** steht unter ⚙ Einstellungen → Zugang.
 
-Beim ersten Öffnen eines Tabs liest das Tool die Bibliothek ein, was bei großen Bibliotheken ein bis zwei Minuten dauert. Danach liegt sie zwischengespeichert in `data/bibliothek.json`. **Neu einlesen** gibt es als Button, per `pflege einlesen` oder über `POST /api/scan`.
+Beim ersten Öffnen liest das Tool die Bibliothek ein, was bei großen Bibliotheken ein bis zwei Minuten dauert. Danach liegt sie zwischengespeichert in `data/bibliothek.json`. **Neu einlesen** gibt es als Button, per `pflege einlesen` oder über `POST /api/scan`.
 
 **Automatisch einlesen:** Neue Fotos erscheinen erst nach dem Einlesen. Unter **⚙ Einstellungen → Automatisch einlesen** stellst du ein, ob das Tool das selbst erledigt: **täglich** zu einer Uhrzeit oder **alle X Stunden**. Die Zeitzone ist Europe/Berlin, wählbar, und berücksichtigt Sommer- und Winterzeit. War der Container zum geplanten Zeitpunkt aus, holt das Tool das Einlesen nach. Das nächste Einlesen steht in den Einstellungen und oben in der Statuszeile („auto 03:00“). Ab Werk ist es aus.
 
@@ -117,9 +117,19 @@ Alternativ startest du den Workflow per **Test workflow** oder, wenn aktiviert, 
 
 ## Oberfläche und Hilfe
 
-Tabs **Übersicht**, **Duplikate**, **Ohne Ort**, **Aufräumen**, **Alben**, **Tags**, **✓ Vorgemerkt** (mit Verlauf) und **⚙ Einstellungen**, unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet. Sie lässt sich **als App auf den Startbildschirm legen** (Safari: „Zum Home-Bildschirm“, Chrome: „App installieren“ – als eigenes Fenster nur über HTTPS).
+Das Menü ist nach Aufgaben sortiert. Auf dem Handy liegt es unten, am großen Bildschirm links, die Unterpunkte stehen dort direkt darunter bzw. auf dem Handy oben zum Wischen. Jeder Punkt zeigt, wie viel offen ist:
 
-**Jeder Tab hat oben ein „?“** mit einer ausführlichen Erklärung: wie Treffer und Vorschläge entstehen, nach welchen Kriterien bewertet wird und wo die Grenzen liegen. Dieselben Texte liegen im Repository:
+| Menü | Unterpunkte |
+|---|---|
+| **Start** | Kennzahlen und „Zu tun“ mit allen offenen Punkten zum Antippen |
+| **Aufräumen** | Duplikate, Serienbilder, Speicherfresser, Unscharf & dunkel, Verwaiste Dateien, Papierkorb |
+| **Ordnen** | Ohne Ort, Falsche Zeit, Tags, Stapeln |
+| **Alben** | Reisen, Ordner, Alben aufräumen |
+| **Vorgemerkt** | Vormerkliste und Verlauf mit Rückgängig |
+
+Oben rechts: **Einlesen** und **⚙ Einstellungen**. Jeder Punkt hat eine eigene Adresse (z. B. `…:2222/#serien`), der Zurück-Knopf funktioniert. Unten erscheint bei Bedarf eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet. Sie lässt sich **als App auf den Startbildschirm legen** (Safari: „Zum Home-Bildschirm“, Chrome: „App installieren“ – als eigenes Fenster nur über HTTPS).
+
+**Jede Seite hat oben ein „?“** mit einer ausführlichen Erklärung: wie Treffer und Vorschläge entstehen, nach welchen Kriterien bewertet wird und wo die Grenzen liegen. Dieselben Texte liegen im Repository:
 
 | Thema | Datei |
 |---|---|
@@ -277,7 +287,7 @@ curl $AUTH -X POST $B/api/tags/apply -H 'Content-Type: application/json' -d '{"r
 
 ### Automatisch ohne n8n
 
-Was früher ein nächtlicher n8n-Workflow erledigt hat, kann das Tool selbst: Unter **⚙ Einstellungen → Automatisch einlesen** täglich einlesen lassen und **„Danach sichere Ortsvorschläge vormerken“** anhaken. Morgens liegen die sicheren Orte unter **✓ Vorgemerkt** und warten auf deinen Blick.
+Was früher ein nächtlicher n8n-Workflow erledigt hat, kann das Tool selbst: Unter **⚙ Einstellungen → Automatisch einlesen** täglich einlesen lassen und **„Danach sichere Ortsvorschläge vormerken“** anhaken. Morgens liegen die sicheren Orte unter **Vorgemerkt** und warten auf deinen Blick.
 
 Auch der **Wochenbericht** braucht kein n8n: unter ⚙ Einstellungen → Wochenbericht ntfy oder Telegram eintragen.
 
