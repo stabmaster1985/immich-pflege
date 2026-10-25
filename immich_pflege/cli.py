@@ -112,16 +112,18 @@ def version(json_: bool = JsonOpt):
 
 
 @app.command()
-def einlesen(json_: bool = JsonOpt):
-    """Bibliothek aller Benutzer neu einlesen und zwischenspeichern."""
+def einlesen(json_: bool = JsonOpt,
+             komplett: bool = typer.Option(False, "--komplett", help="Alles neu einlesen statt nur Änderungen")):
+    """Bibliothek aller Benutzer einlesen (normalerweise nur die Änderungen seit dem letzten Mal)."""
     svc = _service()
     with err.status("Lese Bibliothek ein …"):
-        lib = _run(svc.scan)
+        lib = _run(lambda: svc.scan(full=komplett))
     counts = lib.counts()
     if json_:
         _emit_json({"stand": lib.scanned_at, "dauer_s": lib.duration_s, **counts})
         return
-    out.print(f"{counts['gesamt']} Medien in {lib.duration_s:.1f} s eingelesen")
+    out.print(f"{counts['gesamt']} Medien in {lib.duration_s:.1f} s eingelesen"
+              + (" (nur Änderungen)" if lib.incremental else " (vollständig)"))
     for user, c in counts["benutzer"].items():
         out.print(f"  {user}: {c['gesamt']} ({c['upload']} Uploads, {c['extern']} extern)")
     for w in lib.warnings:

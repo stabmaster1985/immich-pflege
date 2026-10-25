@@ -185,7 +185,7 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 |---|---|---|
 | GET | `/healthz` | Lebenszeichen (ohne Anmeldung) |
 | GET | `/api/status` | Version, Stand der Bibliothek, Schlüsselprüfung (`?server=false` ohne Immich-Abfrage) |
-| POST | `/api/scan` | Neu einlesen. `{"wait": false}` startet im Hintergrund (202) |
+| POST | `/api/scan` | Einlesen, normalerweise nur Änderungen. `{"full": true}` liest alles, `{"wait": false}` startet im Hintergrund (202) |
 | GET | `/api/duplicates` | Gruppen mit Mengen je Art und Monat. Parameter: `art`, `monat`, `benutzeruebergreifend`, `ignoriert`, `offset`, `limit`, `include_done` |
 | POST | `/api/duplicates/apply` | Aktion auf Gruppen (`groups`) oder alle offenen der Auswahl (`all` + `art`/`monat`/`benutzeruebergreifend`) |
 | POST | `/api/duplicates/ignore` | „Kein Duplikat“: `{"groups": [...]}`, mit `"undo": true` wieder aufnehmen |

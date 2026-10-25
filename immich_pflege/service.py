@@ -35,6 +35,7 @@ from .staging import StagingStore
 log = logging.getLogger(__name__)
 
 CONFIRM_TRASH = "PAPIERKORB"
+FULL_SCAN_EVERY = timedelta(days=7)  # sonst nur Änderungen einlesen
 
 
 class ActionError(ValueError):
@@ -121,14 +122,20 @@ class Pflege:
                 return self.scan()
             return self.cached_library() or self.scan()
 
-    def scan(self) -> Library:
+    def scan(self, full: bool = False) -> Library:
+        """Einlesen – normalerweise nur die Änderungen seit dem letzten Mal; vollständig, wenn
+        ``full``, beim ersten Mal oder wenn das letzte vollständige Einlesen eine Woche her ist."""
         if not self.clients:
             raise NotConfigured()
         with self._lock:
             self.scanning = True
+            previous = self.cached_library()
+            if previous and not full:
+                last_full = datetime.fromisoformat(previous.full_scan_at or previous.scanned_at)
+                full = datetime.now(last_full.tzinfo) - last_full > FULL_SCAN_EVERY
             try:
-                lib = scan_library(self.clients, self.settings.review_album, self.cached_library(),
-                                   read_album_contents=not self.background_albums)
+                lib = scan_library(self.clients, self.settings.review_album, previous,
+                                   read_album_contents=not self.background_albums, incremental=not full)
             except ImmichError as exc:
                 self.last_error = str(exc)
                 raise
@@ -156,7 +163,7 @@ class Pflege:
         with self._lock:
             if albums is not None:
                 lib.albums = albums
-                apply_album_membership(lib)
+                apply_album_membership(lib, recompute=lib.incremental)
             lib.albums_ready = True
             if self._lib is lib:
                 self._save()

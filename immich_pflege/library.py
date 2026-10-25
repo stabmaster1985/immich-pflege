@@ -8,7 +8,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +44,8 @@ class Library:
     immich_url: str = ""
     rev: int = 0  # Änderungszähler (nicht gespeichert): ungültig machen von Zwischenergebnissen
     albums_ready: bool = True  # False, solange die Album-Inhalte im Hintergrund gelesen werden
+    full_scan_at: str = ""  # letztes vollständiges Einlesen (sonst nur Änderungen)
+    incremental: bool = False  # dieses Einlesen holte nur Änderungen (nicht gespeichert)
     uid: int = field(default_factory=lambda: next(_UIDS))  # eindeutig je Einlesen (id() kann wiederkehren)
 
     def assets_of(self, user: str) -> list[Asset]:
@@ -71,6 +73,7 @@ class Library:
             "albums": self.albums,
             "warnings": self.warnings,
             "immich_url": self.immich_url,
+            "full_scan_at": self.full_scan_at,
         }
 
     @classmethod
@@ -88,6 +91,7 @@ class Library:
             albums=data.get("albums", {}),
             warnings=data.get("warnings", []),
             immich_url=data.get("immich_url", ""),
+            full_scan_at=data.get("full_scan_at") or data["scanned_at"],
         )
 
     def save(self, path: Path) -> None:
@@ -186,23 +190,34 @@ def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any
     return albums
 
 
-def apply_album_membership(lib: Library) -> None:
-    """Medien im Prüf-Album zählen nur als „im Album“, wenn sie noch in einem anderen Album liegen."""
+def apply_album_membership(lib: Library, recompute: bool = False) -> None:
+    """Medien im Prüf-Album zählen nur als „im Album“, wenn sie noch in einem anderen Album liegen.
+    ``recompute``: „im Album“ für alle Medien aus den gelesenen Alben bestimmen (beim Einlesen nur
+    der Änderungen, wo die Abfrage „in keinem Album“ entfällt)."""
     members: set[str] = set()
     for al in lib.albums.values():
         members.update(al["medien"])
     for a in lib.assets.values():
-        if a.in_review_album and a.in_album:
+        if recompute or (a.in_review_album and a.in_album):
             a.in_album = a.id in members
 
 
+INCREMENTAL_MARGIN = timedelta(hours=1)  # Überlappung, damit nichts zwischen zwei Läufen verloren geht
+
+
 def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: Library | None = None,
-                 read_album_contents: bool = True) -> Library:
+                 read_album_contents: bool = True, incremental: bool = False) -> Library:
     """Liest alle Assets, Album-Zugehörigkeit und Immich-Duplikate aller Benutzer ein.
 
     ``read_album_contents=False``: Album-Inhalte später lesen (siehe ``read_albums``); bis dahin
-    gelten die vom letzten Einlesen."""
+    gelten die vom letzten Einlesen.
+    ``incremental``: nur Medien holen, die sich seit ``previous`` geändert haben oder in den
+    Papierkorb gegangen sind; endgültig gelöschte findet erst das nächste vollständige Einlesen."""
     started = time.monotonic()
+    incremental = bool(incremental and previous and set(previous.users) == set(clients))
+    since = ""
+    if incremental:
+        since = (datetime.fromisoformat(previous.scanned_at) - INCREMENTAL_MARGIN).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     warnings: list[str] = []
     assets: dict[str, Asset] = {}
     users: dict[str, dict[str, Any]] = {}
@@ -227,18 +242,33 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
         own: dict[str, Asset] = {}
         skipped = 0
         t0 = time.monotonic()
-        for raw in client.search_metadata(withExif=True):
+        filters: dict[str, Any] = {"withExif": True}
+        if incremental:
+            own = {i: a for i, a in previous.assets.items() if a.owner == name}
+            filters["updatedAfter"] = since
+        changed = 0
+        for raw in client.search_metadata(**filters):
             # Partner-Freigaben liefern ggf. fremde Assets – nur eigene übernehmen.
             if raw.get("ownerId") and raw["ownerId"] != uid:
                 continue
             if raw.get("isTrashed") or raw.get("visibility") in IGNORED_VISIBILITY:
                 skipped += 1
+                own.pop(raw["id"], None)
                 continue
+            old = own.get(raw["id"])
             own[raw["id"]] = Asset.from_api(raw, name)
+            if old is not None:
+                own[raw["id"]].in_album = old.in_album
+            changed += 1
+        if incremental:
+            for raw in client.search_metadata(withDeleted=True, trashedAfter=since):
+                if raw.get("isTrashed") and own.pop(raw["id"], None) is not None:
+                    skipped += 1
         t_media = time.monotonic() - t0
 
         t0 = time.monotonic()
-        not_in_album = client.search_ids(isNotInAlbum=True)
+        # Beim Einlesen nur der Änderungen ergibt sich „im Album“ aus den gelesenen Alben
+        not_in_album = None if incremental else client.search_ids(isNotInAlbum=True)
         album_id = find_review_album(client, review_album)
         review_albums[name] = album_id
         review_members: set[str] = set()
@@ -246,7 +276,8 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
             review_members = client.search_ids(albumIds=[album_id]) & own.keys()
 
         for aid, asset in own.items():
-            asset.in_album = aid not in not_in_album
+            if not_in_album is not None:
+                asset.in_album = aid not in not_in_album
             asset.in_review_album = aid in review_members
         t_album = time.monotonic() - t0
 
@@ -267,8 +298,8 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
                 suggested_keep=list(d.get("suggestedKeepAssetIds") or []),
             ))
 
-        log.info("%s: %d Medien (%d ignoriert: Papierkorb/versteckt) – Medien %.1f s, Album-Zugehörigkeit %.1f s",
-                 name, len(own), skipped, t_media, t_album)
+        log.info("%s: %d Medien (%s, %d ignoriert: Papierkorb/versteckt) – Medien %.1f s, Album-Zugehörigkeit %.1f s",
+                 name, len(own), f"{changed} geändert" if incremental else "vollständig", skipped, t_media, t_album)
         assets.update(own)
 
     skip = {a for a in review_albums.values() if a}
@@ -278,9 +309,12 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
         albums = {k: v for k, v in (previous.albums if previous else {}).items() if k not in skip}
 
     duration = round(time.monotonic() - started, 2)
-    log.info("Einlesen fertig: %d Medien in %.1f s", len(assets), duration)
+    log.info("Einlesen fertig (%s): %d Medien in %.1f s", "nur Änderungen" if incremental else "vollständig",
+             len(assets), duration)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     lib = Library(
-        scanned_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        scanned_at=now,
+        full_scan_at=previous.full_scan_at if incremental else now,
         duration_s=duration,
         server_version=server_version,
         users=users,
@@ -290,6 +324,7 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
         albums=albums,
         warnings=warnings,
         albums_ready=read_album_contents,
+        incremental=incremental,
     )
-    apply_album_membership(lib)
+    apply_album_membership(lib, recompute=incremental)
     return lib

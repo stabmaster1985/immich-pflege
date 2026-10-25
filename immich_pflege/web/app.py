@@ -46,6 +46,7 @@ OPEN_PREFIXES = ("/static/",)
 
 class ScanRequest(BaseModel):
     wait: bool = True
+    full: bool = False  # vollständig statt nur Änderungen
 
 
 class GroupSelection(BaseModel):
@@ -327,16 +328,16 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
 
             def run():
                 try:
-                    service.scan()
+                    service.scan(full=body.full)
                 except ImmichError as exc:
                     log.error("Einlesen fehlgeschlagen: %s", exc)
 
             app.state.scan_thread = threading.Thread(target=run, daemon=True)
             app.state.scan_thread.start()
             return JSONResponse({"gestartet": True}, 202)
-        lib = service.scan()
-        return {"stand": lib.scanned_at, "dauer_s": lib.duration_s, **lib.counts(),
-                "warnungen": lib.warnings}
+        lib = service.scan(full=body.full)
+        return {"stand": lib.scanned_at, "dauer_s": lib.duration_s, "nur_aenderungen": lib.incremental,
+                **lib.counts(), "warnungen": lib.warnings}
 
     # ------------------------------------------------------------ Anmeldung
     @app.get("/login", include_in_schema=False)

@@ -15,7 +15,7 @@ import json
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from itertools import count
 from pathlib import Path
 from typing import Any
@@ -25,6 +25,11 @@ from fastapi.responses import JSONResponse, Response
 
 TEMPLATE = json.loads((Path(__file__).parent / "fixtures" / "asset_response.json").read_text())
 _ids = count(1)
+
+
+def now_iso() -> str:
+    """Wie Immichs updatedAt; mit Mikrosekunden, damit Änderungen kurz nacheinander unterscheidbar sind."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def new_id() -> str:
@@ -85,7 +90,10 @@ class MockState:
             "checksum": checksum or base64.b64encode(uuid.uuid4().bytes[:15]).decode(),
             "duplicateId": duplicate_id,
             "duration": duration,
+            "updatedAt": now_iso(),
         })
+        if trashed:
+            a["_trashedAt"] = a["updatedAt"]
         a["exifInfo"].update({
             "latitude": lat, "longitude": lon, "city": city, "country": country,
             "state": None if lat is None else (region or a["exifInfo"]["state"]),
@@ -244,6 +252,10 @@ def create_app(state: MockState) -> FastAPI:
         if size > 1000:
             return JSONResponse({"message": ["size must not be greater than 1000"]}, 400)
         items = list(visible(user, body.get("withDeleted", False)))
+        if body.get("updatedAfter"):
+            items = [a for a in items if a["updatedAt"] > body["updatedAfter"]]
+        if body.get("trashedAfter"):
+            items = [a for a in items if a["isTrashed"] and a.get("_trashedAt", "") > body["trashedAfter"]]
         if body.get("isNotInAlbum"):
             items = [a for a in items if not a["_albums"]]
         if body.get("albumIds"):
@@ -391,6 +403,7 @@ def create_app(state: MockState) -> FastAPI:
                 del state.assets[aid]
             else:
                 a["isTrashed"] = True
+                a["_trashedAt"] = a["updatedAt"] = now_iso()
         return Response(status_code=204)
 
     @app.put("/api/assets", status_code=204)
@@ -403,6 +416,7 @@ def create_app(state: MockState) -> FastAPI:
             a = state.assets.get(aid)
             if a is None or a["ownerId"] != user["id"]:
                 raise HTTPException(400, "Not found or no asset.update access")
+            a["updatedAt"] = now_iso()
             if "latitude" in body:
                 a["exifInfo"]["latitude"] = body["latitude"]
                 a["exifInfo"]["longitude"] = body["longitude"]
@@ -424,6 +438,7 @@ def create_app(state: MockState) -> FastAPI:
             a = state.assets.get(aid)
             if a and a["ownerId"] == user["id"] and a["isTrashed"]:
                 a["isTrashed"] = False
+                a["updatedAt"] = now_iso()
                 n += 1
         return {"count": n}
 

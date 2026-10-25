@@ -201,13 +201,12 @@ async function loadStatus(server = true) {
   }
 }
 
-async function rescan() {
-  const btn = $("#scan-btn");
+async function rescan(full = false, btn = $("#scan-btn")) {
   busy(btn, true);
   try {
-    const r = await api("api/scan", { method: "POST", body: { wait: true } });
-    toast(`${r.gesamt} Medien in ${r.dauer_s.toFixed(1).replace(".", ",")} s eingelesen`);
-    S.dup.loaded = S.loc.loaded = S.alb.loaded = S.tags.loaded = false;
+    const r = await api("api/scan", { method: "POST", body: { wait: true, full } });
+    toast(`${r.gesamt} Medien in ${r.dauer_s.toFixed(1).replace(".", ",")} s eingelesen` + (r.nur_aenderungen ? " (nur Änderungen)" : " (vollständig)"));
+    S.dup.loaded = S.loc.loaded = S.alb.loaded = S.tags.loaded = S.cln.loaded = S.ovw.loaded = false;
     await loadStatus(false);
     await loadTab(S.tab, true);
     loadOtherCounts();
@@ -2463,7 +2462,8 @@ function loadOtherCounts() {
 
 /* ------------------------------------------------------------- Start */
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
-$("#scan-btn").addEventListener("click", rescan);
+$("#scan-btn").addEventListener("click", () => rescan());
+$("#scan-full").addEventListener("click", (e) => rescan(true, e.currentTarget));
 $("#dup-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadDuplicates(false).finally(() => busy(e.currentTarget, false)); });
 $("#loc-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadLocation(false).finally(() => busy(e.currentTarget, false)); });
 $("#dup-done").addEventListener("change", (e) => { S.dup.includeDone = e.target.checked; loadTab("dup", true); });
