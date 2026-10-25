@@ -11,6 +11,7 @@ ein kleines Wörterbuch ``{"op": …, "user": …, …}``, ausgeführt mit dem K
 - ``zeit``             {ids, minuten}     Aufnahmezeit zurückverschieben
 - ``stapel_aufloesen`` {stack, ids}       angelegten Stapel wieder auflösen
 - ``album_hinzufuegen`` {album, ids}      wieder ins Album legen
+- ``album_wiederherstellen`` {name, rollen, medien}  gelöschtes Album neu anlegen (mit Inhalt und Freigaben)
 """
 
 from __future__ import annotations
@@ -111,6 +112,13 @@ def undo_ops(lib: Library | None, clients: dict[str, ImmichClient], ops: list[di
     """Rückgängig-Schritte in umgekehrter Reihenfolge ausführen. Liefert Fehlermeldungen."""
     errors: list[str] = []
     for op in reversed(ops):
+        if op["op"] == "album_wiederherstellen":  # braucht die Keys mehrerer Benutzer
+            from .albumcare import restore_album
+            try:
+                restore_album(lib, clients, op)
+            except (ImmichError, KeyError) as exc:
+                errors.append(f"Album „{op['name']}“ nicht wiederhergestellt: {exc}")
+            continue
         client = clients.get(op["user"])
         if client is None:
             errors.append(f"Kein API-Key mehr für {op['user']}")

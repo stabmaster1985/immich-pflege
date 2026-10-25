@@ -15,7 +15,7 @@ from typing import Any, Iterable
 
 log = logging.getLogger(__name__)
 
-TYPES = ("duplikat", "aufraeumen", "stapel", "zeit", "ort", "album", "tag")
+TYPES = ("duplikat", "aufraeumen", "stapel", "zeit", "ort", "album", "albenpflege", "tag")
 SAMPLES = 8
 
 

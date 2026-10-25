@@ -1521,12 +1521,13 @@ async function openHelp(topic) {
 
 /* ---------------------------------------------------------- Aufräumen */
 const PAGE_CLN = 30;
-const CLN_BEREICHE = { speicher: "Speicherfresser", serien: "Serienbilder", qualitaet: "Unscharf & dunkel", zeit: "Falsche Zeit", stapel: "Stapeln aus Alben", papierkorb: "Papierkorb" };
+const CLN_BEREICHE = { speicher: "Speicherfresser", serien: "Serienbilder", qualitaet: "Unscharf & dunkel", zeit: "Falsche Zeit", stapel: "Stapeln aus Alben", alben: "Alben aufräumen", papierkorb: "Papierkorb" };
 
 async function loadCleanup(reset) {
   const c = S.cln;
   if (c.bereich === "papierkorb") return loadTrash();
   if (c.bereich === "stapel") return loadStacks();
+  if (c.bereich === "alben") return loadAlbumCare();
   if (reset) { c.items = []; c.sel.clear(); c.keep = {}; c.edit = {}; $("#cln-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
   const isTime = c.bereich === "zeit";
   const params = new URLSearchParams({ offset: c.items.length, limit: PAGE_CLN, ignoriert: c.ignored });
@@ -1574,7 +1575,7 @@ function renderCleanupFilters(r, time) {
       : !r.arten[k] ? v  // Papierkorb und Stapeln: Zahlen erst beim Öffnen
         : `${v} (${r.arten[k].anzahl}${r.arten[k].groesse ? ", " + fmtBig(r.arten[k].groesse) : ""})`)));
   area.value = c.bereich;
-  const cats = ["papierkorb", "stapel"].includes(c.bereich) ? [] : c.bereich === "zeit"
+  const cats = ["papierkorb", "stapel", "alben"].includes(c.bereich) ? [] : c.bereich === "zeit"
     ? Object.entries(time.arten).map(([k, v]) => [k, { name: time.namen[k], anzahl: v }])
     : Object.entries(r.kategorien).filter(([, v]) => v.art === c.bereich);
   const cat = h("select", { onchange: (e) => { c.kategorie = e.target.value || null; loadTab("cln", true); } },
@@ -1714,6 +1715,66 @@ async function stageCleanup(action, items, btn) {
   } catch (e) {
     toast(e.message, true);
   } finally { busy(btn, false); }
+}
+
+/* ------------------------------------------------------- Alben aufräumen */
+async function loadAlbumCare() {
+  const c = S.cln;
+  c.items = []; c.sel.clear(); c.target = c.target || {}; c.delRest = c.delRest || {};
+  $("#cln-list").replaceChildren(h("p", { class: "empty" }, "Lade …"));
+  const [r, counts, time] = await Promise.all([api("api/album-care?ausgeblendet=" + c.ignored), api("api/cleanup?limit=0"), api("api/timefix?limit=0")]);
+  renderCleanupFilters(counts, time);
+  c.loaded = true; c.info = r; $("#cln-more").hidden = true;
+  if (r.laedt) { $("#cln-list").replaceChildren(h("div", { class: "banner warn" }, "Die Alben werden gerade gelesen – gleich noch einmal versuchen.")); return; }
+  c.items = r.eintraege;
+  $("#cln-summary").textContent = Object.values(r.arten).filter((a) => a.anzahl).map((a) => `${a.anzahl}× ${a.name}`).join(" · ") || "";
+  $("#cln-list").replaceChildren(...(c.items.length ? c.items.map(renderCareItem)
+    : [h("p", { class: "empty" }, c.ignored ? "Nichts ausgeblendet." : "Alle Alben in Ordnung 🎉")]));
+  updateActionbar();
+}
+
+function renderCareItem(it) {
+  const c = S.cln;
+  const merge = it.alben.length > 1;
+  const target = c.target[it.id] || it.ziel;
+  const card = h("article", { class: "card" });
+  card.append(h("div", { class: "card-head" }, h("span", { class: "chip" }, it.art_text),
+    h("button", { type: "button", class: "btn small edit", onclick: () => keepCleanup(it, c.ignored) }, c.ignored ? "Wieder zeigen" : "Passt so")),
+    h("div", { class: "muted small" }, it.grund));
+  for (const al of it.alben) {
+    const row = h("div", { class: "care-album" + (merge && al.id === target ? " target" : "") },
+      h("div", { class: "care-title" },
+        merge ? h("input", { type: "radio", name: "ziel-" + it.id, checked: al.id === target, "aria-label": "Ziel-Album",
+          onchange: () => { c.target[it.id] = al.id; card.replaceWith(renderCareItem(it)); } }) : null,
+        h("b", {}, `„${al.name}“`), h("span", { class: "muted" }, ` ${al.besitzer}${al.geteilt_mit.length ? ", geteilt mit " + al.geteilt_mit.join(", ") : ""} · ${n(al.anzahl, "Medium", "Medien")} `),
+        albumLinks(al),
+        merge && al.id === target ? h("span", { class: "chip ok" }, "Ziel") : null),
+      al.beispiele.length ? h("div", { class: "strip" }, al.beispiele.map((m) => thumb(m))) : null);
+    card.append(row);
+  }
+  if (!c.ignored) {
+    const actions = h("div", { class: "row-gap", style: "margin-top:8px" });
+    if (merge) {
+      const del = c.delRest[it.id] !== false;
+      actions.append(
+        h("button", { type: "button", class: "btn small primary", onclick: (e) => stageCare(it, "zusammenfuehren", e.currentTarget) }, "Zusammenführen"),
+        h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: del, onchange: (e) => { c.delRest[it.id] = e.target.checked; } }), "die anderen danach löschen"));
+    } else {
+      actions.append(h("button", { type: "button", class: "btn small danger", onclick: (e) => stageCare(it, "loeschen", e.currentTarget) }, "Album löschen"));
+    }
+    card.append(actions);
+  }
+  return card;
+}
+
+async function stageCare(it, aktion, btn) {
+  const c = S.cln;
+  busy(btn, true);
+  try {
+    await api("api/staged/album-care", { method: "POST", body: { id: it.id, aktion, ziel: c.target[it.id] || it.ziel, loeschen: c.delRest[it.id] !== false } });
+    toast(aktion === "loeschen" ? "Löschen vorgemerkt – die Fotos bleiben in Immich" : "Zusammenführen vorgemerkt");
+    await afterStage("cln");
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
 }
 
 /* ------------------------------------------------------------- Stapeln */
@@ -1911,7 +1972,7 @@ function yearChart(years) {
   return h("div", {}, h("div", { class: "muted small" }, `meiste Aufnahmen: ${peak.jahr} (${max.toLocaleString("de-DE")})`), wrap, tip);
 }
 
-const DONE_LABEL = { duplikat: "Duplikate", aufraeumen: "Aufgeräumt", stapel: "Gestapelt", zeit: "Zeit", ort: "Verortet", album: "In Alben", tag: "Getaggt", papierkorb: "Wiederhergestellt" };
+const DONE_LABEL = { duplikat: "Duplikate", aufraeumen: "Aufgeräumt", stapel: "Gestapelt", albenpflege: "Alben", zeit: "Zeit", ort: "Verortet", album: "In Alben", tag: "Getaggt", papierkorb: "Wiederhergestellt" };
 function doneTable(rows) {
   const keys = Object.keys(DONE_LABEL).filter((k) => rows.some((r) => r[k]));
   return h("table", { class: "tbl" },
@@ -2142,7 +2203,7 @@ async function ignoreTrip(t, undo) {
 }
 
 /* -------------------------------------------------------- Vorgemerkt */
-const STAGE_TYPES = [["duplikat", "Duplikate"], ["aufraeumen", "Aufräumen"], ["stapel", "Stapel"], ["zeit", "Aufnahmezeit"], ["ort", "Orte"], ["album", "Alben"], ["tag", "Tags"]];
+const STAGE_TYPES = [["duplikat", "Duplikate"], ["aufraeumen", "Aufräumen"], ["stapel", "Stapel"], ["albenpflege", "Alben aufräumen"], ["zeit", "Aufnahmezeit"], ["ort", "Orte"], ["album", "Alben"], ["tag", "Tags"]];
 const STAGE_ACTION = { papierkorb: "Papierkorb", album: "Prüf-Album", keine: "–" };
 
 // Nach dem Vormerken: Quelle neu laden (Vorgemerktes ist dort weg) und Zähler aktualisieren
@@ -2188,6 +2249,7 @@ async function undoHistory(e, btn) {
       zeit: "Die Aufnahmezeit wird wieder zurückverschoben.",
       aufraeumen: "Medien kommen aus dem Papierkorb zurück bzw. wieder aus dem Prüf-Album heraus.",
       stapel: "Die Stapel werden aufgelöst; aus dem Album genommene Fotos kommen wieder hinein.",
+      albenpflege: "Hinzugefügte Fotos kommen wieder heraus, Freigaben werden zurückgenommen, gelöschte Alben mit Inhalt neu angelegt.",
     }[e.typ] || "")],
     okLabel: "Rückgängig",
   });
@@ -2255,7 +2317,7 @@ function renderStaged() {
   updateActionbar();
 }
 
-const STAGE_SOURCE = { duplikat: "dup", aufraeumen: "cln", stapel: "cln", zeit: "cln", ort: "loc", album: "alb", tag: "tags" };
+const STAGE_SOURCE = { duplikat: "dup", aufraeumen: "cln", stapel: "cln", albenpflege: "cln", zeit: "cln", ort: "loc", album: "alb", tag: "tags" };
 
 async function unstage(e, btn) {
   busy(btn, true);
@@ -2339,6 +2401,8 @@ function updateActionbar() {
     }
   } else if (S.tab === "ovw") {
     info.textContent = "Stand der Bibliothek";
+  } else if (S.tab === "cln" && S.cln.bereich === "alben") {
+    info.textContent = S.cln.ignored ? "Ausgeblendete Einträge" : "Pro Eintrag zusammenführen oder löschen";
   } else if (S.tab === "cln" && S.cln.bereich === "stapel") {
     const c = S.cln;
     const chosen = c.items.filter((p) => c.sel.has(p.id));

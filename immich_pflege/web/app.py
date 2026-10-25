@@ -105,6 +105,13 @@ class TagsApply(BaseModel):
     rules: Optional[list[str]] = None
 
 
+class AlbumCareStage(BaseModel):
+    id: str
+    aktion: Literal["zusammenfuehren", "loeschen"]
+    ziel: Optional[str] = None
+    loeschen: bool = True  # beim Zusammenführen die übrigen Alben löschen
+
+
 class StackStage(BaseModel):
     album: str
     ids: Optional[list[str]] = None  # ohne = alle Vorschläge
@@ -609,6 +616,14 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/suggestions/hide")
     def suggestions_hide(body: SuggestionHide):
         return svc().hide_suggestions(body.ids, body.undo)
+
+    @app.get("/api/album-care")
+    def album_care(ausgeblendet: bool = False):
+        return svc().album_care_view(ausgeblendet)
+
+    @app.post("/api/staged/album-care")
+    def stage_album_care(body: AlbumCareStage):
+        return svc().stage_album_care(body.id, body.aktion, body.ziel, body.loeschen)
 
     @app.get("/api/stacks")
     def stacks(album: Optional[str] = None, ganz: bool = False):

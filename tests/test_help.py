@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from immich_pflege import albums, cleanup, duplicates, imagehash, location, stacking, suggestions, timefix
+from immich_pflege import albumcare, albums, cleanup, duplicates, imagehash, location, stacking, suggestions, timefix
 from immich_pflege.web.app import HELP, HELP_TOPICS, create_app
 
 
@@ -42,6 +42,7 @@ def test_help_matches_code():
     assert timefix.MATCH_MIN == 10 and "10 Minuten" in cln and timefix.MIN_SHARE == 0.5
     assert stacking.PAIR_GAP_S == stacking.BURST_GAP_S == 2 and "höchstens 2 Sekunden" in cln
     assert stacking.SIMILAR_GAP_S == 60 and "höchstens 60 Sekunden" in cln
+    assert albumcare.OVERLAP == 0.9 and "**90 %**" in cln and albumcare.MINI_MAX == 2 and "1–2 Medien" in cln
     tags = (HELP / "tags.md").read_text()
     assert suggestions.MIN_COUNTRY == 10 and "ab 10 Fotos" in tags and suggestions.MIN_CAMERA == 30 and "ab 30 Medien" in tags
     assert suggestions.SMART_SIZE == 120 and "bis zu 120" in tags

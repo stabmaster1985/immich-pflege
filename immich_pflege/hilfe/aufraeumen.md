@@ -57,6 +57,21 @@ Schon gestapelte Fotos bleiben außen vor. Serienbilder lassen sich auch unter *
 
 Seit Immich 3.3 werden Bearbeitungen vom Handy automatisch gestapelt. Liegen Original und Bearbeitung schon in einem Stapel, zeigt sie die Duplikat-Suche nicht mehr an.
 
+## Alben aufräumen
+
+Findet unter euren Alben (beide Benutzer, eigene und geteilte):
+
+| Art | Wann |
+|---|---|
+| **Gleicher Name** | z. B. bei dir und Julia je ein „Toskana 2024“ (Groß-/Kleinschreibung und Leerzeichen egal) |
+| **Fast gleicher Inhalt** | das kleinere Album liegt zu mindestens **90 %** im größeren |
+| **Leer** | Album ohne Medien |
+| **Nur 1–2 Medien** | Mini-Alben, oft aus Versehen angelegt |
+
+**Zusammenführen:** Das markierte **Ziel**-Album (antippen zum Ändern) bekommt alle Fotos der anderen. Hat der andere Benutzer noch keinen Zugriff, teilt der Besitzer es mit ihm. Jeder legt seine eigenen Fotos hinein. Mit **die anderen danach löschen** verschwinden die übrigen Alben, die Fotos selbst bleiben natürlich erhalten.
+
+**Album löschen** entfernt nur das Album, nie die Fotos. **Passt so** blendet einen Eintrag aus. **Rückgängig** im Verlauf legt gelöschte Alben mit Inhalt und Freigaben neu an. Das neue Album bekommt eine neue Adresse, geteilte Links auf das alte funktionieren danach nicht mehr.
+
 ## Papierkorb
 
 Zeigt, was bei euch beiden im Immich-Papierkorb liegt, mit Größe. Bei Medien, die das Tool selbst verschoben hat, steht auch, ab wann Immich sie **endgültig löscht** (Einstellung „Papierkorb“ in Immich, meist 30 Tage). Antippen und **Wiederherstellen**, oder alles auf einmal. Wiederhergestellte Medien erscheinen nach dem nächsten **Neu einlesen** wieder in den Listen.

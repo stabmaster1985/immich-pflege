@@ -712,6 +712,8 @@ def full_state() -> MockState:
     s.add_album("frank", "Zum Stapeln", stapel)
     for i, u in enumerate(["frank", "julia", "frank", "julia", "frank", "julia"]):
         s.add_asset(u, f"IMG_H{i}.HEIC", f"2024-09-1{i}T10:00:00.000Z", motiv="dog", image=f"hund{i}")
+    s.add_album("frank", "Toskana 2024", s.toskana[:4])  # Julia hat auch eins -> doppelt
+    s.add_album("julia", "Neues Album")
     return s
 
 

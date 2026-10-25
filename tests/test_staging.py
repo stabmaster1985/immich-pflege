@@ -54,7 +54,7 @@ def test_stage_locations_and_apply_all(web, state):
     web.post("/api/staged/duplicates", json={"action": "papierkorb", "groups": [{"id": gid}]})
 
     st = web.get("/api/staged").json()
-    assert st["nach_typ"] == {"duplikat": 1, "aufraeumen": 0, "stapel": 0, "zeit": 0, "ort": 2, "album": 0, "tag": 0} and st["medien"] == 4
+    assert {k: v for k, v in st["nach_typ"].items() if v} == {"duplikat": 1, "ort": 2} and st["medien"] == 4
 
     # Papierkorb steckt drin -> Bestätigung nötig (hier: Julias Favorit bleibt, Franks Kopie
     # ist anderer Benutzer -> Prüf-Album, also kein Papierkorb)
