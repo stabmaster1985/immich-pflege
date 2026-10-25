@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 
 from . import __version__
-from .albums import STATUS as ALBUM_STATUS, AlbumError, TripIgnoreList, execute_plan, overlaps, plan_title, plan_trip, suggest
+from .albums import STATUS as ALBUM_STATUS, AlbumError, Home, TripIgnoreList, execute_plan, overlaps, plan_title, plan_trip, suggest
 from .client import ImmichClient, ImmichError
 from .config import Settings
 from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, IgnoreList, PlannedStep,
@@ -811,10 +811,13 @@ class Pflege:
         """Reisen ohne vorgemerkte; ``ignored`` = als „kein Album“ markiert."""
         lib = self.library()
         # Berechnung nur neu, wenn sich Bibliothek, Alben oder Einstellungen geändert haben
-        key = (id(lib), lib.rev, self.settings.album_min_km, self.settings.album_min_media)
+        manual = [Home(h["breite"], h["laenge"], h["name"], 0, manual=True) for h in self.settings.album_home]
+        key = (id(lib), lib.rev, self.settings.album_min_km, self.settings.album_min_media,
+               tuple((h.latitude, h.longitude) for h in manual))
         with self._calc_lock:
             if not self._trips_cache or self._trips_cache[0] != key:
-                self._trips_cache = (key, suggest(lib, self.settings.album_min_km, self.settings.album_min_media))
+                self._trips_cache = (key, suggest(lib, self.settings.album_min_km, self.settings.album_min_media,
+                                                  homes=manual or None))
             homes, trips = self._trips_cache[1]
         staged = self.staging.id_sets("album")
         ignore = self.album_ignore_list()

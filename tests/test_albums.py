@@ -160,3 +160,14 @@ def test_albums_read_in_background(env, http, state):
     lib.albums_ready = False
     svc._albums_thread = None
     assert svc.albums_view() == {"laedt": True, "stand": lib.scanned_at}
+
+
+def test_manual_home(web):
+    home = [{"name": "Oer-Erkenschwick", "breite": 51.64, "laenge": 7.25}, {"name": "Hamburg", "breite": 53.55, "laenge": 9.99}]
+    assert web.put("/api/settings", json={"album_home": home}).status_code == 200
+    r = web.get("/api/album-suggestions").json()
+    assert [z["name"] for z in r["zuhause"]] == ["Oer-Erkenschwick", "Hamburg"] and r["zuhause"][0]["von_hand"]
+    assert web.put("/api/settings", json={"album_home": [{"name": "x"}]}).status_code == 422
+    web.put("/api/settings", json={"album_home": []})
+    assert web.get("/api/album-suggestions").json()["zuhause"][0] == {
+        "name": "Hamburg", "tage": 122, "von_hand": False, "breite": 53.55, "laenge": 9.99}

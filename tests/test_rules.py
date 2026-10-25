@@ -20,9 +20,10 @@ def errors_of(text, users=("frank", "julia")):
 
 def test_example_file_is_valid():
     rules = load_rules(EXAMPLE, ["frank", "julia"])
-    assert len(rules) == 6
+    assert len(rules) == 7
     assert rules[0].tags == ["Reisen/Italien/2024"]
-    assert not rules[4].aktiv and rules[4].benutzer == ["julia"]
+    assert rules[1].land == ["italien"]
+    assert not rules[5].aktiv and rules[5].benutzer == ["julia"]
 
 
 def test_yaml_syntax_error_has_line():
@@ -179,4 +180,14 @@ def test_save_rejects_broken_and_keeps_file(tmp_path):
 
 def test_example_rules_are_inactive():
     ex = example_rules()
-    assert len(ex) == 6 and all(r["aktiv"] is False for r in ex)
+    assert len(ex) == 7 and all(r["aktiv"] is False for r in ex)
+
+
+def test_place_conditions(state, clients):
+    lib = scan_library(clients, "Duplikat-Prüfung")
+    rules = parse_rules("regeln:\n  - name: Italien\n    tag: Reisen/Italien\n    land: ITALIEN\n"
+                            "  - name: Siena\n    tag: Orte/Siena\n    ort: [Siena, Florenz]\n    region: Toskana\n", ["frank", "julia"])
+    res = {r["name"]: r for r in preview(rules, lib, Resolver(clients))}
+    with_country = sum(1 for a in lib.assets.values() if a.country == "Italien")
+    assert res["Italien"]["treffer"] == with_country > 0
+    assert res["Siena"]["treffer"] == sum(1 for a in lib.assets.values() if a.city in ("Siena", "Florenz"))

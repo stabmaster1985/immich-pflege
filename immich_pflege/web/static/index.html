@@ -192,7 +192,11 @@
               <input type="number" id="set-alb-min" min="3" max="1000" step="1" inputmode="numeric">
             </label>
           </div>
-          <small>Zuhause erkennt das Tool selbst: der Ort mit den meisten Aufnahmetagen.</small>
+          <div class="f">Zuhause <small>leer = automatisch: der Ort mit den meisten Aufnahmetagen</small>
+            <div id="set-homes" class="row-gap"></div>
+            <input type="search" id="set-home-q" placeholder="Ort suchen, z. B. Oer-Erkenschwick" autocomplete="off">
+            <div id="set-home-results" class="place-results"></div>
+          </div>
         </fieldset>
         <fieldset class="card">
           <legend>Fotos ohne Ort</legend>
@@ -261,6 +265,11 @@
       <label class="f">Album <small>exakter Name; mehrere mit Komma = in allen</small><input type="text" id="r-album"></label>
       <label class="f">Person <small>exakter Name; mehrere mit Komma = alle im Bild</small><input type="text" id="r-person"></label>
       <label class="f">Kamerahersteller <small>z. B. Apple, SONY</small><input type="text" id="r-hersteller"></label>
+      <label class="f">Land <small>laut Immichs Ortsdaten, mehrere mit Komma = eines davon</small><input type="text" id="r-land"></label>
+      <div class="two">
+        <label class="f">Region <small>z. B. Toskana</small><input type="text" id="r-region"></label>
+        <label class="f">Ort <small>z. B. Siena</small><input type="text" id="r-ort"></label>
+      </div>
       <details>
         <summary>Erweitert: Muster (reguläre Ausdrücke)</summary>
         <label class="f">Kameramodell <small>z. B. ^iPhone 15</small><input type="text" id="r-modell" autocapitalize="off" spellcheck="false"></label>

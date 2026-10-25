@@ -19,7 +19,8 @@ from .models import Asset
 log = logging.getLogger(__name__)
 
 BEDINGUNGEN = ("pfad", "dateiname", "von", "bis", "album", "person", "hersteller", "modell",
-               "bibliothek", "typ")
+               "bibliothek", "typ", "land", "region", "ort")
+ORTSFELDER = {"land": "country", "region": "state", "ort": "city"}  # Bedingung -> Feld aus Immichs Ortsdaten
 ERLAUBT = ("name", "tag", "tags", "benutzer", "aktiv", *BEDINGUNGEN)
 SAMPLE = 12
 
@@ -59,6 +60,9 @@ class Rule:
     modell: re.Pattern | None = None
     bibliothek: str | None = None  # extern | upload
     typ: str | None = None  # foto | video
+    land: list[str] = field(default_factory=list)  # eines davon (Groß-/Kleinschreibung egal)
+    region: list[str] = field(default_factory=list)
+    ort: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
     def matches_local(self, a: Asset) -> bool:
@@ -85,6 +89,10 @@ class Rule:
             return False
         if self.typ == "foto" and a.type != "IMAGE":
             return False
+        for key, attr in ORTSFELDER.items():
+            wanted = getattr(self, key)
+            if wanted and (getattr(a, attr) or "").strip().lower() not in wanted:
+                return False
         return True
 
     def describe(self) -> dict[str, Any]:
@@ -231,6 +239,9 @@ def parse_rules(text: str, known_users: list[str] | None = None) -> list[Rule]:
         for key in ("album", "person"):
             if key in item:
                 setattr(rule, key, _str_list(item[key], where, key, errors))
+        for key in ORTSFELDER:
+            if key in item:
+                setattr(rule, key, [v.lower() for v in _str_list(item[key], where, key, errors)])
         if "hersteller" in item:
             v = _str_list(item["hersteller"], where, "hersteller", errors)
             if len(v) > 1:

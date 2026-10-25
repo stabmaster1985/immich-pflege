@@ -708,6 +708,31 @@ function openPlaceSearch(target) {
   setTimeout(() => $("#place-q").focus(), 50);
 }
 
+function renderHomes() {
+  const homes = S.set.homes || [];
+  $("#set-homes").replaceChildren(...(homes.length ? homes.map((hm, i) => h("span", { class: "chip accent" }, "🏠 " + hm.name, " ",
+    h("button", { type: "button", class: "chip-x", "aria-label": hm.name + " entfernen",
+      onclick: () => { homes.splice(i, 1); renderHomes(); } }, "×"))) : [h("span", { class: "muted small" }, "automatisch")]));
+}
+
+let homeTimer;
+async function searchHome() {
+  const q = $("#set-home-q").value.trim();
+  const box = $("#set-home-results");
+  if (q.length < 2) { box.replaceChildren(); return; }
+  try {
+    const list = await api("api/places?q=" + encodeURIComponent(q));
+    box.replaceChildren(...list.slice(0, 6).map((p) => h("button", { type: "button", class: "place-item",
+      onclick: () => {
+        S.set.homes = [...(S.set.homes || []), { name: p.name, breite: p.breite, laenge: p.laenge }].slice(0, 5);
+        $("#set-home-q").value = ""; box.replaceChildren(); renderHomes();
+        toast("Zuhause gesetzt – bitte speichern");
+      } }, h("b", {}, p.name), p.region ? h("span", { class: "muted" }, " · " + p.region) : null)));
+  } catch (e) {
+    box.replaceChildren(h("div", { class: "banner err" }, e.message));
+  }
+}
+
 async function searchPlaces() {
   const q = $("#place-q").value.trim();
   const box = $("#place-results");
@@ -742,8 +767,9 @@ async function choosePlace(p) {
 
 /* -------------------------------------------------------------- Tags */
 const COND_LABEL = { pfad: "Pfad", dateiname: "Dateiname", von: "von", bis: "bis", album: "Album", person: "Person",
-  hersteller: "Hersteller", modell: "Modell", bibliothek: "Bibliothek", typ: "Typ", benutzer: "Benutzer" };
-const COND_KEYS = ["von", "bis", "bibliothek", "typ", "album", "person", "hersteller", "modell", "dateiname", "pfad", "benutzer"];
+  hersteller: "Hersteller", modell: "Modell", bibliothek: "Bibliothek", typ: "Typ", benutzer: "Benutzer",
+  land: "Land", region: "Region", ort: "Ort" };
+const COND_KEYS = ["von", "bis", "land", "region", "ort", "bibliothek", "typ", "album", "person", "hersteller", "modell", "dateiname", "pfad", "benutzer"];
 
 function asList(v) { return v === undefined || v === null || v === "" ? [] : (Array.isArray(v) ? v : [v]); }
 function ruleTags(item) { return asList(item.tags !== undefined ? item.tags : item.tag).map(String); }
@@ -843,8 +869,7 @@ function openRule(idx) {
   $("#r-tags").value = ruleTags(item).join(", ");
   $("#r-aktiv").checked = item.aktiv !== false;
   for (const k of ["von", "bis", "bibliothek", "typ", "hersteller", "modell", "dateiname", "pfad"]) $("#r-" + k).value = item[k] || "";
-  $("#r-album").value = asList(item.album).join(", ");
-  $("#r-person").value = asList(item.person).join(", ");
+  for (const k of ["album", "person", "land", "region", "ort"]) $("#r-" + k).value = asList(item[k]).join(", ");
   const chosen = asList(item.benutzer).map((u) => String(u).toLowerCase());
   $("#r-benutzer").replaceChildren(...t.users.map((u) => h("label", { class: "toggle" },
     h("input", { type: "checkbox", value: u, checked: chosen.includes(u) }), u)));
@@ -863,7 +888,7 @@ function readRuleForm() {
     const v = $("#r-" + k).value.trim();
     if (v) item[k] = v;
   }
-  for (const k of ["album", "person"]) {
+  for (const k of ["album", "person", "land", "region", "ort"]) {
     const v = split($("#r-" + k).value);
     if (v.length) item[k] = v.length === 1 ? v[0] : v;
   }
@@ -971,6 +996,8 @@ async function loadSettings() {
   $("#set-edit").value = d.dup_edit_keep; lock("#set-edit", "dup_edit_keep");
   $("#set-alb-km").value = d.album_min_km; lock("#set-alb-km", "album_min_km");
   $("#set-alb-min").value = d.album_min_media; lock("#set-alb-min", "album_min_media");
+  S.set.homes = (d.album_home || []).slice();
+  renderHomes();
   $("#set-web-user").value = d.web_user; lock("#set-web-user", "web_user");
   $("#set-web-pw").value = ""; lock("#set-web-pw", "web_password");
   $("#set-logout").hidden = !d.login_aktiv;
@@ -1047,6 +1074,7 @@ function readSettingsForm() {
   put("dup_edit_keep", $("#set-edit").value);
   put("album_min_km", $("#set-alb-km").value);
   put("album_min_media", $("#set-alb-min").value);
+  put("album_home", S.set.homes || []);
   if (!d.gesperrt.includes("users")) body.benutzer = readUsers();
   put("auto_scan", $("#set-auto").value);
   put("auto_scan_time", $("#set-auto-time").value);
@@ -1990,6 +2018,7 @@ $("#dup-done").addEventListener("change", (e) => { S.dup.includeDone = e.target.
 $("#loc-only").addEventListener("change", (e) => { S.loc.only = e.target.checked; loadTab("loc", true); });
 $("#loc-conf").addEventListener("change", (e) => { S.loc.minConf = e.target.value || null; loadTab("loc", true); });
 $("#place-q").addEventListener("input", () => { clearTimeout(placeTimer); placeTimer = setTimeout(searchPlaces, 300); });
+$("#set-home-q").addEventListener("input", () => { clearTimeout(homeTimer); homeTimer = setTimeout(searchHome, 300); });
 $("#loc-hours").addEventListener("change", (e) => {
   const v = parseFloat(String(e.target.value).replace(",", "."));
   if (v > 0 && v <= 48) { S.loc.hours = v; loadTab("loc", true); } else { e.target.value = S.loc.hours; }

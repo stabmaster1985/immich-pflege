@@ -53,9 +53,10 @@ class Home:
     longitude: float
     name: str
     days: int
+    manual: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        return {"name": self.name, "tage": self.days,
+        return {"name": self.name, "tage": self.days, "von_hand": self.manual,
                 "breite": round(self.latitude, 3), "laenge": round(self.longitude, 3)}
 
 
@@ -187,14 +188,15 @@ def _segments(assets: list[Asset], homes: list[Home], min_km: float) -> list[lis
     return out
 
 
-def find_trips(lib: Library, min_km: float, min_media: int,
-               exclude: set[str] | None = None) -> tuple[list[Home], list[Trip]]:
+def find_trips(lib: Library, min_km: float, min_media: int, exclude: set[str] | None = None,
+               homes: list[Home] | None = None) -> tuple[list[Home], list[Trip]]:
+    """``homes``: von Hand festgelegtes Zuhause; sonst automatisch erkannt."""
     exclude = exclude or set()
     usable = sorted((a for a in lib.assets.values()
                      if a.taken_utc and a.local_dt and not is_screenshot(a) and not a.in_review_album
                      and a.id not in exclude),
                     key=lambda a: a.taken_utc)
-    homes = find_homes(usable, min_km)
+    homes = homes or find_homes(usable, min_km)
     if not homes:
         return [], []
 
@@ -318,9 +320,9 @@ def match_albums(trip: Trip, lib: Library, index: AlbumIndex | None = None) -> N
             trip.status, trip.target = "neu", None
 
 
-def suggest(lib: Library, min_km: float, min_media: int,
-            exclude: set[str] | None = None) -> tuple[list[Home], list[Trip]]:
-    homes, trips = find_trips(lib, min_km, min_media, exclude)
+def suggest(lib: Library, min_km: float, min_media: int, exclude: set[str] | None = None,
+            homes: list[Home] | None = None) -> tuple[list[Home], list[Trip]]:
+    homes, trips = find_trips(lib, min_km, min_media, exclude, homes)
     index = AlbumIndex(lib)
     for t in trips:
         match_albums(t, lib, index)

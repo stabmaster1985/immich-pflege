@@ -113,6 +113,7 @@ class Settings:
     dup_edit_keep: str = "bearbeitung"  # bearbeitung | original
     album_min_km: int = 50  # Reise = so weit weg von zu Hause
     album_min_media: int = 20  # Reisen mit weniger Medien werden nicht vorgeschlagen
+    album_home: list[dict[str, Any]] = field(default_factory=list)  # [{name, breite, laenge}], leer = automatisch
     web_user: str | None = None
     web_password: str | None = None  # nur aus .env (Klartext)
     web_password_hash: str | None = None  # aus der Oberfläche
@@ -240,6 +241,7 @@ class Settings:
             dup_edit_keep=pick("DUP_EDIT_KEEP", "dup_edit_keep", "bearbeitung", parse_edit_keep),
             album_min_km=pick("ALBUM_MIN_KM", "album_min_km", 50, parse_min_km),
             album_min_media=pick("ALBUM_MIN_MEDIA", "album_min_media", 20, parse_min_media),
+            album_home=_stored_homes(stored),
             dup_image_hash=pick("DUP_IMAGE_HASH", "dup_image_hash", True, lambda v: _bool(v, True)),
             location_skip_screenshots=pick("LOCATION_SKIP_SCREENSHOTS", "location_skip_screenshots", True,
                                            lambda v: _bool(v, True)),
@@ -270,6 +272,7 @@ class Settings:
             "dup_edit_keep": self.dup_edit_keep,
             "album_min_km": self.album_min_km,
             "album_min_media": self.album_min_media,
+            "album_home": self.album_home,
             "web_user": self.web_user or "",
             "login_aktiv": self.auth_enabled,
             "gesperrt": sorted(self.locked),
@@ -333,6 +336,7 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
     attempt("dup_edit_keep", parse_edit_keep)
     attempt("album_min_km", parse_min_km)
     attempt("album_min_media", parse_min_media)
+    attempt("album_home", parse_homes)
 
     attempt("auto_scan", parse_auto_scan)
     attempt("auto_scan_time", parse_time)
@@ -421,6 +425,32 @@ def _int_range(value: Any, low: int, high: int, label: str) -> int:
     if not low <= n <= high:
         raise ConfigError(f"{label} muss zwischen {low} und {high} liegen")
     return n
+
+
+def parse_homes(value: Any) -> list[dict[str, Any]]:
+    """Zuhause von Hand: Liste von {name, breite, laenge} (höchstens 5)."""
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list) or len(value) > 5:
+        raise ConfigError("Zuhause: Liste mit höchstens 5 Orten erwartet")
+    out = []
+    for h in value:
+        try:
+            lat, lon = float(h["breite"]), float(h["laenge"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ConfigError("Zuhause: jeder Ort braucht breite und laenge") from exc
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise ConfigError("Zuhause: Koordinaten außerhalb des gültigen Bereichs")
+        out.append({"name": str(h.get("name") or f"{lat:.2f}, {lon:.2f}").strip(), "breite": lat, "laenge": lon})
+    return out
+
+
+def _stored_homes(stored: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        return parse_homes(stored.get("album_home"))
+    except ConfigError as exc:
+        log.warning("Gespeichertes Zuhause ungültig (%s) – automatisch erkennen", exc)
+        return []
 
 
 def parse_min_km(value: Any) -> int:

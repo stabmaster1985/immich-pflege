@@ -15,6 +15,9 @@
 #   modell:      regulärer Ausdruck auf das Kameramodell
 #   bibliothek:  extern | upload
 #   typ:         foto | video
+#   land:        Land laut Immichs Ortsdaten (exakt, Groß/klein egal); Liste = eines davon
+#   region:      Bundesland/Region, z. B. Toskana, Nordrhein-Westfalen; Liste = eines davon
+#   ort:         Stadt/Gemeinde, z. B. Siena; Liste = eines davon (nur Fotos mit GPS haben einen Ort)
 # Optional:
 #   benutzer:    frank | julia | [frank, julia]  (ohne Angabe: alle Benutzer)
 #   aktiv:       false schaltet die Regel ab
@@ -26,6 +29,10 @@ regeln:
     tag: Reisen/Italien/2024
     von: 2024-07-10
     bis: 2024-07-25
+
+  - name: Reisen Italien
+    tag: Reisen/Italien
+    land: Italien
 
   - name: Systemkamera
     tag: Kamera/Sony A7 IV
