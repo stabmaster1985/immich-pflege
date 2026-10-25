@@ -101,3 +101,11 @@ def test_not_configured(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "service_factory", lambda: Pflege(Settings.load({"DATA_DIR": str(tmp_path)})))
     r = run("duplikate")
     assert r.exit_code == 2 and "Einstellungen" in r.output
+
+
+def test_no_location_only_sure(svc, state):
+    r = run("ohne-ort", "--sicherheit", "hoch", "--ort-uebernehmen", "--json")
+    assert r.exit_code == 0, r.output
+    assert json.loads(r.stdout)["aktualisiert"] == 2
+    r = run("ohne-ort")
+    assert "Screenshots ausgeblendet" in r.output and "sicher" not in r.output.split("Vorschläge:")[0]

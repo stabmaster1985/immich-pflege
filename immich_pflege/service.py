@@ -13,7 +13,7 @@ from .client import ImmichClient, ImmichError
 from .config import Settings
 from .duplicates import AKTIONEN, DuplicateGroup, execute_steps, find_groups, plan_group
 from .library import Library, scan_library
-from .location import apply_locations, find_candidates, group_by_day
+from .location import LEVELS, analyze, apply_locations, level_at_least
 from .rules import Resolver, Rule, RuleError, apply as apply_rules, load_rules, preview as preview_rules
 
 log = logging.getLogger(__name__)
@@ -200,35 +200,90 @@ class Pflege:
             return {"vorschau": False, **summary, "ergebnis": result}
 
     # ------------------------------------------------------------- Ohne Ort
-    def no_location_view(self, max_hours: float | None = None, offset: int = 0, limit: int = 30,
-                         only_suggestions: bool = False) -> dict[str, Any]:
-        lib = self.library()
+    def _analysis(self, max_hours: float | None = None):
         hours = max_hours or self.settings.location_max_hours
-        cands = find_candidates(lib, hours, self.settings.location_include_external)
-        if only_suggestions:
-            cands = [c for c in cands if c.suggestion and c.editable]
-        days = group_by_day(cands)
-        page = days[offset: offset + limit] if limit > 0 else days[offset:]
+        return hours, analyze(self.library(), hours, self.settings.location_include_external,
+                              self.settings.location_skip_screenshots)
+
+    def no_location_view(self, max_hours: float | None = None, offset: int = 0, limit: int = 20,
+                         only_suggestions: bool = False, min_confidence: str | None = None) -> dict[str, Any]:
+        lib = self.library()
+        hours, an = self._analysis(max_hours)
+        if min_confidence and min_confidence not in LEVELS:
+            raise ActionError(f"Sicherheit muss {', '.join(LEVELS)} sein")
+        series = an.series
+        if only_suggestions or min_confidence:
+            def keep(c):
+                return c.applicable and (not min_confidence or level_at_least(c.suggestion.confidence, min_confidence))
+            series = [s for s in series if any(keep(c) for c in s.members)]
+        page = series[offset: offset + limit] if limit > 0 else series[offset:]
+        applicable = [c for c in an.candidates if c.applicable]
         return {
             "stand": lib.scanned_at,
             "max_stunden": hours,
             "extern_erlaubt": self.settings.location_include_external,
-            "medien": len(cands),
-            "mit_vorschlag": sum(1 for c in cands if c.suggestion and c.editable),
-            "tage_gesamt": len(days),
+            "screenshots_ausgeblendet": an.screenshots,
+            "medien": len(an.candidates),
+            "mit_vorschlag": len(applicable),
+            "nach_sicherheit": {lvl: sum(1 for c in applicable if c.suggestion.confidence == lvl)
+                                for lvl in reversed(LEVELS)},
+            "serien_gesamt": len(series),
             "offset": offset,
-            "tage": page,
+            "serien": [s.to_dict() for s in page],
         }
 
-    def apply_no_location(self, ids: list[str], max_hours: float | None = None) -> dict[str, Any]:
-        if not ids:
-            raise ActionError("Keine Medien ausgewählt (ids: [...])")
+    def apply_no_location(self, ids: list[str] | None = None, max_hours: float | None = None,
+                          min_confidence: str | None = None, series: list[str] | None = None,
+                          place: dict | None = None) -> dict[str, Any]:
+        """ids und/oder series (Serien-IDs) übernehmen; place = {breite, laenge, name} setzt
+        einen von Hand gewählten Ort; min_confidence ohne Auswahl = alle ab dieser Sicherheit."""
+        if min_confidence and min_confidence not in LEVELS:
+            raise ActionError(f"Sicherheit muss {', '.join(LEVELS)} sein")
         with self._lock:
-            res = apply_locations(self.library(), self.clients, ids,
-                                  max_hours or self.settings.location_max_hours,
-                                  self.settings.location_include_external)
+            hours, an = self._analysis(max_hours)
+            selected: list[str] | None = list(ids or [])
+            if series:
+                known = {s.id: s for s in an.series}
+                missing = [sid for sid in series if sid not in known]
+                if missing:
+                    raise ActionError(f"Serie(n) {', '.join(missing)} nicht gefunden – bitte neu laden")
+                for sid in series:
+                    selected += [c.asset.id for c in known[sid].members
+                                 if c.editable and (place or c.suggestion)
+                                 and (not min_confidence or (c.suggestion and
+                                      level_at_least(c.suggestion.confidence, min_confidence)))]
+            if not selected:
+                if not min_confidence or place:
+                    raise ActionError("Keine Medien ausgewählt (ids, series oder min_confidence)")
+                selected = None
+            manual = None
+            if place:
+                try:
+                    manual = (float(place["breite"]), float(place["laenge"]), place.get("name"))
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise ActionError("place braucht breite und laenge") from exc
+                if not (-90 <= manual[0] <= 90 and -180 <= manual[1] <= 180):
+                    raise ActionError("Koordinaten außerhalb des gültigen Bereichs")
+            res = apply_locations(self.library(), self.clients, selected, hours,
+                                  self.settings.location_include_external,
+                                  skip_screenshots=self.settings.location_skip_screenshots,
+                                  min_confidence=min_confidence if selected is None else None,
+                                  manual=manual)
             self._save()
             return res
+
+    def search_places(self, name: str) -> list[dict[str, Any]]:
+        if not self.clients:
+            raise NotConfigured()
+        if len(name.strip()) < 2:
+            return []
+        client = next(iter(self.clients.values()))
+        out = []
+        for p in client.search_places(name.strip())[:15]:
+            region = ", ".join(x for x in (p.get("admin2name"), p.get("admin1name")) if x)
+            out.append({"name": p.get("name"), "region": region,
+                        "breite": p.get("latitude"), "laenge": p.get("longitude")})
+        return out
 
     # ----------------------------------------------------------------- Tags
     def rules(self) -> list[Rule]:

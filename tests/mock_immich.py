@@ -212,6 +212,19 @@ def create_app(state: MockState) -> FastAPI:
             },
         }
 
+    @app.get("/api/search/places")
+    async def search_places(request: Request, name: str = ""):
+        auth(request)
+        places = [
+            {"name": "San Gimignano", "admin2name": "Siena", "admin1name": "Toskana",
+             "latitude": 43.4677, "longitude": 11.0432},
+            {"name": "Siena", "admin2name": "Siena", "admin1name": "Toskana",
+             "latitude": 43.3188, "longitude": 11.3308},
+            {"name": "Florenz", "admin2name": "Florenz", "admin1name": "Toskana",
+             "latitude": 43.7696, "longitude": 11.2558},
+        ]
+        return [p for p in places if name.lower() in p["name"].lower()]
+
     @app.get("/api/search/person")
     async def search_person(request: Request, name: str = ""):
         user = auth(request)

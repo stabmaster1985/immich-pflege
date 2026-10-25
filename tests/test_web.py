@@ -78,15 +78,40 @@ def test_album_all(web, state):
 
 def test_no_location(web):
     r = web.get("/api/no-location").json()
-    assert r["medien"] == 8 and r["mit_vorschlag"] == 3
-    day = next(d for d in r["tage"] if d["datum"] == "2024-07-16")
-    ids = [m["id"] for m in day["medien"] if m["vorschlag"]]
-    wider = web.get("/api/no-location?max_hours=4").json()
-    assert wider["mit_vorschlag"] == 4
-    res = web.post("/api/no-location/apply", json={"ids": ids}).json()
-    assert res["aktualisiert"] == len(ids)
-    assert web.get("/api/no-location").json()["medien"] == 8 - len(ids)
-    assert web.post("/api/no-location/apply", json={"ids": []}).status_code == 400
+    assert r["medien"] == 7 and r["screenshots_ausgeblendet"] == 1 and r["mit_vorschlag"] == 3
+    assert r["nach_sicherheit"] == {"hoch": 2, "mittel": 1, "niedrig": 0}
+    assert r["serien_gesamt"] == 5
+    assert web.get("/api/no-location?max_hours=4").json()["mit_vorschlag"] == 4
+    only_sure = web.get("/api/no-location?min_confidence=hoch").json()
+    assert only_sure["serien_gesamt"] == 2
+
+    serie = next(s for s in r["serien"] if s["anzahl"] == 2 and s["vorschlag"])
+    res = web.post("/api/no-location/apply", json={"series": [serie["id"]]}).json()
+    assert res["aktualisiert"] == 2
+    assert web.get("/api/no-location").json()["medien"] == 5
+    assert web.post("/api/no-location/apply", json={}).status_code == 400
+    assert web.post("/api/no-location/apply", json={"series": ["gibtsnicht"]}).status_code == 400
+
+    res = web.post("/api/no-location/apply", json={"min_confidence": "hoch"}).json()
+    assert res["aktualisiert"] == 1  # IMG_0200 2.JPG
+
+
+def test_no_location_manual_place_and_search(web, state):
+    r = web.get("/api/no-location").json()
+    camera = next(s for s in r["serien"] if s["anzahl"] == 2 and not s["vorschlag"])  # DSC09812
+    body = {"series": [camera["id"]], "place": {"breite": 43.4642, "laenge": 11.0413, "name": "San Gimignano"}}
+    res = web.post("/api/no-location/apply", json=body).json()
+    assert res["aktualisiert"] == 1 and res["uebersprungen"] == []  # externe Kopie wird nicht ausgewählt
+    places = web.get("/api/places?q=san gim").json()
+    assert places[0] == {"name": "San Gimignano", "region": "Siena, Toskana", "breite": 43.4677, "laenge": 11.0432}
+    assert web.get("/api/places?q=s").json() == []
+    bad = {"ids": ["x"], "place": {"breite": 99, "laenge": 0}}
+    assert web.post("/api/no-location/apply", json=bad).status_code == 422
+
+
+def test_settings_screenshots_toggle(web):
+    web.put("/api/settings", json={"location_skip_screenshots": False})
+    assert web.get("/api/no-location").json()["medien"] == 8
 
 
 def test_tags_endpoints(web, settings):

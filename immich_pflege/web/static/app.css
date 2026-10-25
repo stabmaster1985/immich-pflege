@@ -211,3 +211,14 @@ textarea { min-height: 55vh; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo
   background: var(--drop); margin-left: 2px; vertical-align: top; }
 .commits { margin: 6px 0; padding-left: 18px; font-size: .85rem; }
 .commits code { color: var(--muted); }
+
+/* Ohne Ort: Serien */
+.series-place { margin: 2px 0 10px; }
+.series-place .small, .small { font-size: .8rem; }
+.chip.conf-hoch { background: color-mix(in srgb, var(--keep) 18%, transparent); color: var(--keep); }
+.chip.conf-mittel { background: var(--warn-bg); color: var(--warn-fg); }
+.chip.conf-niedrig { background: var(--chip); color: var(--muted); }
+.card .row-gap { margin-bottom: 10px; }
+.field select { padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.place-results { display: flex; flex-direction: column; gap: 6px; min-height: 120px; }
+.place-item { text-align: left; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); cursor: pointer; }

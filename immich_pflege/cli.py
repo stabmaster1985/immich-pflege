@@ -250,20 +250,36 @@ def _print_steps(steps: list[dict]) -> None:
 def ohne_ort(
     ort_uebernehmen: bool = typer.Option(False, "--ort-uebernehmen",
                                          help="Vorgeschlagenen Ort für die Auswahl übernehmen"),
-    stunden: Optional[float] = typer.Option(None, "--stunden", help="Zeitfenster ± Stunden (Standard aus .env)"),
+    stunden: Optional[float] = typer.Option(None, "--stunden", help="Zeitfenster ± Stunden (Standard aus Einstellungen)"),
+    sicherheit: Optional[str] = typer.Option(None, "--sicherheit",
+                                             help="Nur Vorschläge ab dieser Sicherheit: niedrig, mittel, hoch"),
+    serie: Optional[list[str]] = typer.Option(None, "--serie", help="Nur diese Serie(n)"),
     medium: Optional[list[str]] = typer.Option(None, "--id", help="Nur diese Medien-ID(s)"),
-    datum: Optional[list[str]] = typer.Option(None, "--datum", help="Nur dieser Tag (JJJJ-MM-TT), mehrfach möglich"),
+    datum: Optional[list[str]] = typer.Option(None, "--datum", help="Nur Serien von diesem Tag (JJJJ-MM-TT)"),
     nur_vorschlaege: bool = typer.Option(False, "--nur-vorschlaege", help="Nur Medien mit Vorschlag zeigen"),
     neu: bool = NeuOpt, json_: bool = JsonOpt, csv_: bool = CsvOpt,
 ):
-    """Medien ohne GPS mit Ortsvorschlag vom zeitlich nächsten Foto anzeigen."""
+    """Medien ohne GPS als Serien mit Ortsvorschlag (Sicherheit hoch/mittel/niedrig) anzeigen."""
+    if sicherheit and sicherheit not in ("niedrig", "mittel", "hoch"):
+        err.print("[red]--sicherheit: niedrig, mittel oder hoch[/red]")
+        raise typer.Exit(2)
     svc = _service()
     if neu:
         with err.status("Lese Bibliothek ein …"):
             _run(svc.scan)
-    view = _run(lambda: svc.no_location_view(stunden, limit=0, only_suggestions=nur_vorschlaege or ort_uebernehmen))
-    days = [d for d in view["tage"] if not datum or d["datum"] in datum]
-    items = [m for d in days for m in d["medien"] if not medium or m["id"] in medium]
+    view = _run(lambda: svc.no_location_view(stunden, limit=0, only_suggestions=nur_vorschlaege,
+                                             min_confidence=sicherheit))
+    series = [s for s in view["serien"] if (not datum or s["datum"] in datum) and (not serie or s["id"] in serie)]
+    order = {"niedrig": 0, "mittel": 1, "hoch": 2}
+
+    def wanted(m: dict) -> bool:
+        if medium and m["id"] not in medium:
+            return False
+        if sicherheit and not (m["vorschlag"] and order[m["vorschlag"]["sicherheit"]] >= order[sicherheit]):
+            return False
+        return not nur_vorschlaege or bool(m["vorschlag"])
+
+    items = [m for s in series for m in s["medien"] if wanted(m)]
 
     if ort_uebernehmen:
         ids = [m["id"] for m in items if m["vorschlag"] and m["aenderbar"]]
@@ -280,34 +296,54 @@ def ohne_ort(
         return
 
     if json_:
-        _emit_json({**view, "tage": [{**d, "medien": [m for m in d["medien"] if m in items]} for d in days]})
+        _emit_json({**view, "serien": [{**s, "medien": [m for m in s["medien"] if wanted(m)]} for s in series]})
         return
     if csv_:
         rows = []
-        for m in items:
-            v = m["vorschlag"] or {}
-            rows.append({"id": m["id"], "datum": (m["aufnahme"] or "")[:10], "aufnahme": m["aufnahme"],
-                         "dateiname": m["dateiname"], "benutzer": m["benutzer"], "extern": m["extern"],
-                         "aenderbar": m["aenderbar"], "vorschlag_ort": v.get("ort"),
-                         "breite": v.get("breite"), "laenge": v.get("laenge"),
-                         "abstand_min": v.get("abstand_min"), "quelle_id": v.get("quelle_id")})
+        for s in series:
+            for m in s["medien"]:
+                if not wanted(m):
+                    continue
+                v = m["vorschlag"] or {}
+                rows.append({"serie": s["id"], "id": m["id"], "aufnahme": m["aufnahme"], "dateiname": m["dateiname"],
+                             "benutzer": m["benutzer"], "extern": m["extern"], "aenderbar": m["aenderbar"],
+                             "vorschlag_ort": v.get("ort"), "sicherheit": v.get("sicherheit"),
+                             "grund": v.get("grund"), "breite": v.get("breite"), "laenge": v.get("laenge"),
+                             "quelle_id": v.get("quelle_id")})
         _emit_csv(rows)
         return
     _stand(svc)
-    t = Table(title=f"Medien ohne Ort (Fenster ±{view['max_stunden']:g} h)", title_justify="left")
-    for col in ("Datum", "Zeit", "Datei", "Benutzer", "Vorschlag", "Abstand", "ID"):
-        t.add_column(col, overflow="fold")
-    for m in items:
-        v = m["vorschlag"]
-        sug = (v["ort"] or f"{v['breite']:.4f}, {v['laenge']:.4f}") if v else "[dim]–[/dim]"
-        if v and not m["aenderbar"]:
-            sug += " [dim](extern, gesperrt)[/dim]"
-        aufnahme = m["aufnahme"] or ""
-        t.add_row(aufnahme[:10], aufnahme[11:16], m["dateiname"], m["benutzer"], sug,
-                  v["abstand_text"] if v else "", m["id"])
-    out.print(t)
-    out.print(f"\n{len(items)} Medien ohne Ort, {sum(1 for m in items if m['vorschlag'] and m['aenderbar'])} "
-              "mit übernehmbarem Vorschlag. Übernehmen: --ort-uebernehmen (ggf. mit --datum/--id)")
+    colors = {"hoch": "green", "mittel": "yellow", "niedrig": "magenta"}
+    for s in series:
+        members = [m for m in s["medien"] if wanted(m)]
+        if not members:
+            continue
+        v = s["vorschlag"]
+        head = f"Serie {s['id']} · {s['start'] or 'ohne Datum'}"
+        if s["ende"] and s["ende"] != s["start"]:
+            head += f" – {s['ende'][11:16]}"
+        head += f" · {s['anzahl']} Medien"
+        if v:
+            head += f" · 📍 {v['ort'] or 'Koordinaten'}"
+        elif s["mehrere_orte"]:
+            head += " · mehrere Orte"
+        t = Table(title=head, title_justify="left")
+        for col in ("Zeit", "Datei", "Benutzer", "Vorschlag", "Sicherheit", "Grund", "ID"):
+            t.add_column(col, overflow="fold")
+        for m in members:
+            mv = m["vorschlag"]
+            sug = (mv["ort"] or f"{mv['breite']:.4f}, {mv['laenge']:.4f}") if mv else "[dim]–[/dim]"
+            if mv and not m["aenderbar"]:
+                sug += " [dim](extern, gesperrt)[/dim]"
+            level = f"[{colors[mv['sicherheit']]}]{mv['sicherheit']}[/]" if mv else ""
+            t.add_row((m["aufnahme"] or "")[11:16], m["dateiname"], m["benutzer"], sug, level,
+                      mv["grund"] if mv else "", m["id"])
+        out.print(t)
+    by = view["nach_sicherheit"]
+    out.print(f"\n{view['medien']} Medien ohne Ort in {view['serien_gesamt']} Serien "
+              f"({view['screenshots_ausgeblendet']} Screenshots ausgeblendet). Vorschläge: "
+              f"{by['hoch']} hoch, {by['mittel']} mittel, {by['niedrig']} niedrig.")
+    out.print("Übernehmen: --ort-uebernehmen (z. B. mit --sicherheit hoch, --serie ID oder --datum)")
 
 
 # --------------------------------------------------------------------- Tags

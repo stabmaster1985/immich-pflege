@@ -5,7 +5,7 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 | Funktion | Was passiert |
 |---|---|
 | **Duplikate** | Immich-Duplikaterkennung pro Benutzer, dazu identische Prüfsumme sowie gleicher Dateiname mit gleicher Aufnahmezeit, auch benutzerübergreifend und zwischen Upload und externer Bibliothek. Überlappende Treffer werden zu Gruppen zusammengeführt. Ein Behalten-Vorschlag kommt aus einer Punktwertung. Nicht behaltene Kopien kommen ins Album „Duplikat-Prüfung“ oder in den Papierkorb. |
-| **Ohne Ort** | Alle Medien ohne GPS, nach Tag gruppiert, mit Vorschlag: Ort des zeitlich nächsten Fotos mit GPS (beider Benutzer) innerhalb von ±2 h |
+| **Ohne Ort** | Medien ohne GPS, zu Serien zusammengefasst, mit Ortsvorschlag und Sicherheit (sicher/wahrscheinlich/unsicher) aus GPS-Fotos beider Benutzer. Ganze Serien übernimmst du mit einem Tipp, Serien ohne Vorschlag bekommen ihren Ort über die Ortssuche von Immich. Screenshots werden ausgeblendet. |
 | **Tags** | Massen-Tagging nach Regeln, die du in der Oberfläche anlegst. Tags werden nur ergänzt, nie entfernt. |
 
 Alles startet als **Vorschau**. Änderungen gibt es nur nach ausdrücklicher Aktion.
@@ -96,7 +96,16 @@ Alternativ startest du den Workflow per **Test workflow** oder, wenn aktiviert, 
 Vier Tabs (**Duplikate**, **Ohne Ort**, **Tags**, **⚙ Einstellungen**), unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
 
 - **Duplikate:** Tippe auf ein Bild, damit es bleibt. Hake Gruppen an und wähle dann **Ins Prüf-Album** oder **Papierkorb**. Der Dialog zeigt vorher genau, was passiert. Für den Papierkorb muss zusätzlich ein Häkchen gesetzt werden.
-- **Ohne Ort:** Das Zeitfenster ist einstellbar. Bilder mit 📍-Vorschlag antippen oder pro Tag **Alle**, dann **Ort übernehmen**.
+- **Ohne Ort:** Medien ohne GPS sind zu **Serien** zusammengefasst, also Aufnahmen mit höchstens 2 Stunden Abstand. Pro Serie gibt es einen Vorschlag, **Übernehmen** setzt ihn für die ganze Serie. **Ort suchen …** nutzt die Ortsdatenbank von Immich (z. B. „Siena“) für Serien ohne GPS-Fotos in der Nähe. Einzelne Bilder lassen sich antippen und mit **Übernehmen** oder **Ort wählen …** bearbeiten. **Alle sicheren** übernimmt alle sicheren Vorschläge auf einmal.
+
+  Woher die Vorschläge kommen:
+  | Sicherheit | Wann |
+  |---|---|
+  | sicher | Ein GPS-Foto (beider Benutzer) liegt höchstens 30 min entfernt, oder die GPS-Fotos davor und danach liegen im Zeitfenster am selben Ort (≤ 1,5 km). |
+  | wahrscheinlich | Ein GPS-Foto liegt im Zeitfenster (Standard ±2 h), aber weiter weg, oder davor und danach sind verschiedene Orte. Oder der Ort kommt aus derselben Serie, deren Vorschlag sicher ist. |
+  | unsicher | Kein GPS-Foto im Zeitfenster, aber das letzte davor und das erste danach (je ≤ 12 h) liegen am selben Ort. Oder der Ort kommt aus einer Serie mit wahrscheinlichem oder unsicherem Vorschlag. |
+
+  Den Ort einer Serie übernehmen Medien ohne eigenen Vorschlag nur, wenn sich alle Vorschläge der Serie über den Ort einig sind. Screenshots und Bildschirmaufnahmen werden ausgeblendet: Erkennung über den Dateinamen oder PNG ohne Kameradaten, abschaltbar in den Einstellungen.
 - **Tags:** **+ Neue Regel** öffnet ein Formular mit allen Bedingungen. Pro Regel siehst du Treffer, schon getaggt und neu, mit Beispielbildern. Abhaken und **Tags anwenden**. **Beispiele** fügt Beispielregeln ausgeschaltet hinzu. **YAML** zeigt die Regeln als Text für Fortgeschrittene. Fehlerhafte Regeln werden beim Speichern mit verständlicher Meldung abgelehnt, und die alte Fassung bleibt erhalten.
 
 ## Regeln der Duplikat-Bearbeitung
@@ -161,6 +170,8 @@ docker exec -it immich-pflege pflege duplikate -g 3fa2c1d9e0b4 --behalten 3fa2c1
 
 # Fotos ohne Ort
 docker exec -it immich-pflege pflege ohne-ort --stunden 3
+docker exec -it immich-pflege pflege ohne-ort --sicherheit hoch --ort-uebernehmen   # alle sicheren
+docker exec -it immich-pflege pflege ohne-ort --serie <serien-id> --ort-uebernehmen
 docker exec -it immich-pflege pflege ohne-ort --datum 2024-07-16 --ort-uebernehmen
 docker exec -it immich-pflege pflege ohne-ort --id <medien-id> --ort-uebernehmen
 
@@ -184,8 +195,9 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | POST | `/api/scan` | Neu einlesen. `{"wait": false}` startet im Hintergrund (202) |
 | GET | `/api/duplicates` | Gruppen (`offset`, `limit`, `include_done`) |
 | POST | `/api/duplicates/apply` | Aktion auf Gruppen |
-| GET | `/api/no-location` | Medien ohne Ort nach Tagen (`max_hours`, `offset`, `limit`, `only_suggestions`) |
-| POST | `/api/no-location/apply` | Ort übernehmen |
+| GET | `/api/no-location` | Medien ohne Ort als Serien (`max_hours`, `offset`, `limit`, `only_suggestions`, `min_confidence`) |
+| POST | `/api/no-location/apply` | Ort übernehmen: `ids`, `series`, `min_confidence` (`hoch`/`mittel`/`niedrig`), optional `place` `{breite, laenge, name}` |
+| GET | `/api/places?q=Siena` | Ortssuche über Immich |
 | GET | `/api/tags` | Regel-Vorschau (`rules=Name`, mehrfach möglich) |
 | GET/PUT | `/api/rules` | Regeln lesen/speichern (`{"regeln": [...]}` oder `{"yaml": "..."}`) |
 | GET/PUT | `/api/settings` | Einstellungen (Keys nur maskiert) |
@@ -218,11 +230,13 @@ curl $AUTH -X POST $B/api/duplicates/apply -H 'Content-Type: application/json' \
   -d '{"action":"papierkorb","confirm":"PAPIERKORB",
        "groups":[{"id":"3fa2c1d9e0b4"},{"id":"9be04d11aa20","keep":"<medien-id>"}]}'
 
-# Ort für alle Vorschläge eines Tages übernehmen
-curl $AUTH "$B/api/no-location?only_suggestions=true&limit=0" \
-  | jq '[.tage[] | select(.datum=="2024-07-16") | .medien[].id]' \
-  | jq '{ids: .}' \
-  | curl $AUTH -X POST $B/api/no-location/apply -H 'Content-Type: application/json' -d @-
+# Alle sicheren Ortsvorschläge übernehmen (z. B. nachts per n8n)
+curl $AUTH -X POST $B/api/no-location/apply -H 'Content-Type: application/json' -d '{"min_confidence":"hoch"}'
+
+# Eine Serie von Hand verorten
+curl $AUTH "$B/api/places?q=Siena"
+curl $AUTH -X POST $B/api/no-location/apply -H 'Content-Type: application/json' \
+  -d '{"series":["<serien-id>"],"place":{"breite":43.3188,"laenge":11.3308,"name":"Siena"}}'
 
 curl $AUTH -X POST $B/api/tags/apply -H 'Content-Type: application/json' -d '{}'          # alle aktiven Regeln
 curl $AUTH -X POST $B/api/tags/apply -H 'Content-Type: application/json' -d '{"rules":["Systemkamera"]}'

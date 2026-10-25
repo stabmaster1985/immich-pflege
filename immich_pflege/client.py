@@ -114,6 +114,9 @@ class ImmichClient:
     def search_ids(self, **filters: Any) -> set[str]:
         return {a["id"] for a in self.search_metadata(**filters)}
 
+    def search_places(self, name: str) -> list[dict]:
+        return self.request("GET", "/search/places", params={"name": name}) or []
+
     def search_person(self, name: str) -> list[dict]:
         return self.request("GET", "/search/person", params={"name": name}) or []
 

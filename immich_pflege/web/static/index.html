@@ -42,6 +42,13 @@
         <label class="field">Fenster ±
           <input type="number" id="loc-hours" min="0.25" max="48" step="0.25" inputmode="decimal"> h
         </label>
+        <label class="field">Zeigen
+          <select id="loc-conf">
+            <option value="">alle</option>
+            <option value="mittel">ab wahrscheinlich</option>
+            <option value="hoch">nur sichere</option>
+          </select>
+        </label>
         <label class="toggle"><input type="checkbox" id="loc-only"> Nur mit Vorschlag</label>
       </div>
       <p id="loc-summary" class="muted"></p>
@@ -125,6 +132,7 @@
             <input type="number" id="set-hours" min="0.25" max="48" step="0.25" inputmode="decimal">
           </label>
           <label class="toggle"><input type="checkbox" id="set-ext"> Auch Medien aus externen Bibliotheken ändern</label>
+          <label class="toggle"><input type="checkbox" id="set-shots"> Screenshots und Bildschirmaufnahmen ausblenden</label>
         </fieldset>
         <fieldset class="card">
           <legend>Zugang zu diesem Tool</legend>
@@ -194,6 +202,16 @@
         <button value="cancel" class="btn" type="submit" formnovalidate>Abbrechen</button>
         <button type="button" id="rule-save" class="btn primary">Speichern</button>
       </div>
+    </form>
+  </dialog>
+
+  <dialog id="place-dlg" class="full">
+    <form method="dialog">
+      <h2>Ort suchen</h2>
+      <p class="muted" id="place-target"></p>
+      <label class="f">Ortsname <input type="search" id="place-q" autocomplete="off" placeholder="z. B. Siena" enterkeyhint="search"></label>
+      <div id="place-results" class="place-results"></div>
+      <div class="dialog-buttons"><button value="cancel" class="btn" type="submit">Abbrechen</button></div>
     </form>
   </dialog>
 

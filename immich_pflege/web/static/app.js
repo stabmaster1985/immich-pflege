@@ -1,13 +1,12 @@
 "use strict";
 
 const PAGE_DUP = 20;
-const PAGE_DAYS = 10;
 
 const S = {
   tab: "dup",
   status: null,
   dup: { groups: [], total: 0, open: 0, keep: {}, sel: new Set(), includeDone: false, loaded: false },
-  loc: { days: [], totalDays: 0, sel: new Set(), hours: null, only: false, loaded: false, info: null },
+  loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, loaded: false, info: null },
   tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [], items: [], fileErrors: [], users: [], yaml: "" },
   set: { data: null, loaded: false },
 };
@@ -283,99 +282,218 @@ async function applyDuplicates(action, btn) {
 }
 
 /* ---------------------------------------------------------- Ohne Ort */
+const PAGE_SERIES = 15;
+const LEVEL_LABEL = { hoch: "sicher", mittel: "wahrscheinlich", niedrig: "unsicher" };
+const PREVIEW_TILES = 6;
+
+function confChip(level) {
+  return level ? h("span", { class: "chip conf-" + level }, LEVEL_LABEL[level]) : null;
+}
+
+function fmtRange(s) {
+  if (!s.start) return "Ohne Datum";
+  const day = fmtDay(s.datum);
+  const a = s.start.slice(11, 16), b = s.ende ? s.ende.slice(11, 16) : a;
+  const endDay = s.ende ? s.ende.slice(0, 10) : s.datum;
+  if (endDay !== s.datum) return `${day} ${a} – ${fmtDay(endDay)} ${b}`;
+  return a === b ? `${day} · ${a}` : `${day} · ${a}–${b}`;
+}
+
 async function loadLocation(reset) {
   const l = S.loc;
-  if (reset) { l.days = []; l.sel.clear(); $("#loc-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
-  const params = new URLSearchParams({ offset: l.days.length, limit: PAGE_DAYS, only_suggestions: l.only });
+  if (reset) { l.series = []; l.sel.clear(); l.open = new Set(); $("#loc-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
+  const params = new URLSearchParams({ offset: l.series.length, limit: PAGE_SERIES, only_suggestions: l.only });
   if (l.hours) params.set("max_hours", l.hours);
+  if (l.minConf) params.set("min_confidence", l.minConf);
   const r = await api("api/no-location?" + params);
   if (reset) $("#loc-list").replaceChildren();
-  l.totalDays = r.tage_gesamt; l.loaded = true; l.info = r;
-  for (const day of r.tage) {
-    l.days.push(day);
-    $("#loc-list").append(renderDay(day));
+  l.total = r.serien_gesamt; l.loaded = true; l.info = r;
+  for (const ser of r.serien) {
+    l.series.push(ser);
+    $("#loc-list").append(renderSeries(ser));
   }
-  if (!l.days.length) $("#loc-list").replaceChildren(h("p", { class: "empty" }, "Alle Medien haben einen Ort 🎉"));
-  $("#loc-summary").textContent = `${r.medien} Medien ohne Ort an ${r.tage_gesamt} Tagen · ${r.mit_vorschlag} mit Vorschlag` +
+  if (!l.series.length) $("#loc-list").replaceChildren(h("p", { class: "empty" }, r.medien ? "Keine Serien mit diesem Filter." : "Alle Medien haben einen Ort 🎉"));
+  const by = r.nach_sicherheit;
+  $("#loc-summary").textContent = `${n(r.medien, "Medium", "Medien")} ohne Ort in ${n(r.serien_gesamt, "Serie", "Serien")} · ` +
+    `Vorschläge: ${by.hoch} sicher, ${by.mittel} wahrscheinlich, ${by.niedrig} unsicher` +
+    (r.screenshots_ausgeblendet ? ` · ${r.screenshots_ausgeblendet} Screenshots ausgeblendet` : "") +
     (r.extern_erlaubt ? "" : " · externe Bibliotheken gesperrt");
   $("#count-loc").textContent = r.mit_vorschlag ? `(${r.mit_vorschlag})` : "";
-  $("#loc-more").hidden = l.days.length >= l.totalDays;
+  $("#loc-more").hidden = l.series.length >= l.total;
   updateActionbar();
 }
 
 function selectable(m) { return m.vorschlag && m.aenderbar; }
 
-function renderDay(day) {
+function rerenderSeries(ser) {
+  const old = document.querySelector(`[data-series="${ser.id}"]`);
+  if (old) old.replaceWith(renderSeries(ser));
+  updateActionbar();
+}
+
+function renderSeries(ser) {
   const l = S.loc;
-  const sec = h("section", { class: "card" });
-  const pick = day.medien.filter(selectable);
-  const allBtn = h("button", {
-    type: "button", class: "btn small", disabled: !pick.length,
-    onclick: () => {
-      const all = pick.every((m) => l.sel.has(m.id));
-      pick.forEach((m) => (all ? l.sel.delete(m.id) : l.sel.add(m.id)));
-      sec.replaceWith(renderDay(day));
-      updateActionbar();
-    },
-  }, pick.length && pick.every((m) => l.sel.has(m.id)) ? "Keine" : "Alle");
-  sec.append(h("div", { class: "day-head" },
-    h("div", {}, h("h2", {}, fmtDay(day.datum)), h("span", { class: "muted" }, `${n(day.anzahl, "Medium", "Medien")} · ${n(day.mit_vorschlag, "Vorschlag", "Vorschläge")}`)),
-    allBtn));
+  const card = h("article", { class: "card", "data-series": ser.id });
+  const v = ser.vorschlag;
+  const editable = ser.medien.filter((m) => m.aenderbar);
+  const withSugg = ser.medien.filter(selectable);
+  let placeLine;
+  if (v) {
+    placeLine = h("div", { class: "series-place" }, h("b", {}, "📍 " + (v.ort || `${v.breite.toFixed(4)}, ${v.laenge.toFixed(4)}`)), " ", confChip(ser.sicherheit),
+      h("div", { class: "muted small" }, v.grund));
+  } else if (!editable.length) {
+    placeLine = h("div", { class: "series-place muted" }, "Nur externe Medien – in den Einstellungen gesperrt");
+  } else if (ser.mehrere_orte) {
+    placeLine = h("div", { class: "series-place muted" }, "Mehrere Orte in dieser Serie – einzeln prüfen");
+  } else {
+    placeLine = h("div", { class: "series-place muted" }, "Kein Foto mit GPS in der Nähe – Ort suchen");
+  }
+  const buttons = h("div", { class: "row-gap" });
+  if (withSugg.length) {
+    buttons.append(h("button", { type: "button", class: "btn small primary", onclick: (e) => applySeries(ser, e.currentTarget) },
+      `Übernehmen (${withSugg.length})`));
+  }
+  if (editable.length) {
+    buttons.append(h("button", { type: "button", class: "btn small", onclick: () => openPlaceSearch({ series: [ser.id], count: editable.length, label: fmtRange(ser) }) },
+      "Ort suchen …"));
+  }
+  card.append(
+    h("div", { class: "card-head" }, h("div", {}, h("h2", {}, fmtRange(ser)),
+      h("span", { class: "muted" }, `${n(ser.anzahl, "Medium", "Medien")} · ${ser.benutzer.join(" & ")}`))),
+    placeLine, buttons);
+
+  const showAll = l.open.has(ser.id) || ser.medien.length <= PREVIEW_TILES + 1;
+  const shown = showAll ? ser.medien : ser.medien.slice(0, PREVIEW_TILES);
   const grid = h("div", { class: "grid" });
-  for (const m of day.medien) {
-    const v = m.vorschlag;
+  for (const m of shown) {
+    const mv = m.vorschlag;
     const can = selectable(m);
     const sel = l.sel.has(m.id);
     let info;
-    if (v && !m.aenderbar) info = h("div", { class: "nosug" }, `📍 ${v.ort || "Ort"} · extern gesperrt`);
-    else if (v) info = h("div", { class: "sug" }, `📍 ${v.ort || v.breite.toFixed(4) + ", " + v.laenge.toFixed(4)}`, h("br"), `${v.abstand_text} Abstand · ${v.quelle_benutzer}`);
-    else info = h("div", { class: "nosug" }, "kein Foto mit GPS im Zeitfenster");
+    if (mv && !m.aenderbar) info = h("div", { class: "nosug" }, `📍 ${mv.ort || "Ort"} · extern gesperrt`);
+    else if (mv) info = h("div", {}, h("span", { class: "sug" }, `📍 ${mv.ort || mv.breite.toFixed(3) + ", " + mv.laenge.toFixed(3)}`), " ", confChip(mv.sicherheit));
+    else info = h("div", { class: "nosug" }, "kein Vorschlag");
     grid.append(h("button", {
       type: "button", class: "tile" + (can ? "" : " locked") + (sel ? " selected" : ""), "aria-pressed": sel ? "true" : "false",
-      title: m.pfad,
+      title: mv ? mv.grund : m.pfad,
       onclick: () => {
-        if (!can) return;
+        if (!m.aenderbar) return;
         sel ? l.sel.delete(m.id) : l.sel.add(m.id);
-        sec.replaceWith(renderDay(day));
-        updateActionbar();
+        rerenderSeries(ser);
       },
     },
     thumb(m),
-    can ? h("span", { class: "check" + (sel ? " on" : ""), "aria-hidden": "true" }, sel ? "✓" : "") : null,
+    m.aenderbar ? h("span", { class: "check" + (sel ? " on" : ""), "aria-hidden": "true" }, sel ? "✓" : "") : null,
     h("div", { class: "meta" },
       h("div", { class: "name" }, m.dateiname),
       h("div", {}, `${fmtTime(m.aufnahme)} · ${m.benutzer}${m.extern ? " · extern" : ""}`),
       info)));
   }
-  sec.append(grid);
-  return sec;
+  card.append(grid);
+  if (!showAll) {
+    card.append(h("button", { type: "button", class: "btn more", onclick: () => { l.open.add(ser.id); rerenderSeries(ser); } },
+      `Alle ${ser.medien.length} zeigen`));
+  }
+  return card;
+}
+
+async function doApplyLocation(body, btn) {
+  busy(btn, true);
+  try {
+    const r = await api("api/no-location/apply", { method: "POST", body: { ...body, max_hours: S.loc.hours } });
+    toast(`Ort für ${n(r.aktualisiert, "Medium", "Medien")} übernommen` + (r.uebersprungen.length ? `, ${r.uebersprungen.length} übersprungen` : ""));
+    await loadLocation(true);
+    return true;
+  } catch (e) {
+    toast(e.message, true);
+    return false;
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function applySeries(ser, btn) {
+  const items = ser.medien.filter(selectable);
+  const levels = [...new Set(items.map((m) => LEVEL_LABEL[m.vorschlag.sicherheit]))].join(", ");
+  const ok = await confirmDialog({
+    title: "Ort für die Serie übernehmen?",
+    body: [h("p", {}, `${n(items.length, "Medium erhält", "Medien erhalten")} den vorgeschlagenen Ort (${levels}):`),
+      h("p", {}, h("b", {}, "📍 " + (ser.vorschlag ? ser.vorschlag.ort || "Koordinaten" : "jeweils eigener Vorschlag")))],
+    okLabel: "Übernehmen",
+  });
+  if (ok) await doApplyLocation({ series: [ser.id] }, btn);
 }
 
 async function applyLocation(btn) {
   const ids = [...S.loc.sel];
-  if (!ids.length) return;
+  const all = S.loc.series.flatMap((s) => s.medien).filter((m) => S.loc.sel.has(m.id));
+  const withSugg = all.filter(selectable);
+  if (!withSugg.length) { toast("Die Auswahl hat keine Vorschläge – nutze „Ort wählen …“", true); return; }
   const places = new Map();
-  for (const d of S.loc.days) for (const m of d.medien) if (S.loc.sel.has(m.id)) {
+  for (const m of withSugg) {
     const k = m.vorschlag.ort || "Koordinaten";
     places.set(k, (places.get(k) || 0) + 1);
   }
   const ok = await confirmDialog({
     title: "Ort übernehmen?",
-    body: [h("p", {}, `${ids.length} Medien erhalten die Koordinaten des zeitlich nächsten Fotos:`),
-      h("ul", {}, [...places].map(([k, n]) => h("li", {}, `${k}: ${n}`)))],
+    body: [h("p", {}, `${n(withSugg.length, "Medium erhält", "Medien erhalten")} den vorgeschlagenen Ort:`),
+      h("ul", {}, [...places].map(([k, c]) => h("li", {}, `${k}: ${c}`))),
+      all.length > withSugg.length ? h("p", { class: "muted" }, `${all.length - withSugg.length} ohne Vorschlag werden übersprungen.`) : null],
     okLabel: "Übernehmen",
   });
-  if (!ok) return;
-  busy(btn, true);
+  if (ok) await doApplyLocation({ ids: withSugg.map((m) => m.id) }, btn);
+}
+
+async function applyAllSure(btn) {
+  const count = S.loc.info ? S.loc.info.nach_sicherheit.hoch : 0;
+  const ok = await confirmDialog({
+    title: "Alle sicheren Vorschläge übernehmen?",
+    body: h("p", {}, `${n(count, "Medium erhält", "Medien erhalten")} den Ort eines GPS-Fotos, das höchstens 30 Minuten entfernt ist oder bei dem die Fotos davor und danach am selben Ort entstanden.`),
+    okLabel: "Alle übernehmen",
+  });
+  if (ok) await doApplyLocation({ min_confidence: "hoch" }, btn);
+}
+
+/* Ortssuche über Immich (eigene Ortsdatenbank, kein Internetdienst) */
+let placeTarget = null;
+let placeTimer = null;
+function openPlaceSearch(target) {
+  placeTarget = target;
+  $("#place-target").textContent = `${target.label} · ${n(target.count, "Medium", "Medien")}`;
+  $("#place-q").value = "";
+  $("#place-results").replaceChildren(h("p", { class: "muted" }, "Ortsnamen eingeben, z. B. Siena"));
+  $("#place-dlg").showModal();
+  setTimeout(() => $("#place-q").focus(), 50);
+}
+
+async function searchPlaces() {
+  const q = $("#place-q").value.trim();
+  const box = $("#place-results");
+  if (q.length < 2) { box.replaceChildren(h("p", { class: "muted" }, "Mindestens 2 Buchstaben")); return; }
   try {
-    const r = await api("api/no-location/apply", { method: "POST", body: { ids, max_hours: S.loc.hours } });
-    toast(`Ort für ${r.aktualisiert} Medien übernommen` + (r.uebersprungen.length ? `, ${r.uebersprungen.length} übersprungen` : ""));
-    await loadLocation(true);
+    const list = await api("api/places?q=" + encodeURIComponent(q));
+    if (!list.length) { box.replaceChildren(h("p", { class: "muted" }, "Nichts gefunden")); return; }
+    box.replaceChildren(...list.map((p) => h("button", {
+      type: "button", class: "place-item",
+      onclick: () => choosePlace(p),
+    }, h("b", {}, p.name), p.region ? h("span", { class: "muted" }, " · " + p.region) : null)));
   } catch (e) {
-    toast(e.message, true);
-  } finally {
-    busy(btn, false);
+    box.replaceChildren(h("div", { class: "banner err" }, e.message));
   }
+}
+
+async function choosePlace(p) {
+  $("#place-dlg").close();
+  const t = placeTarget;
+  const ok = await confirmDialog({
+    title: "Ort setzen?",
+    body: h("p", {}, `${n(t.count, "Medium erhält", "Medien erhalten")} den Ort `, h("b", {}, p.name), p.region ? ` (${p.region})` : "", "."),
+    okLabel: "Ort setzen",
+  });
+  if (!ok) return;
+  const body = { place: { breite: p.breite, laenge: p.laenge, name: p.name } };
+  if (t.series) body.series = t.series; else body.ids = t.ids;
+  await doApplyLocation(body, $("#ab-buttons button.primary") || document.createElement("button"));
 }
 
 /* -------------------------------------------------------------- Tags */
@@ -601,6 +719,7 @@ async function loadSettings() {
   $("#set-album").value = d.review_album; lock("#set-album", "review_album");
   $("#set-hours").value = d.location_max_hours; lock("#set-hours", "location_max_hours");
   $("#set-ext").checked = d.location_include_external; lock("#set-ext", "location_include_external");
+  $("#set-shots").checked = d.location_skip_screenshots; lock("#set-shots", "location_skip_screenshots");
   $("#set-web-user").value = d.web_user; lock("#set-web-user", "web_user");
   $("#set-web-pw").value = ""; lock("#set-web-pw", "web_password");
   $("#set-logout").hidden = !d.login_aktiv;
@@ -669,6 +788,7 @@ function readSettingsForm() {
   put("review_album", $("#set-album").value.trim());
   put("location_max_hours", $("#set-hours").value);
   put("location_include_external", $("#set-ext").checked);
+  put("location_skip_screenshots", $("#set-shots").checked);
   if (!d.gesperrt.includes("users")) body.benutzer = readUsers();
   put("auto_scan", $("#set-auto").value);
   put("auto_scan_time", $("#set-auto-time").value);
@@ -817,15 +937,15 @@ function updateActionbar() {
     buttons.push(h("button", { class: "btn small danger", type: "button", disabled: !cnt, onclick: (e) => applyDuplicates("papierkorb", e.currentTarget) }, "Papierkorb"));
   } else if (S.tab === "loc") {
     const cnt = S.loc.sel.size;
-    info.textContent = cnt ? n(cnt, "Medium", "Medien") + " gewählt" : "Bilder mit 📍 antippen";
-    const all = S.loc.days.flatMap((d) => d.medien).filter(selectable);
-    const allSel = all.length && all.every((m) => S.loc.sel.has(m.id));
-    buttons.push(h("button", { class: "btn small", type: "button", disabled: !all.length, onclick: () => {
-      all.forEach((m) => (allSel ? S.loc.sel.delete(m.id) : S.loc.sel.add(m.id)));
-      $("#loc-list").replaceChildren(...S.loc.days.map(renderDay));
-      updateActionbar();
-    } }, allSel ? "Keine" : "Alle"));
-    buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !cnt, onclick: (e) => applyLocation(e.currentTarget) }, "Ort übernehmen"));
+    const sure = S.loc.info ? S.loc.info.nach_sicherheit.hoch : 0;
+    info.textContent = cnt ? n(cnt, "Medium", "Medien") + " gewählt" : "Serie übernehmen oder Bilder antippen";
+    if (cnt) {
+      const chosen = S.loc.series.flatMap((s) => s.medien).filter((m) => S.loc.sel.has(m.id));
+      buttons.push(h("button", { class: "btn small", type: "button", onclick: () => openPlaceSearch({ ids: [...S.loc.sel], count: cnt, label: "Auswahl" }) }, "Ort wählen …"));
+      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !chosen.some(selectable), onclick: (e) => applyLocation(e.currentTarget) }, "Übernehmen"));
+    } else {
+      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !sure, onclick: (e) => applyAllSure(e.currentTarget) }, `Alle sicheren (${sure})`));
+    }
   } else if (S.tab === "set") {
     const locked = S.set.data && S.set.data.gesperrt.length;
     info.textContent = locked ? "Gesperrte Felder stammen aus der .env" : "Änderungen gelten sofort";
@@ -890,6 +1010,8 @@ $("#dup-more").addEventListener("click", (e) => { busy(e.currentTarget, true); l
 $("#loc-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadLocation(false).finally(() => busy(e.currentTarget, false)); });
 $("#dup-done").addEventListener("change", (e) => { S.dup.includeDone = e.target.checked; loadTab("dup", true); });
 $("#loc-only").addEventListener("change", (e) => { S.loc.only = e.target.checked; loadTab("loc", true); });
+$("#loc-conf").addEventListener("change", (e) => { S.loc.minConf = e.target.value || null; loadTab("loc", true); });
+$("#place-q").addEventListener("input", () => { clearTimeout(placeTimer); placeTimer = setTimeout(searchPlaces, 300); });
 $("#loc-hours").addEventListener("change", (e) => {
   const v = parseFloat(String(e.target.value).replace(",", "."));
   if (v > 0 && v <= 48) { S.loc.hours = v; loadTab("loc", true); } else { e.target.value = S.loc.hours; }
