@@ -119,6 +119,7 @@ class Settings:
     auto_scan: str = "aus"  # aus | taeglich | intervall
     auto_scan_time: str = "03:00"
     auto_scan_hours: int = 6
+    auto_stage_locations: bool = False  # nach dem automatischen Einlesen sichere Orte vormerken
     timezone: str = "Europe/Berlin"
     update_check: bool = True
     update_repo: str = DEFAULT_REPO
@@ -215,6 +216,8 @@ class Settings:
             auto_scan=pick("AUTO_SCAN", "auto_scan", "aus", parse_auto_scan),
             auto_scan_time=pick("AUTO_SCAN_TIME", "auto_scan_time", "03:00", parse_time),
             auto_scan_hours=pick("AUTO_SCAN_HOURS", "auto_scan_hours", 6, parse_scan_hours),
+            auto_stage_locations=pick("AUTO_STAGE_LOCATIONS", "auto_stage_locations", False,
+                                      lambda v: _bool(v, False)),
             timezone=pick("TZ", "timezone", "Europe/Berlin", parse_timezone),
             update_check=pick("UPDATE_CHECK", "update_check", True, lambda v: _bool(v, True)),
             update_repo=pick("UPDATE_REPO", "update_repo", DEFAULT_REPO, parse_repo),
@@ -275,6 +278,7 @@ class Settings:
             "auto_scan": self.auto_scan,
             "auto_scan_time": self.auto_scan_time,
             "auto_scan_hours": self.auto_scan_hours,
+            "auto_stage_locations": self.auto_stage_locations,
             "timezone": self.timezone,
             "update_check": self.update_check,
             "update_repo": self.update_repo,
@@ -333,6 +337,7 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
     attempt("auto_scan", parse_auto_scan)
     attempt("auto_scan_time", parse_time)
     attempt("auto_scan_hours", parse_scan_hours)
+    attempt("auto_stage_locations", lambda v: _bool(v, False))
     attempt("timezone", parse_timezone)
     attempt("update_check", lambda v: _bool(v, True))
     attempt("update_repo", parse_repo)

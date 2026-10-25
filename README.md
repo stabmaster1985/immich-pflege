@@ -31,13 +31,22 @@ Für **jeden** Benutzer (hier frank und julia) einzeln:
 
 ### 2. Container starten
 
-Das Tool läuft auf dem Docker-Server, zum Beispiel neben paperless-companion und firefly-dashboard. Immich kann auf einem eigenen LXC oder einer eigenen VM laufen, das Tool spricht es über das Netzwerk an (Port 2283). Am einfachsten installierst du über den n8n-Workflow (siehe [Aktualisieren per n8n](#aktualisieren-per-n8n)), der beim ersten Lauf alles klont und startet. Von Hand geht es so:
+Das Tool läuft auf dem Docker-Server, zum Beispiel neben paperless-companion und firefly-dashboard. Immich kann auf einem eigenen LXC oder einer eigenen VM laufen, das Tool spricht es über das Netzwerk an (Port 2283). **n8n ist nicht nötig.** Einmalig als root auf dem Docker-Server:
 
 ```bash
 git clone https://github.com/stabmaster1985/immich-pflege.git
+sudo ./immich-pflege/installieren.sh
+```
+
+Das Skript legt `data/` für den Container (Benutzer 1000) an, baut und startet den Container, wartet bis er läuft und richtet den [Update-Dienst](#updates-per-klick-update-dienst) ein. Danach kommen Updates per Klick aus der App. Erneut ausgeführt repariert es eine Installation.
+
+Von Hand geht es so:
+
+```bash
 cd immich-pflege
 mkdir -p data && sudo chown 1000:1000 data   # Container läuft als Benutzer 1000, nicht als root
 docker compose up -d --build
+sudo ./updater/install.sh                    # optional: Updates per Klick
 ```
 
 Die Oberfläche läuft auf Port 2222. Soll ein anderer Port genutzt werden, lege eine `.env` mit `PFLEGE_PORT=…` an (siehe `.env.example`).
@@ -70,19 +79,19 @@ Wer lieber mit Dateien arbeitet, kann die meisten Werte auch in einer `.env` vor
 
 ### Updates per Klick (Update-Dienst)
 
-Für Updates ohne n8n gibt es einen kleinen Dienst auf dem Docker-Server (systemd, im Ordner `updater/`). Er bereitet neue Versionen stündlich im Hintergrund vor: holen und Image fertig bauen, die laufende Version bleibt unberührt. In der App siehst du unter **⚙ Einstellungen → Version** die Änderungen und schaltest per Klick um. Das dauert Sekunden, und startet die neue Version nicht sauber, geht es automatisch zurück auf die alte.
+Für Updates gibt es einen kleinen Dienst auf dem Docker-Server (systemd, im Ordner `updater/`). Er bereitet neue Versionen stündlich im Hintergrund vor: holen und Image fertig bauen, die laufende Version bleibt unberührt. In der App siehst du unter **⚙ Einstellungen → Version** die Änderungen und schaltest per Klick um. Das dauert Sekunden, und startet die neue Version nicht sauber, geht es automatisch zurück auf die alte.
 
 ```bash
 cd ~/immich-pflege
-sudo ./updater/install.sh            # einmalig; macht der n8n-Workflow als root auch automatisch
+sudo ./updater/install.sh            # einmalig; macht installieren.sh mit
 sudo ./updater/install.sh --entfernen
 ```
 
-Der Container bekommt dafür **keine** Rechte am Docker-Host. App und Dienst tauschen nur Dateien in `data/updater/` aus (Auftrag `request.json`, Stand `status.json`, Protokoll `update.log`).
+Bringt ein Update eine neue Fassung des Dienstes mit, übernimmt er sie beim Umschalten selbst. Der Container bekommt dafür **keine** Rechte am Docker-Host. App und Dienst tauschen nur Dateien in `data/updater/` aus (Auftrag `request.json`, Stand `status.json`, Protokoll `update.log`).
 
-### Aktualisieren per n8n
+### Optional: Aktualisieren per n8n
 
-Das läuft wie beim paperless-companion und firefly-dashboard. `n8n/immich-pflege-update.json` ist ein fertiger n8n-Workflow, der das Tool per SSH auf dem Docker-Server aktualisiert. Ablauf:
+Nur nötig, wenn auf dem Server kein systemd läuft oder du es wie beim paperless-companion und firefly-dashboard halten willst. `n8n/immich-pflege-update.json` ist ein fertiger n8n-Workflow, der das Tool per SSH auf dem Docker-Server aktualisiert. Ablauf:
 
 1. Das Repository unter `~/immich-pflege` holen: beim ersten Lauf klonen (das ersetzt Schritt 2 oben), danach `git pull --rebase --autostash`.
 2. `data/` anlegen und, wenn der SSH-Benutzer root ist, an UID 1000 übergeben.
@@ -239,7 +248,13 @@ curl $AUTH -X POST $B/api/tags/apply -H 'Content-Type: application/json' -d '{}'
 curl $AUTH -X POST $B/api/tags/apply -H 'Content-Type: application/json' -d '{"rules":["Systemkamera"]}'
 ```
 
-### n8n-Workflow (Idee: jede Nacht)
+### Automatisch ohne n8n
+
+Was früher ein nächtlicher n8n-Workflow erledigt hat, kann das Tool selbst: Unter **⚙ Einstellungen → Automatisch einlesen** täglich einlesen lassen und **„Danach sichere Ortsvorschläge vormerken“** anhaken. Morgens liegen die sicheren Orte unter **✓ Vorgemerkt** und warten auf deinen Blick.
+
+### Optional: n8n-Workflow (Idee: jede Nacht)
+
+Die API führt direkt aus, ohne Vormerkliste. Beispiel:
 
 1. **Schedule Trigger**, täglich 03:00
 2. **HTTP Request** `POST http://immich-pflege:2222/api/scan`, Body `{"wait": true}`, Timeout 600 s

@@ -150,6 +150,8 @@
             </label>
           </div>
           <label class="f">Zeitzone <input type="text" id="set-tz" autocapitalize="off" spellcheck="false" placeholder="Europe/Berlin"></label>
+          <label class="toggle"><input type="checkbox" id="set-auto-stage"> Danach sichere Ortsvorschläge vormerken</label>
+          <small>Landen unter ✓ Vorgemerkt – an Immich geht erst etwas, wenn du dort überträgst.</small>
           <small id="set-auto-info" class="muted"></small>
         </fieldset>
         <fieldset class="card">
@@ -207,6 +209,8 @@
           <label class="f">GitHub-Token <small>nur nötig, solange das Repository privat ist (Contents: Read-only)</small>
             <input type="password" id="set-upd-token" autocomplete="off">
           </label>
+          <details id="set-n8n">
+          <summary>Optional: Updates über n8n statt Update-Dienst</summary>
           <label class="f">n8n-Webhook für Updates <small>Production-URL des Workflows „Immich-Pflege aktualisieren“</small>
             <input type="url" id="set-upd-url" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="http://n8n:5678/webhook/immich-pflege-update">
           </label>
@@ -215,6 +219,7 @@
             <label class="f">Header-Wert <input type="password" id="set-upd-secret" autocomplete="off"></label>
           </div>
           <small>Header-Name leer lassen = Webhook ohne Authentifizierung (in n8n beim Webhook „Authentication: None“).</small>
+          </details>
         </fieldset>
         <p class="muted" id="set-env-hint"></p>
       </form>

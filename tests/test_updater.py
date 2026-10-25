@@ -85,7 +85,7 @@ def setup(tmp_path):
         p = fake / "images" / f"immich-pflege_{tag}"
         return p.read_text().strip() if p.exists() else None
 
-    return dict(run=run, publish=publish, status=status, image=image, repo=repo)
+    return dict(run=run, publish=publish, status=status, image=image, repo=repo, work=work, fake=fake)
 
 
 def test_up_to_date(setup):
@@ -145,6 +145,29 @@ def test_handle_request_from_app(setup):
     req.write_text(json.dumps({"aktion": "umschalten"}))
     assert setup["run"]("handle").returncode == 0
     assert setup["status"]()["phase"] == "fertig" and git(setup["repo"], "rev-parse", "HEAD") == new
+
+
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() != 0, reason="nur als root (wie der systemd-Dienst)")
+def test_apply_refreshes_systemd_units(setup, tmp_path):
+    """Nach dem Umschalten übernimmt der Dienst neue systemd-Units selbst – ohne n8n."""
+    units = tmp_path / "systemd"
+    units.mkdir()
+    (setup["fake"] / "bin" / "systemctl").write_text('#!/usr/bin/env bash\necho "systemctl $*" >> "$FAKE/calls"\n')
+    (setup["fake"] / "bin" / "systemctl").chmod(0o755)
+    shutil.copytree(SCRIPT.parent, setup["work"] / "updater")
+    setup["publish"]("Version mit Update-Dienst")
+    git(setup["work"], "add", "updater")
+    git(setup["work"], "commit", "-qm", "Update-Dienst")
+    git(setup["work"], "push", "-q", "origin", "main")
+    new = git(setup["work"], "rev-parse", "HEAD")
+    assert setup["run"]("prepare").returncode == 0
+    r = setup["run"]("apply", PFLEGE_SYSTEMD_DIR=str(units))
+    assert r.returncode == 0, r.stderr
+    assert setup["status"]()["phase"] == "fertig" and git(setup["repo"], "rev-parse", "HEAD") == new
+    service = (units / "immich-pflege-updater.service").read_text()
+    assert f"{setup['repo']}/updater/pflege-updater.sh handle" in service
+    calls = (setup["fake"] / "calls").read_text()
+    assert "systemctl daemon-reload" in calls and "systemctl enable --now" in calls
 
 
 # ------------------------------------------------------------- App-Seite

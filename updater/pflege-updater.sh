@@ -20,7 +20,7 @@ if [ -z "${PFLEGE_UPDATER_COPY:-}" ]; then
 fi
 trap 'rm -f "$0"' EXIT
 
-DIENST_VERSION=1
+DIENST_VERSION=2
 REPO="$PFLEGE_DIR"
 BRANCH="${PFLEGE_BRANCH:-main}"
 IMAGE="${PFLEGE_IMAGE:-immich-pflege}"
@@ -134,6 +134,10 @@ apply() {
     docker image rm "$IMAGE:bereit" >/dev/null 2>&1 || true
     docker image prune -f >/dev/null 2>&1 || true
     log "Fertig: $new läuft"
+    # Neue Fassung der systemd-Units übernehmen – so braucht der Dienst nie n8n oder Handarbeit
+    if [ "$(id -u)" = "0" ] && [ -f "$REPO/updater/install.sh" ]; then
+      bash "$REPO/updater/install.sh" --units >>"$LOG" 2>&1 || log "Hinweis: systemd-Units nicht aktualisiert"
+    fi
     write_status "fertig" "Version ${new:0:7} läuft."
     return 0
   fi

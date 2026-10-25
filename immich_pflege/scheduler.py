@@ -90,7 +90,22 @@ class AutoScan:
             return False
         self.last_error = None
         self.last_run = self._now()
+        if settings.auto_stage_locations:
+            self._stage_locations(svc)
         return True
+
+    def _stage_locations(self, svc) -> None:
+        """Sichere Ortsvorschläge vormerken – übertragen wird erst nach Prüfung in der App."""
+        from .service import ActionError
+
+        day = self._now().astimezone(ZoneInfo(svc.settings.timezone)).strftime("%d.%m.%Y")
+        try:
+            r = svc.stage_no_location(label=f"Automatisch {day}: sichere Orte", min_confidence="hoch")
+            log.info("Automatisch %d sichere Orte vorgemerkt", r["vorgemerkt"])
+        except ActionError:
+            pass  # nichts Neues
+        except ImmichError as exc:
+            log.warning("Sichere Orte nicht vorgemerkt: %s", exc)
 
     def info(self) -> dict:
         nxt = self.next_run()

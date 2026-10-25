@@ -13,6 +13,13 @@ Alle Einstellungen werden hier gemacht und in `data/einstellungen.json` gespeich
 
 Neue Fotos erscheinen im Tool erst nach dem Einlesen. Das geht **täglich** zu einer Uhrzeit oder **alle X Stunden**, in der gewählten Zeitzone und mit Sommer- und Winterzeit. Ein verpasster Termin, z. B. weil der Container aus war, wird nachgeholt. Schlägt das Einlesen fehl, versucht es das Tool nach 15 Minuten erneut.
 
+**Danach sichere Ortsvorschläge vormerken:** Nach jedem automatischen Einlesen landen die sicheren Ortsvorschläge unter **✓ Vorgemerkt**, als Eintrag „Automatisch …: sichere Orte“. Übertragen wird erst, wenn du es dort bestätigst. Dafür braucht es keinen n8n-Workflow mehr.
+
+## Albumvorschläge
+
+- **Reise ab km von zu Hause:** Ab dieser Entfernung zählen Fotos als „unterwegs“ (Standard 50 km).
+- **Mindestens Medien:** Kleinere Ausflüge werden nicht vorgeschlagen (Standard 20).
+
 ## Duplikate
 
 - **Prüf-Album:** Name des Albums für nicht behaltene Kopien.
@@ -44,8 +51,8 @@ Ein kleiner Dienst auf dem Docker-Server (systemd) übernimmt die Updates. Die A
 2. **Letzter Blick:** Die Karte zeigt „Version … ist vorbereitet“ mit allen Änderungen, am Zahnrad erscheint ein roter Punkt.
 3. **Umschalten per Klick:** Der Wechsel dauert nur Sekunden. Startet die neue Version nicht sauber, schaltet der Dienst **automatisch auf die alte zurück** und zeigt den Fehler an.
 
-Eingerichtet wird der Dienst einmalig mit `sudo ./updater/install.sh` im Projektordner auf dem Server. Der n8n-Workflow erledigt das bei seinem nächsten Lauf automatisch, wenn er als root arbeitet. Entfernen: `sudo ./updater/install.sh --entfernen`.
+Eingerichtet wird der Dienst einmalig mit `sudo ./installieren.sh` (oder nur der Dienst: `sudo ./updater/install.sh`) im Projektordner auf dem Server. Danach hält er sich selbst aktuell: Bringt ein Update eine neue Fassung des Dienstes mit, übernimmt er sie beim Umschalten. Entfernen: `sudo ./updater/install.sh --entfernen`.
 
-### n8n-Workflow
+### n8n-Workflow (optional)
 
-Ohne Update-Dienst startet **Jetzt aktualisieren** den n8n-Workflow `n8n/immich-pflege-update.json`, dafür die Webhook-Adresse eintragen. Header-Name leer lassen bedeutet: Webhook ohne Authentifizierung. Hier wird erst nach dem Klick geholt und gebaut, das dauert 1–3 Minuten.
+Nur nötig, wenn auf dem Server kein systemd läuft. Ohne Update-Dienst startet **Jetzt aktualisieren** den n8n-Workflow `n8n/immich-pflege-update.json`, dafür die Webhook-Adresse eintragen. Header-Name leer lassen bedeutet: Webhook ohne Authentifizierung. Hier wird erst nach dem Klick geholt und gebaut, das dauert 1–3 Minuten.

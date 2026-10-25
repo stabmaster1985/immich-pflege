@@ -968,6 +968,7 @@ async function loadSettings() {
   $("#set-auto").value = d.auto_scan; lock("#set-auto", "auto_scan");
   $("#set-auto-time").value = d.auto_scan_time; lock("#set-auto-time", "auto_scan_time");
   $("#set-auto-hours").value = d.auto_scan_hours; lock("#set-auto-hours", "auto_scan_hours");
+  $("#set-auto-stage").checked = d.auto_stage_locations; lock("#set-auto-stage", "auto_stage_locations");
   $("#set-tz").value = d.timezone; lock("#set-tz", "timezone");
   updateAutoFields();
   $("#set-upd-check").checked = d.update_check; lock("#set-upd-check", "update_check");
@@ -975,6 +976,7 @@ async function loadSettings() {
   $("#set-upd-token").value = ""; lock("#set-upd-token", "update_github_token");
   $("#set-upd-token").placeholder = d.update_github_token_gesetzt ? "gespeichert" : "nicht gesetzt";
   $("#set-upd-url").value = d.update_webhook_url; lock("#set-upd-url", "update_webhook_url");
+  $("#set-n8n").open = !!d.update_webhook_url;
   $("#set-upd-header").value = d.update_webhook_header; lock("#set-upd-header", "update_webhook_header");
   $("#set-upd-secret").value = ""; lock("#set-upd-secret", "update_webhook_secret");
   $("#set-upd-secret").placeholder = !d.update_webhook_header ? "ohne Auth" : (d.update_webhook_secret_gesetzt ? "gespeichert" : "nicht gesetzt");
@@ -1037,6 +1039,7 @@ function readSettingsForm() {
   put("auto_scan", $("#set-auto").value);
   put("auto_scan_time", $("#set-auto-time").value);
   put("auto_scan_hours", $("#set-auto-hours").value);
+  put("auto_stage_locations", $("#set-auto-stage").checked);
   put("timezone", $("#set-tz").value.trim());
   put("update_check", $("#set-upd-check").checked);
   put("update_repo", $("#set-upd-repo").value.trim());
@@ -1128,7 +1131,7 @@ async function loadVersion(force = false) {
   btn.hidden = !v.update_moeglich;
   btn.className = "btn small" + (v.update_available ? " primary" : "");
   if (!v.update_moeglich) {
-    $("#version-out").textContent = "Für den Update-Knopf: n8n-Workflow n8n/immich-pflege-update.json importieren und unten unter „Updates“ die Webhook-Adresse eintragen.";
+    $("#version-out").textContent = "Für Updates per Klick einmalig auf dem Server im Projektordner ausführen: sudo ./installieren.sh – danach erscheint hier der Update-Dienst.";
   } else if (!btn.disabled) {
     $("#version-out").textContent = "";
   }
