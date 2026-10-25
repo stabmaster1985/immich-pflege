@@ -28,8 +28,10 @@ Medien ohne Ort mit höchstens **2 Stunden** Abstand bilden eine **Serie**.
 ## So arbeitest du am schnellsten
 
 1. Die **Übersicht nach Ort** zeigt pro vorgeschlagenem Ort, wie viele Medien und Serien betroffen sind.
-2. **Alle übernehmen** auf einer Ortskarte setzt den Ort für alle Medien mit Vorschlag. Steht oben „nur sichere“, werden nur die sicheren übernommen.
-3. **Alle sicheren** unten übernimmt alle sicheren Vorschläge auf einmal.
+2. **Alle vormerken** auf einer Ortskarte merkt den Ort für alle Medien mit Vorschlag vor. Steht oben „nur sichere“, werden nur die sicheren vorgemerkt.
+3. **Alle sicheren** unten merkt alle sicheren Vorschläge auf einmal vor.
+
+Vorgemerktes verschwindet aus der Liste. An Immich geht es erst, wenn du es unter **✓ Vorgemerkt** überträgst.
 4. Für **Ohne Vorschlag**: Mit dem **Monat** eingrenzen und **Ort für alle suchen …** wählen, z. B. „Hamburg“ für die Scans eines Urlaubs. Oder pro Serie über **Ort suchen …** einzeln.
 
 Die Ortssuche nutzt Immichs eigene Ortsdatenbank, ohne Internetdienst.

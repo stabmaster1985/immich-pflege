@@ -22,6 +22,7 @@
       <button role="tab" data-tab="dup" aria-selected="true">Duplikate <span class="count" id="count-dup"></span></button>
       <button role="tab" data-tab="loc" aria-selected="false">Ohne Ort <span class="count" id="count-loc"></span></button>
       <button role="tab" data-tab="tags" aria-selected="false">Tags <span class="count" id="count-tags"></span></button>
+      <button role="tab" data-tab="stage" aria-selected="false" title="Vorgemerkt">✓ <span class="count" id="count-stage"></span></button>
       <button role="tab" data-tab="set" aria-selected="false" class="gear" aria-label="Einstellungen" title="Einstellungen">⚙︎</button>
     </nav>
   </header>
@@ -73,6 +74,15 @@
       </div>
       <div id="tags-errors"></div>
       <div id="tags-list"></div>
+    </section>
+
+    <section id="tab-stage" class="tab" role="tabpanel" hidden>
+      <div class="toolbar">
+        <span id="stage-summary" class="muted"></span>
+        <button type="button" class="btn small help-btn" data-help="vorgemerkt" aria-label="Hilfe zur Vormerkliste">?</button>
+      </div>
+      <p class="hint">Hier liegt alles, was du vorgemerkt hast – noch ist nichts an Immich gegangen. Prüfen, zurücknehmen oder übertragen.</p>
+      <div id="stage-list"></div>
     </section>
 
     <section id="tab-set" class="tab" role="tabpanel" hidden>

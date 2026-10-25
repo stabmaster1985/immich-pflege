@@ -8,7 +8,7 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 | **Ohne Ort** | Medien ohne GPS bekommen einen Ortsvorschlag mit Sicherheit (sicher, wahrscheinlich, unsicher) aus den GPS-Fotos beider Benutzer, zusammengefasst nach Ort und Serie. Für den Rest gibt es die Ortssuche von Immich. Screenshots werden ausgeblendet. |
 | **Tags** | Massen-Tagging nach Regeln, die du in der Oberfläche anlegst. Tags werden nur ergänzt, nie entfernt. |
 
-Alles startet als **Vorschau**. Änderungen gibt es nur nach ausdrücklicher Aktion.
+Alles startet als **Vorschau**. In der Oberfläche wird Bestätigtes zuerst nur **vorgemerkt** und verschwindet aus der Übersicht. Unter **✓ Vorgemerkt** prüfst du alles noch einmal und überträgst es dann per Klick an Immich.
 
 **Alle Einstellungen und Regeln werden in der Oberfläche gemacht.** Dateien musst du nicht bearbeiten.
 
@@ -105,7 +105,7 @@ Alternativ startest du den Workflow per **Test workflow** oder, wenn aktiviert, 
 
 ## Oberfläche und Hilfe
 
-Vier Tabs (**Duplikate**, **Ohne Ort**, **Tags**, **⚙ Einstellungen**), unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
+Fünf Tabs (**Duplikate**, **Ohne Ort**, **Tags**, **✓ Vorgemerkt**, **⚙ Einstellungen**), unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
 
 **Jeder Tab hat oben ein „?“** mit einer ausführlichen Erklärung: wie Treffer und Vorschläge entstehen, nach welchen Kriterien bewertet wird und wo die Grenzen liegen. Dieselben Texte liegen im Repository:
 
@@ -114,6 +114,7 @@ Vier Tabs (**Duplikate**, **Ohne Ort**, **Tags**, **⚙ Einstellungen**), unten 
 | Duplikate: Quellen, Arten, Behalten-Vorschlag, Schutzregeln, Bild-Fingerabdruck | [`immich_pflege/hilfe/duplikate.md`](immich_pflege/hilfe/duplikate.md) |
 | Fotos ohne Ort: Kriterien und Sicherheit, Serien, Ortssuche, Fehlerquellen | [`immich_pflege/hilfe/ohne-ort.md`](immich_pflege/hilfe/ohne-ort.md) |
 | Massen-Tagging: Regelfelder, Vorschau, YAML | [`immich_pflege/hilfe/tags.md`](immich_pflege/hilfe/tags.md) |
+| Vorgemerkt: erst sammeln, prüfen, dann übertragen | [`immich_pflege/hilfe/vorgemerkt.md`](immich_pflege/hilfe/vorgemerkt.md) |
 | Einstellungen: Immich, automatisch einlesen, Zugang, Updates | [`immich_pflege/hilfe/einstellungen.md`](immich_pflege/hilfe/einstellungen.md) |
 
 Das YAML-Format der Regeln ist in [`immich_pflege/regeln.example.yaml`](immich_pflege/regeln.example.yaml) beschrieben.
@@ -177,7 +178,7 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | POST | `/api/no-location/apply` | Ort übernehmen: `ids`, `series`, `ort`/`monat` (alle Serien eines Ortes oder Monats), `min_confidence` (`hoch`/`mittel`/`niedrig`), optional `place` `{breite, laenge, name}` |
 | GET | `/api/places?q=Siena` | Ortssuche über Immich |
 | GET | `/api/tags` | Regel-Vorschau (`rules=Name`, mehrfach möglich) |
-| GET | `/api/help/{thema}` | Hilfetext als Markdown (`duplikate`, `ohne-ort`, `tags`, `einstellungen`) |
+| GET | `/api/help/{thema}` | Hilfetext als Markdown (`duplikate`, `ohne-ort`, `tags`, `vorgemerkt`, `einstellungen`) |
 | GET/PUT | `/api/rules` | Regeln lesen/speichern (`{"regeln": [...]}` oder `{"yaml": "..."}`) |
 | GET/PUT | `/api/settings` | Einstellungen (Keys nur maskiert) |
 | GET | `/api/version` | laufende Version und ob es auf GitHub Neues gibt |
@@ -187,6 +188,12 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | POST | `/api/version/update` | Update über den n8n-Webhook anstoßen |
 | POST | `/api/settings/test` | Verbindung und Keys prüfen, ohne zu speichern |
 | POST | `/api/tags/apply` | Tags anwenden |
+| GET | `/api/staged` | Vormerkliste mit Einträgen und Summen |
+| POST | `/api/staged/duplicates` | Duplikat-Aktion vormerken (Felder wie `/api/duplicates/apply`) |
+| POST | `/api/staged/no-location` | Orte vormerken (Felder wie `/api/no-location/apply`, dazu `label`) |
+| POST | `/api/staged/tags` | Regeln vormerken: `{"rules": [...]}` |
+| DELETE | `/api/staged/{id}` | Eintrag zurücknehmen |
+| POST | `/api/staged/apply` | Vorgemerktes übertragen: `ids` (ohne = alle), bei Papierkorb `confirm: "PAPIERKORB"` |
 
 Fehler kommen als `{"fehler": "…"}` zurück: 400 bei ungültiger Anfrage, 409 solange das Tool noch nicht eingerichtet ist, 422 bei fehlerhaften Regeln oder Einstellungen (mit `details`), 502 wenn Immich nicht erreichbar ist.
 

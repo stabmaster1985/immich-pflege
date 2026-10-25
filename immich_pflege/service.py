@@ -11,13 +11,14 @@ import httpx
 from . import __version__
 from .client import ImmichClient, ImmichError
 from .config import Settings
-from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, IgnoreList, clear_immich_duplicates, execute_steps,
-                         find_groups, plan_group)
+from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, IgnoreList, PlannedStep,
+                         clear_immich_duplicates, execute_steps, find_groups, plan_group)
 from .imagehash import HashProgress, HashStore, compute_missing, similar_pairs
 from .library import Library, scan_library
-from .location import (LEVELS, analyze, apply_locations, level_at_least, month_facets, month_key,
-                       month_label, place_facets, place_key)
+from .location import (LEVELS, LocationChange, analyze, execute_location_changes, level_at_least,
+                       month_facets, month_key, month_label, place_facets, place_key, resolve_locations)
 from .rules import Resolver, Rule, RuleError, apply as apply_rules, load_rules, preview as preview_rules
+from .staging import StagingStore
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ class Pflege:
         self.hash_progress = HashProgress()
         self._hash_thread: threading.Thread | None = None
         self._pairs_cache: tuple[tuple, list[tuple[str, str]]] | None = None
+        self._staging: StagingStore | None = None
 
     # ------------------------------------------------------------ Bibliothek
     def cached_library(self) -> Library | None:
@@ -128,6 +130,7 @@ class Pflege:
             "ort_max_stunden": self.settings.location_max_hours,
             "ort_extern_erlaubt": self.settings.location_include_external,
             "link_url": self.settings.browser_url,
+            "vorgemerkt": self.staging.summary(),
             "regeldatei": str(self.settings.rules_file),
             "einlesen_laeuft": self.scanning,
             "letzter_fehler": self.last_error,
@@ -188,7 +191,9 @@ class Pflege:
         return IgnoreList(self.settings.data_dir / "duplikate_ignoriert.json")
 
     def duplicate_groups(self, include_ignored: bool = False) -> list[DuplicateGroup]:
-        groups = find_groups(self.library(), self.image_pairs(), self.settings.dup_edit_keep)
+        staged = self.staging.asset_ids("duplikat")
+        groups = [g for g in find_groups(self.library(), self.image_pairs(), self.settings.dup_edit_keep)
+                  if not (g.asset_ids & staged)]
         if include_ignored:
             return groups
         ignored = self.ignore_list()
@@ -214,7 +219,9 @@ class Pflege:
                         ignored: bool = False) -> dict:
         """Gruppen mit Filtern. ``ignored=True`` zeigt nur die als „kein Duplikat“ markierten."""
         lib = self.library()
-        all_groups = find_groups(lib, self.image_pairs(), self.settings.dup_edit_keep)
+        staged = self.staging.asset_ids("duplikat")
+        all_groups = [g for g in find_groups(lib, self.image_pairs(), self.settings.dup_edit_keep)
+                      if not (g.asset_ids & staged)]
         ignore = self.ignore_list()
         n_ignored = sum(1 for g in all_groups if ignore.contains(g))
         base = [g for g in all_groups if ignore.contains(g) == ignored]
@@ -318,7 +325,7 @@ class Pflege:
     def _analysis(self, max_hours: float | None = None):
         hours = max_hours or self.settings.location_max_hours
         return hours, analyze(self.library(), hours, self.settings.location_include_external,
-                              self.settings.location_skip_screenshots)
+                              self.settings.location_skip_screenshots, self.staging.asset_ids("ort"))
 
     @staticmethod
     def _filter_series(series, only_suggestions=False, min_confidence=None, ort=None, monat=None):
@@ -366,52 +373,161 @@ class Pflege:
             out["serien"] = [s.to_dict() for s in page]
         return out
 
+    def _select_locations(self, ids=None, max_hours=None, min_confidence=None, series=None, place=None,
+                          ort=None, monat=None):
+        """Auswahl auflösen: ids und/oder series (Serien-IDs); ort/monat wählt alle Serien eines
+        Ortes bzw. Monats; place = {breite, laenge, name} setzt einen von Hand gewählten Ort;
+        min_confidence ohne Auswahl = alle ab dieser Sicherheit. Vorgemerktes zählt nicht mit."""
+        if min_confidence and min_confidence not in LEVELS:
+            raise ActionError(f"Sicherheit muss {', '.join(LEVELS)} sein")
+        hours, an = self._analysis(max_hours)
+        selected: list[str] | None = list(ids or [])
+        if ort or monat:
+            chosen = self._filter_series(an.series, ort=ort, monat=monat)
+            if not chosen:
+                raise ActionError("Keine Serien für diesen Ort/Monat – bitte neu laden")
+            series = list(series or []) + [s.id for s in chosen]
+        if series:
+            known = {s.id: s for s in an.series}
+            missing = [sid for sid in series if sid not in known]
+            if missing:
+                raise ActionError(f"Serie(n) {', '.join(missing)} nicht gefunden – bitte neu laden")
+            for sid in series:
+                selected += [c.asset.id for c in known[sid].members
+                             if c.editable and (place or c.suggestion)
+                             and (not min_confidence or (c.suggestion and
+                                  level_at_least(c.suggestion.confidence, min_confidence)))]
+        if not selected:
+            if not min_confidence or place:
+                raise ActionError("Keine Medien ausgewählt (ids, series oder min_confidence)")
+            selected = None
+        manual = None
+        if place:
+            try:
+                manual = (float(place["breite"]), float(place["laenge"]), place.get("name"))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ActionError("place braucht breite und laenge") from exc
+            if not (-90 <= manual[0] <= 90 and -180 <= manual[1] <= 180):
+                raise ActionError("Koordinaten außerhalb des gültigen Bereichs")
+        return resolve_locations(self.library(), selected, hours, self.settings.location_include_external,
+                                 skip_screenshots=self.settings.location_skip_screenshots,
+                                 min_confidence=min_confidence if selected is None else None,
+                                 manual=manual, exclude=self.staging.asset_ids("ort"))
+
     def apply_no_location(self, ids: list[str] | None = None, max_hours: float | None = None,
                           min_confidence: str | None = None, series: list[str] | None = None,
                           place: dict | None = None, ort: str | None = None,
                           monat: str | None = None) -> dict[str, Any]:
-        """ids und/oder series (Serien-IDs) übernehmen; ort/monat wählt alle Serien eines Ortes
-        bzw. Monats; place = {breite, laenge, name} setzt einen von Hand gewählten Ort;
-        min_confidence ohne Auswahl = alle ab dieser Sicherheit."""
-        if min_confidence and min_confidence not in LEVELS:
-            raise ActionError(f"Sicherheit muss {', '.join(LEVELS)} sein")
+        """Orte direkt in Immich setzen (API/n8n). Die Oberfläche merkt erst vor."""
         with self._lock:
-            hours, an = self._analysis(max_hours)
-            selected: list[str] | None = list(ids or [])
-            if ort or monat:
-                chosen = self._filter_series(an.series, ort=ort, monat=monat)
-                if not chosen:
-                    raise ActionError("Keine Serien für diesen Ort/Monat – bitte neu laden")
-                series = list(series or []) + [s.id for s in chosen]
-            if series:
-                known = {s.id: s for s in an.series}
-                missing = [sid for sid in series if sid not in known]
-                if missing:
-                    raise ActionError(f"Serie(n) {', '.join(missing)} nicht gefunden – bitte neu laden")
-                for sid in series:
-                    selected += [c.asset.id for c in known[sid].members
-                                 if c.editable and (place or c.suggestion)
-                                 and (not min_confidence or (c.suggestion and
-                                      level_at_least(c.suggestion.confidence, min_confidence)))]
-            if not selected:
-                if not min_confidence or place:
-                    raise ActionError("Keine Medien ausgewählt (ids, series oder min_confidence)")
-                selected = None
-            manual = None
-            if place:
-                try:
-                    manual = (float(place["breite"]), float(place["laenge"]), place.get("name"))
-                except (KeyError, TypeError, ValueError) as exc:
-                    raise ActionError("place braucht breite und laenge") from exc
-                if not (-90 <= manual[0] <= 90 and -180 <= manual[1] <= 180):
-                    raise ActionError("Koordinaten außerhalb des gültigen Bereichs")
-            res = apply_locations(self.library(), self.clients, selected, hours,
-                                  self.settings.location_include_external,
-                                  skip_screenshots=self.settings.location_skip_screenshots,
-                                  min_confidence=min_confidence if selected is None else None,
-                                  manual=manual)
+            changes, skipped = self._select_locations(ids, max_hours, min_confidence, series, place, ort, monat)
+            res = execute_location_changes(self.library(), self.clients, changes)
             self._save()
-            return res
+            return {"aktualisiert": res["aktualisiert"], "uebersprungen": skipped + res["uebersprungen"]}
+
+    # -------------------------------------------------------------- Vormerken
+    @property
+    def staging(self) -> StagingStore:
+        if self._staging is None:
+            self._staging = StagingStore(self.settings.data_dir / "vorgemerkt.json")
+        return self._staging
+
+    def stage_no_location(self, label: str | None = None, **selection) -> dict[str, Any]:
+        with self._lock:
+            changes, skipped = self._select_locations(**selection)
+            if not changes:
+                raise ActionError("Nichts vorzumerken – " + (skipped[0]["grund"] if skipped else "keine Auswahl"))
+            lib = self.library()
+            places = sorted({ch.place or "Koordinaten" for ch in changes})
+            title = label or (places[0] if len(places) == 1 else f"{len(places)} Orte")
+            media = [{**lib.assets[ch.asset_id].summary(), "neuer_ort": ch.place, "sicherheit": ch.confidence}
+                     for ch in changes if ch.asset_id in lib.assets]
+            entry = self.staging.add("ort", f"📍 {title}", {"aenderungen": [ch.to_dict() for ch in changes]},
+                                     media, len(changes))
+            return {"vorgemerkt": len(changes), "uebersprungen": skipped, "eintrag": entry["id"]}
+
+    def stage_duplicates(self, action: str, groups: list[dict] | None = None, all_groups: bool = False,
+                         art: str | None = None, monat: str | None = None, cross_user: bool = False) -> dict:
+        with self._lock:
+            selection, _ = self.plan_duplicates(action, groups, all_groups, art, monat, cross_user)
+            staged = 0
+            for g, keep in selection:
+                steps = [s for s in plan_group(g, keep, action) if s.action != "keine"]
+                if not steps:
+                    continue
+                keeper = g.asset(keep)
+                trash = sum(1 for s in steps if s.action == "papierkorb")
+                title = (f"{keeper.file_name}: {len(steps)} {'Kopie' if len(steps) == 1 else 'Kopien'} → "
+                         + ("Papierkorb" if trash == len(steps) else "Prüf-Album" if not trash else "Papierkorb/Prüf-Album"))
+                media = [{**a.summary(), "bleibt": a.id == keep,
+                          "aktion": next((s.action for s in steps if s.asset.id == a.id), "bleibt")} for a in g.assets]
+                self.staging.add("duplikat", title, {
+                    "aktion": action, "gruppe": g.id, "behalten": keep, "art": g.kind,
+                    "alle_medien": sorted(g.asset_ids),
+                    "schritte": [s.to_dict() for s in steps],
+                }, media, len(steps), key=g.id)
+                staged += 1
+            if not staged:
+                raise ActionError("Nichts vorzumerken")
+            return {"vorgemerkt": staged}
+
+    def stage_tags(self, names: list[str]) -> dict[str, Any]:
+        if not names:
+            raise ActionError("Keine Regeln ausgewählt")
+        preview = {p["name"]: p for p in self.tags_preview(names)["regeln"]}
+        for name in names:
+            p = preview[name]
+            if not p.get("aktiv"):
+                raise ActionError(f"Regel „{name}“ ist ausgeschaltet")
+            self.staging.add("tag", f"🏷 {name}: {', '.join(p['tags'])}", {"regel": name, "tags": p["tags"]},
+                             p.get("beispiele", []), p.get("neu", 0), key=name)
+        return {"vorgemerkt": len(names)}
+
+    def unstage(self, entry_ids: list[str]) -> dict[str, Any]:
+        return {"entfernt": self.staging.remove(entry_ids)}
+
+    def staged_view(self) -> dict[str, Any]:
+        return {**self.staging.summary(), "eintraege": self.staging.entries}
+
+    def apply_staged(self, entry_ids: list[str] | None = None, confirm: str | None = None) -> dict[str, Any]:
+        """Vorgemerktes an Immich übertragen. Erfolgreiche Einträge verschwinden aus der Liste."""
+        with self._lock:
+            lib = self.library()
+            entries = [e for e in self.staging.entries if entry_ids is None or e["id"] in entry_ids]
+            if not entries:
+                raise ActionError("Nichts zu übertragen")
+            trash = sum(1 for e in entries if e["typ"] == "duplikat"
+                        for s in e["daten"]["schritte"] if s["aktion"] == "papierkorb")
+            if trash and confirm != CONFIRM_TRASH:
+                raise ActionError(f'{trash} Medien gehen in den Papierkorb – nur mit confirm="{CONFIRM_TRASH}"')
+            done, results = [], []
+            for e in entries:
+                try:
+                    if e["typ"] == "duplikat":
+                        steps, skipped = [], []
+                        for st in e["daten"]["schritte"]:
+                            a = lib.assets.get(st["id"])
+                            if a is None:
+                                skipped.append({"id": st["id"], "grund": "nicht mehr vorhanden"})
+                            else:
+                                steps.append(PlannedStep(a, st["aktion"], st["grund"]))
+                        res = execute_steps(lib, self.clients, steps, self.settings.review_album)
+                        res["uebersprungen"] = skipped
+                    elif e["typ"] == "ort":
+                        res = execute_location_changes(lib, self.clients, [
+                            LocationChange.from_dict(ch) for ch in e["daten"]["aenderungen"]])
+                    else:
+                        res = self.tags_apply([e["daten"]["regel"]])
+                except (ImmichError, ActionError, RuleError) as exc:
+                    self.staging.set_error(e["id"], str(exc))
+                    results.append({"id": e["id"], "titel": e["titel"], "fehler": str(exc)})
+                    continue
+                done.append(e["id"])
+                results.append({"id": e["id"], "titel": e["titel"], "ergebnis": res})
+            self.staging.remove(done)
+            self._save()
+            log.info("Vorgemerktes übertragen: %d von %d Einträgen", len(done), len(entries))
+            return {"uebertragen": len(done), "fehler": len(entries) - len(done), "eintraege": results}
 
     def search_places(self, name: str) -> list[dict[str, Any]]:
         if not self.clients:
@@ -444,8 +560,10 @@ class Pflege:
         rules = self._select_rules(names)
         resolver = Resolver(self.clients)
         lib = self.library()
+        staged = {e["daten"]["regel"] for e in self.staging.of_type("tag")}
+        regeln = [{**r, "vorgemerkt": r["name"] in staged} for r in preview_rules(rules, lib, resolver)]
         return {"stand": lib.scanned_at, "regeldatei": str(self.settings.rules_file),
-                "regeln": preview_rules(rules, lib, resolver), "warnungen": resolver.warnings}
+                "regeln": regeln, "warnungen": resolver.warnings}
 
     def tags_apply(self, names: list[str] | None = None) -> dict[str, Any]:
         with self._lock:

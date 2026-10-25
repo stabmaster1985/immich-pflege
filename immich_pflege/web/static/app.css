@@ -252,3 +252,12 @@ pre.log { white-space: pre-wrap; font-size: .75rem; margin: 6px 0 0; max-height:
 .open-links { display: flex; gap: 12px; margin-top: 4px; }
 .open-links a { color: var(--accent); text-decoration: none; font-weight: 600; font-size: .8rem; padding: 4px 0; }
 div.tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Vorgemerkt */
+.stage-head { font-size: 1rem; margin: 16px 0 8px; }
+.stage-fig { margin: 0; flex: none; width: 64px; text-align: center; }
+.stage-fig img { display: block; }
+.stage-fig figcaption { font-size: .68rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage-fig.keep img { outline: 2px solid var(--keep); outline-offset: -2px; }
+.stage-fig.drop img { opacity: .75; }
+.stage-actions { margin-top: 10px; }

@@ -262,12 +262,13 @@ def _build_series(cands: list[Candidate]) -> list[Series]:
 
 
 def analyze(lib: Library, max_hours: float, include_external: bool,
-            skip_screenshots: bool = True) -> Analysis:
+            skip_screenshots: bool = True, exclude: set[str] = frozenset()) -> Analysis:
+    """``exclude``: Medien, die schon vorgemerkt sind – sie tauchen nicht mehr auf."""
     index = GpsIndex(lib.assets.values())
     cands: list[Candidate] = []
     screenshots = 0
     for a in lib.assets.values():
-        if a.has_gps:
+        if a.has_gps or a.id in exclude:
             continue
         if skip_screenshots and is_screenshot(a):
             screenshots += 1
@@ -295,26 +296,48 @@ def group_by_day(candidates: list[Candidate]) -> list[dict[str, Any]]:
     } for day, items in days.items()]
 
 
-def apply_locations(lib: Library, clients: dict[str, ImmichClient], ids: Iterable[str] | None,
-                    max_hours: float, include_external: bool, *, skip_screenshots: bool = True,
-                    min_confidence: str | None = None, manual: tuple[float, float, str | None] | None = None
-                    ) -> dict[str, Any]:
-    """Ort setzen: vorgeschlagenen Ort (ids), alle ab einer Sicherheit (min_confidence)
-    oder einen von Hand gewählten Ort (manual = (breite, länge, name)) für ids."""
-    analysis = analyze(lib, max_hours, include_external, skip_screenshots)
+@dataclass
+class LocationChange:
+    """Ein zu setzender Ort – vorgemerkt oder direkt ausgeführt."""
+    asset_id: str
+    owner: str
+    latitude: float
+    longitude: float
+    place: str | None
+    confidence: str
+    reason: str
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return dict(self.__dict__)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LocationChange":
+        return cls(**data)
+
+
+def resolve_locations(lib: Library, ids: Iterable[str] | None, max_hours: float, include_external: bool, *,
+                      skip_screenshots: bool = True, min_confidence: str | None = None,
+                      manual: tuple[float, float, str | None] | None = None,
+                      exclude: set[str] = frozenset()) -> tuple[list[LocationChange], list[dict[str, str]]]:
+    """Welche Orte gesetzt würden: vorgeschlagener Ort (ids), alle ab einer Sicherheit
+    (min_confidence) oder ein von Hand gewählter Ort (manual = (breite, länge, name))."""
+    analysis = analyze(lib, max_hours, include_external, skip_screenshots, exclude)
     if ids is None:
         if not min_confidence:
             raise ValueError("ids oder min_confidence angeben")
         ids = [c.asset.id for c in analysis.candidates
                if c.applicable and level_at_least(c.suggestion.confidence, min_confidence)]
-    wanted = list(dict.fromkeys(ids))
+    changes: list[LocationChange] = []
     skipped: list[dict[str, str]] = []
-    buckets: dict[tuple[str, float, float], list[tuple[Candidate, Suggestion]]] = {}
-    for aid in wanted:
+    for aid in dict.fromkeys(ids):
         c = analysis.by_id.get(aid)
         if c is None:
             reason = "unbekannt" if aid not in lib.assets else (
-                "hat schon einen Ort" if lib.assets[aid].has_gps else "Screenshot")
+                "hat schon einen Ort" if lib.assets[aid].has_gps else
+                "schon vorgemerkt" if aid in exclude else "Screenshot")
             skipped.append({"id": aid, "grund": reason})
             continue
         if not c.editable:
@@ -322,27 +345,53 @@ def apply_locations(lib: Library, clients: dict[str, ImmichClient], ids: Iterabl
             continue
         if manual:
             lat, lon, name = manual
-            sugg = Suggestion(lat, lon, name, "hoch", "von Hand gewählt", method="manuell")
+            changes.append(LocationChange(aid, c.asset.owner, lat, lon, name, "hoch", "von Hand gewählt",
+                                          city=name))
         elif c.suggestion is None:
             skipped.append({"id": aid, "grund": "kein Vorschlag"})
-            continue
         else:
-            sugg = c.suggestion
-        buckets.setdefault((c.asset.owner, sugg.latitude, sugg.longitude), []).append((c, sugg))
+            sg = c.suggestion
+            src = sg.source
+            changes.append(LocationChange(aid, c.asset.owner, sg.latitude, sg.longitude, sg.place, sg.confidence,
+                                          sg.reason, src.city if src else sg.place,
+                                          src.state if src else None, src.country if src else None))
+    return changes, skipped
 
+
+def execute_location_changes(lib: Library, clients: dict[str, ImmichClient],
+                             changes: Iterable[LocationChange]) -> dict[str, Any]:
+    """Setzt die Orte in Immich. Medien, die inzwischen fehlen oder schon einen Ort haben, werden übersprungen."""
+    skipped: list[dict[str, str]] = []
+    buckets: dict[tuple[str, float, float], list[LocationChange]] = {}
+    for ch in changes:
+        a = lib.assets.get(ch.asset_id)
+        if a is None:
+            skipped.append({"id": ch.asset_id, "grund": "nicht mehr vorhanden"})
+        elif a.has_gps:
+            skipped.append({"id": ch.asset_id, "grund": "hat inzwischen einen Ort"})
+        else:
+            buckets.setdefault((ch.owner, ch.latitude, ch.longitude), []).append(ch)
     updated = 0
     for (owner, lat, lon), items in buckets.items():
-        updated += clients[owner].set_location([c.asset.id for c, _ in items], lat, lon)
-        for c, sugg in items:
-            a = c.asset
+        updated += clients[owner].set_location([ch.asset_id for ch in items], lat, lon)
+        for ch in items:
+            a = lib.assets[ch.asset_id]
             a.latitude, a.longitude = lat, lon
-            if sugg.source:
-                a.city, a.state, a.country = sugg.source.city, sugg.source.state, sugg.source.country
-            else:
-                a.city, a.state, a.country = sugg.place, None, None  # Immich ermittelt den Ort neu
+            a.city, a.state, a.country = ch.city, ch.state, ch.country  # Immich ermittelt den Ort neu
     if updated:
-        log.info("Ort für %d Medien übernommen%s", updated, " (von Hand gewählt)" if manual else "")
+        log.info("Ort für %d Medien übernommen", updated)
     return {"aktualisiert": updated, "uebersprungen": skipped}
+
+
+def apply_locations(lib: Library, clients: dict[str, ImmichClient], ids: Iterable[str] | None,
+                    max_hours: float, include_external: bool, *, skip_screenshots: bool = True,
+                    min_confidence: str | None = None, manual: tuple[float, float, str | None] | None = None
+                    ) -> dict[str, Any]:
+    """Ort direkt setzen (ohne Vormerken)."""
+    changes, skipped = resolve_locations(lib, ids, max_hours, include_external, skip_screenshots=skip_screenshots,
+                                         min_confidence=min_confidence, manual=manual)
+    res = execute_location_changes(lib, clients, changes)
+    return {"aktualisiert": res["aktualisiert"], "uebersprungen": skipped + res["uebersprungen"]}
 
 
 # ------------------------------------------------------- Gruppierung nach Ort

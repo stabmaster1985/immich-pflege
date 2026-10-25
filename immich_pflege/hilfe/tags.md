@@ -20,9 +20,9 @@ Regeln vergeben Tags an viele Fotos auf einmal. **Tags werden nur ergänzt, nie 
 
 Alle Bedingungen einer Regel müssen zutreffen. Eine Regel ohne Bedingung ist nicht erlaubt, sonst würde die ganze Bibliothek getaggt.
 
-## Vorschau und Anwenden
+## Vorschau und Vormerken
 
-Pro Regel siehst du **Treffer**, **schon getaggt** und **neu**, dazu Beispielbilder der neuen Treffer. Regeln anhaken und **Tags anwenden**. Fehlende Tags legt das Tool in Immich an, getrennt pro Benutzer.
+Pro Regel siehst du **Treffer**, **schon getaggt** und **neu**, dazu Beispielbilder der neuen Treffer. Regeln anhaken und **Tags vormerken**. Übertragen wird unter **✓ Vorgemerkt**. Fehlende Tags legt das Tool in Immich an, getrennt pro Benutzer.
 
 ## Für Fortgeschrittene
 

@@ -53,6 +53,8 @@ Unter jedem Bild stehen zwei Links:
 
 ## Aktionen
 
+Aktionen werden zuerst nur **vorgemerkt**: Die Gruppe verschwindet aus der Liste, ausgeführt wird erst unter **✓ Vorgemerkt** → **Übertragen**.
+
 - **Ins Prüf-Album:** Die nicht behaltenen Kopien kommen in das Album „Duplikat-Prüfung“ ihres Besitzers. Das Album wird bei Bedarf angelegt. Gelöscht wird dabei nichts.
 - **Papierkorb:** Die nicht behaltenen Kopien kommen in den Immich-Papierkorb und sind dort noch wiederherstellbar. Vorher musst du ausdrücklich bestätigen. Es gelten Schutzregeln:
   - Medien aus **externen Bibliotheken** kommen **nie** in den Papierkorb, sondern ins Prüf-Album.

@@ -9,6 +9,7 @@ const S = {
   loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, loaded: false, info: null },
   tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [], items: [], fileErrors: [], users: [], yaml: "" },
   set: { data: null, loaded: false },
+  stage: { entries: [], info: null, loaded: false },
 };
 
 /* ------------------------------------------------------------ Hilfen */
@@ -146,6 +147,7 @@ async function loadStatus(server = true) {
     return;
   }
   const st = S.status;
+  if (st.vorgemerkt) $("#count-stage").textContent = st.vorgemerkt.anzahl ? `(${st.vorgemerkt.anzahl})` : "";
   const parts = [];
   if (st.bibliothek) parts.push("Stand " + fmtDateTime(st.bibliothek.stand), st.bibliothek.gesamt + " Medien");
   else parts.push("Noch nicht eingelesen");
@@ -296,23 +298,22 @@ async function applyAllDuplicates(action, btn) {
     toast(e.message, true); busy(btn, false); return;
   } finally { busy(btn, false); }
   if (!plan.papierkorb && !plan.album) { toast("Nichts zu tun."); return; }
-  const trash = action === "papierkorb" && plan.papierkorb > 0;
   const scope = [d.art ? d.info.arten[d.art].name : null, d.monat ? d.info.monate.find((m) => m.key === d.monat).name : null,
     d.crossUser ? "benutzerübergreifend" : null].filter(Boolean).join(", ") || "alle offenen";
   const ok = await confirmDialog({
-    title: trash ? "Alle in den Papierkorb?" : "Alle ins Prüf-Album?",
+    title: "Alle vormerken?",
     body: [h("p", {}, `${n(plan.gruppen, "Gruppe", "Gruppen")} (${scope}) mit dem jeweiligen Behalten-Vorschlag:`),
-      h("ul", {}, plan.papierkorb ? h("li", {}, h("b", {}, plan.papierkorb), " in den Papierkorb") : null,
-        plan.album ? h("li", {}, h("b", {}, plan.album), " ins Prüf-Album") : null)],
-    okLabel: trash ? "Papierkorb" : "Ins Album", danger: trash,
-    checkLabel: trash ? `Ja, ${n(plan.papierkorb, "Medium", "Medien")} in den Papierkorb verschieben` : null,
+      h("ul", {}, plan.papierkorb ? h("li", {}, h("b", {}, plan.papierkorb), " für den Papierkorb") : null,
+        plan.album ? h("li", {}, h("b", {}, plan.album), " fürs Prüf-Album") : null),
+      h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter ✓ Vorgemerkt.")],
+    okLabel: "Vormerken",
   });
   if (!ok) return;
   busy(btn, true);
   try {
-    const r = await api("api/duplicates/apply", { method: "POST", body: { ...body, confirm: trash ? "PAPIERKORB" : null } });
-    toast(`Erledigt: ${r.ergebnis.papierkorb} im Papierkorb, ${r.ergebnis.album} im Prüf-Album`);
-    await loadDuplicates(true);
+    const r = await api("api/staged/duplicates", { method: "POST", body });
+    toast(`${n(r.vorgemerkt, "Gruppe", "Gruppen")} vorgemerkt`);
+    await afterStage("dup");
   } catch (e) {
     toast(e.message, true);
   } finally {
@@ -392,29 +393,21 @@ async function applyDuplicates(action, btn) {
   busy(btn, false);
   const album = S.status ? S.status.pruef_album : "Duplikat-Prüfung";
   const items = [];
-  if (plan.papierkorb) items.push(h("li", {}, h("b", {}, plan.papierkorb), " in den Papierkorb (nur Uploads, 30 Tage wiederherstellbar)"));
-  if (plan.album) items.push(h("li", {}, h("b", {}, plan.album), ` ins Album „${album}“`));
+  if (plan.papierkorb) items.push(h("li", {}, h("b", {}, plan.papierkorb), " für den Papierkorb (nur Uploads, 30 Tage wiederherstellbar)"));
+  if (plan.album) items.push(h("li", {}, h("b", {}, plan.album), ` fürs Album „${album}“`));
   if (plan.keine) items.push(h("li", {}, plan.keine, " unverändert (schon im Prüf-Album)"));
   const reasons = [...new Set(plan.schritte.filter((s) => s.aktion === "album" && s.grund !== "Kopie").map((s) => s.grund))];
-  const body = [h("p", {}, `${plan.gruppen} Gruppe(n):`), h("ul", {}, items)];
+  const body = [h("p", {}, `${n(plan.gruppen, "Gruppe", "Gruppen")}:`), h("ul", {}, items)];
   if (action === "papierkorb" && reasons.length) body.push(h("p", { class: "muted" }, "Statt Papierkorb ins Prüf-Album: " + reasons.join("; ")));
+  body.push(h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter ✓ Vorgemerkt."));
   if (!plan.papierkorb && !plan.album) { toast("Nichts zu tun – alles schon erledigt."); return; }
-  const trash = action === "papierkorb" && plan.papierkorb > 0;
-  const ok = await confirmDialog({
-    title: trash ? "In den Papierkorb verschieben?" : "Ins Prüf-Album legen?",
-    body,
-    okLabel: trash ? "Papierkorb" : "Ins Album",
-    danger: trash,
-    checkLabel: trash ? `Ja, ${n(plan.papierkorb, "Medium", "Medien")} in den Papierkorb verschieben` : null,
-  });
+  const ok = await confirmDialog({ title: "Vormerken?", body, okLabel: "Vormerken" });
   if (!ok) return;
   busy(btn, true);
   try {
-    const r = await api("api/duplicates/apply", { method: "POST", body: { action, groups, confirm: trash ? "PAPIERKORB" : null } });
-    const e = r.ergebnis;
-    toast(`Erledigt: ${e.papierkorb} im Papierkorb, ${e.album} im Prüf-Album` + (e.fehler.length ? `, ${e.fehler.length} Fehler` : ""), e.fehler.length > 0);
-    await loadDuplicates(true);
-    loadStatus(false);
+    const r = await api("api/staged/duplicates", { method: "POST", body: { action, groups } });
+    toast(`${n(r.vorgemerkt, "Gruppe", "Gruppen")} vorgemerkt`);
+    await afterStage("dup");
   } catch (e) {
     toast(e.message, true);
   } finally {
@@ -518,7 +511,7 @@ function renderPlaceCard(o) {
     h("div", { class: "row-gap" },
       h("button", { type: "button", class: "btn small", onclick: open }, "Ansehen"),
       !special && o.mit_vorschlag ? h("button", { type: "button", class: "btn small primary", onclick: (e) => applyPlace(o, e.currentTarget) },
-        `Alle übernehmen (${o.mit_vorschlag})`) : null));
+        `Alle vormerken (${o.mit_vorschlag})`) : null));
   return card;
 }
 
@@ -540,23 +533,23 @@ function renderPlaceHeader(r) {
         `Ort für alle ${r.medien_gefiltert} suchen …`) : null)
       : h("div", { class: "row-gap" }, ...confCounts(o.nach_sicherheit),
         o.mit_vorschlag ? h("button", { type: "button", class: "btn small primary", onclick: (e) => applyPlace({ ...o, name: scope }, e.currentTarget, S.loc.monat) },
-          `Alle übernehmen`) : null));
+          `Alle vormerken`) : null));
 }
 
 async function applyPlace(o, btn, monat = null) {
   const by = o.nach_sicherheit;
   const ok = await confirmDialog({
-    title: `Alle für „${o.name}“ übernehmen?`,
+    title: `Alle für „${o.name}“ vormerken?`,
     body: [h("p", {}, `Medien mit Vorschlag in diesem Ort${monat ? " und Monat" : ""} erhalten den vorgeschlagenen Ort.`),
       h("div", { class: "row-gap" }, ...confCounts(by)),
-      h("p", { class: "muted" }, "Tipp: Oben „nur sichere“ wählen, wenn nur sichere Vorschläge übernommen werden sollen.")],
-    okLabel: "Übernehmen",
+      h("p", { class: "muted" }, "Tipp: Oben „nur sichere“ wählen, wenn nur sichere Vorschläge vorgemerkt werden sollen.")],
+    okLabel: "Vormerken",
   });
   if (!ok) return;
   const body = { ort: o.key };
   if (monat) body.monat = monat;
   if (S.loc.minConf) body.min_confidence = S.loc.minConf;
-  await doApplyLocation(body, btn);
+  await doApplyLocation(body, btn, monat ? `${o.name}` : o.name);
 }
 
 function selectable(m) { return m.vorschlag && m.aenderbar; }
@@ -587,7 +580,7 @@ function renderSeries(ser) {
   const buttons = h("div", { class: "row-gap" });
   if (withSugg.length) {
     buttons.append(h("button", { type: "button", class: "btn small primary", onclick: (e) => applySeries(ser, e.currentTarget) },
-      `Übernehmen (${withSugg.length})`));
+      `Vormerken (${withSugg.length})`));
   }
   if (editable.length) {
     buttons.append(h("button", { type: "button", class: "btn small", onclick: () => openPlaceSearch({ series: [ser.id], count: editable.length, label: fmtRange(ser) }) },
@@ -633,12 +626,12 @@ function renderSeries(ser) {
   return card;
 }
 
-async function doApplyLocation(body, btn) {
+async function doApplyLocation(body, btn, label) {
   busy(btn, true);
   try {
-    const r = await api("api/no-location/apply", { method: "POST", body: { ...body, max_hours: S.loc.hours } });
-    toast(`Ort für ${n(r.aktualisiert, "Medium", "Medien")} übernommen` + (r.uebersprungen.length ? `, ${r.uebersprungen.length} übersprungen` : ""));
-    await loadLocation(true);
+    const r = await api("api/staged/no-location", { method: "POST", body: { ...body, label, max_hours: S.loc.hours } });
+    toast(`${n(r.vorgemerkt, "Medium", "Medien")} vorgemerkt` + (r.uebersprungen.length ? `, ${r.uebersprungen.length} übersprungen` : ""));
+    await afterStage("loc");
     return true;
   } catch (e) {
     toast(e.message, true);
@@ -652,12 +645,12 @@ async function applySeries(ser, btn) {
   const items = ser.medien.filter(selectable);
   const levels = [...new Set(items.map((m) => LEVEL_LABEL[m.vorschlag.sicherheit]))].join(", ");
   const ok = await confirmDialog({
-    title: "Ort für die Serie übernehmen?",
+    title: "Ort für die Serie vormerken?",
     body: [h("p", {}, `${n(items.length, "Medium erhält", "Medien erhalten")} den vorgeschlagenen Ort (${levels}):`),
       h("p", {}, h("b", {}, "📍 " + (ser.vorschlag ? ser.vorschlag.ort || "Koordinaten" : "jeweils eigener Vorschlag")))],
-    okLabel: "Übernehmen",
+    okLabel: "Vormerken",
   });
-  if (ok) await doApplyLocation({ series: [ser.id] }, btn);
+  if (ok) await doApplyLocation({ series: [ser.id] }, btn, `${fmtRange(ser)} · ${ser.vorschlag ? ser.vorschlag.ort || "Koordinaten" : ""}`);
 }
 
 async function applyLocation(btn) {
@@ -671,23 +664,23 @@ async function applyLocation(btn) {
     places.set(k, (places.get(k) || 0) + 1);
   }
   const ok = await confirmDialog({
-    title: "Ort übernehmen?",
+    title: "Ort vormerken?",
     body: [h("p", {}, `${n(withSugg.length, "Medium erhält", "Medien erhalten")} den vorgeschlagenen Ort:`),
       h("ul", {}, [...places].map(([k, c]) => h("li", {}, `${k}: ${c}`))),
       all.length > withSugg.length ? h("p", { class: "muted" }, `${all.length - withSugg.length} ohne Vorschlag werden übersprungen.`) : null],
-    okLabel: "Übernehmen",
+    okLabel: "Vormerken",
   });
-  if (ok) await doApplyLocation({ ids: withSugg.map((m) => m.id) }, btn);
+  if (ok) await doApplyLocation({ ids: withSugg.map((m) => m.id) }, btn, "Auswahl");
 }
 
 async function applyAllSure(btn) {
   const count = S.loc.info ? S.loc.info.nach_sicherheit.hoch : 0;
   const ok = await confirmDialog({
-    title: "Alle sicheren Vorschläge übernehmen?",
+    title: "Alle sicheren Vorschläge vormerken?",
     body: h("p", {}, `${n(count, "Medium erhält", "Medien erhalten")} den Ort eines GPS-Fotos, das höchstens 30 Minuten entfernt ist oder bei dem die Fotos davor und danach am selben Ort entstanden.`),
-    okLabel: "Alle übernehmen",
+    okLabel: "Alle vormerken",
   });
-  if (ok) await doApplyLocation({ min_confidence: "hoch" }, btn);
+  if (ok) await doApplyLocation({ min_confidence: "hoch" }, btn, "Alle sicheren Vorschläge");
 }
 
 /* Ortssuche über Immich (eigene Ortsdatenbank, kein Internetdienst) */
@@ -722,16 +715,16 @@ async function choosePlace(p) {
   $("#place-dlg").close();
   const t = placeTarget;
   const ok = await confirmDialog({
-    title: "Ort setzen?",
+    title: "Ort vormerken?",
     body: h("p", {}, `${n(t.count, "Medium erhält", "Medien erhalten")} den Ort `, h("b", {}, p.name), p.region ? ` (${p.region})` : "", "."),
-    okLabel: "Ort setzen",
+    okLabel: "Vormerken",
   });
   if (!ok) return;
   const body = { place: { breite: p.breite, laenge: p.laenge, name: p.name } };
   if (t.ort) { body.ort = t.ort; if (t.monat) body.monat = t.monat; }
   else if (t.series) body.series = t.series;
   else body.ids = t.ids;
-  await doApplyLocation(body, $("#ab-buttons button.primary") || document.createElement("button"));
+  await doApplyLocation(body, $("#ab-buttons button.primary") || document.createElement("button"), `${p.name} (von Hand) · ${t.label}`);
 }
 
 /* -------------------------------------------------------------- Tags */
@@ -801,7 +794,8 @@ function renderTags() {
       card.append(h("div", { class: "stats" },
         h("span", {}, h("b", {}, r.treffer), " Treffer"),
         h("span", {}, h("b", {}, r.schon_getaggt), " schon getaggt"),
-        h("span", { class: r.neu ? "sug" : "" }, h("b", {}, r.neu), " neu")),
+        h("span", { class: r.neu ? "sug" : "" }, h("b", {}, r.neu), " neu"),
+        r.vorgemerkt ? h("span", { class: "chip ok" }, "✓ vorgemerkt") : null),
         h("div", { class: "muted" }, Object.entries(r.benutzer).map(([u, c]) => `${u}: ${c.neu} neu von ${c.treffer}`).join(" · ")));
       if (r.beispiele.length) card.append(h("div", { class: "strip" }, r.beispiele.map((m) => thumb(m))));
     }
@@ -926,17 +920,18 @@ async function applyTags(btn) {
   if (!names.length) return;
   const rules = S.tags.rules.filter((r) => S.tags.sel.has(r.name));
   const ok = await confirmDialog({
-    title: "Tags anwenden?",
+    title: "Tags vormerken?",
     body: [h("p", {}, "Tags werden nur ergänzt, nie entfernt."),
-      h("ul", {}, rules.map((r) => h("li", {}, `${r.name}: ${r.neu} Medien → ${r.tags.join(", ")}`)))],
-    okLabel: "Anwenden",
+      h("ul", {}, rules.map((r) => h("li", {}, `${r.name}: ${r.neu} Medien → ${r.tags.join(", ")}`))),
+      h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter ✓ Vorgemerkt.")],
+    okLabel: "Vormerken",
   });
   if (!ok) return;
   busy(btn, true);
   try {
-    const r = await api("api/tags/apply", { method: "POST", body: { rules: names } });
-    toast(`${r.getaggt} Medien getaggt`);
-    await loadTags();
+    await api("api/staged/tags", { method: "POST", body: { rules: names } });
+    toast(`${n(names.length, "Regel", "Regeln")} vorgemerkt`);
+    await afterStage("tags");
   } catch (e) {
     toast(e.message, true);
   } finally {
@@ -1308,6 +1303,119 @@ async function openHelp(topic) {
   $("#help-dlg").scrollTop = 0;
 }
 
+
+/* -------------------------------------------------------- Vorgemerkt */
+const STAGE_TYPES = [["duplikat", "Duplikate"], ["ort", "Orte"], ["tag", "Tags"]];
+const STAGE_ACTION = { papierkorb: "Papierkorb", album: "Prüf-Album", keine: "–" };
+
+// Nach dem Vormerken: Quelle neu laden (Vorgemerktes ist dort weg) und Zähler aktualisieren
+async function afterStage(tab) {
+  S.stage.loaded = false;
+  await Promise.all([loadTab(tab, true), loadTab("stage", true)]);
+}
+
+async function loadStaged() {
+  const r = await api("api/staged");
+  S.stage.entries = r.eintraege;
+  S.stage.info = r;
+  S.stage.loaded = true;
+  renderStaged();
+}
+
+function stageMedia(e) {
+  return h("div", { class: "strip" }, e.medien.map((m) => {
+    let cap = "";
+    if (e.typ === "duplikat") cap = m.bleibt ? "bleibt" : (STAGE_ACTION[m.aktion] || "–");
+    else if (e.typ === "ort") cap = m.neuer_ort || "";
+    return h("figure", { class: "stage-fig" + (e.typ === "duplikat" ? (m.bleibt ? " keep" : " drop") : "") },
+      thumb(m), cap ? h("figcaption", {}, cap) : null);
+  }));
+}
+
+function renderStaged() {
+  const st = S.stage;
+  const cnt = st.info ? st.info.anzahl : 0;
+  $("#count-stage").textContent = cnt ? `(${cnt})` : "";
+  const list = $("#stage-list");
+  list.replaceChildren();
+  $("#stage-summary").textContent = cnt
+    ? `${n(cnt, "Eintrag", "Einträge")} · ${n(st.info.medien, "Medium", "Medien")}` + (st.info.papierkorb ? ` · ${st.info.papierkorb} in den Papierkorb` : "")
+    : "";
+  if (!cnt) {
+    list.append(h("div", { class: "empty" }, h("p", {}, "Nichts vorgemerkt."),
+      h("p", {}, "Was du in den anderen Tabs vormerkst, landet hier – noch ohne Änderung in Immich.")));
+    updateActionbar();
+    return;
+  }
+  for (const [typ, label] of STAGE_TYPES) {
+    const entries = st.entries.filter((e) => e.typ === typ);
+    if (!entries.length) continue;
+    list.append(h("h2", { class: "stage-head" }, `${label} (${entries.length})`));
+    for (const e of entries) {
+      const trash = typ === "duplikat" ? e.daten.schritte.filter((s) => s.aktion === "papierkorb").length : 0;
+      list.append(h("article", { class: "card" },
+        h("div", { class: "card-head" },
+          h("div", {}, h("h2", {}, e.titel),
+            h("span", { class: "muted" }, `${n(e.anzahl, "Medium", "Medien")} · vorgemerkt ${fmtDateTime(e.erstellt)}`)),
+          trash ? h("span", { class: "chip" }, `🗑 ${trash}`) : null),
+        e.fehler ? h("div", { class: "banner err" }, "Letzte Übertragung fehlgeschlagen: " + e.fehler) : null,
+        e.medien.length ? stageMedia(e) : null,
+        h("div", { class: "row-gap stage-actions" },
+          h("button", { type: "button", class: "btn small", onclick: (ev) => unstage(e, ev.currentTarget) }, "Zurücknehmen"),
+          h("button", { type: "button", class: "btn small primary", onclick: (ev) => applyStaged([e.id], ev.currentTarget) }, "Übertragen"))));
+    }
+  }
+  updateActionbar();
+}
+
+const STAGE_SOURCE = { duplikat: "dup", ort: "loc", tag: "tags" };
+
+async function unstage(e, btn) {
+  busy(btn, true);
+  try {
+    await api("api/staged/" + encodeURIComponent(e.id), { method: "DELETE" });
+    toast("Zurückgenommen – wieder in der Übersicht");
+    const src = STAGE_SOURCE[e.typ];
+    await Promise.all([loadTab("stage", true), S[src].loaded ? loadTab(src, true) : null]);
+  } catch (err) {
+    toast(err.message, true);
+    busy(btn, false);
+  }
+}
+
+async function applyStaged(ids, btn) {
+  const entries = S.stage.entries.filter((e) => !ids || ids.includes(e.id));
+  if (!entries.length) return;
+  const trash = entries.filter((e) => e.typ === "duplikat")
+    .reduce((a, e) => a + e.daten.schritte.filter((s) => s.aktion === "papierkorb").length, 0);
+  const lines = STAGE_TYPES.map(([typ, label]) => {
+    const es = entries.filter((e) => e.typ === typ);
+    return es.length ? h("li", {}, `${label}: ${n(es.length, "Eintrag", "Einträge")}, ${n(es.reduce((a, e) => a + e.anzahl, 0), "Medium", "Medien")}`) : null;
+  });
+  const ok = await confirmDialog({
+    title: ids && ids.length === 1 ? "Eintrag übertragen?" : "Alles übertragen?",
+    body: [h("p", {}, "Jetzt werden die Änderungen in Immich ausgeführt:"), h("ul", {}, lines),
+      trash ? h("p", {}, `${n(trash, "Medium geht", "Medien gehen")} in den Papierkorb (in Immich wiederherstellbar).`) : null],
+    okLabel: "Übertragen",
+    danger: !!trash,
+    checkLabel: trash ? `Ja, ${trash} in den Papierkorb` : null,
+  });
+  if (!ok) return;
+  busy(btn, true);
+  try {
+    const r = await api("api/staged/apply", { method: "POST", body: { ids: entries.map((e) => e.id), confirm: trash ? "PAPIERKORB" : null } });
+    if (r.fehler) toast(`${r.uebertragen} übertragen, ${r.fehler} fehlgeschlagen`, true);
+    else toast(`${n(r.uebertragen, "Eintrag", "Einträge")} an Immich übertragen`);
+    const sources = new Set(entries.map((e) => STAGE_SOURCE[e.typ]));
+    await Promise.all([loadTab("stage", true), ...[...sources].filter((t) => S[t].loaded).map((t) => loadTab(t, true))]);
+    loadStatus(false);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    busy(btn, false);
+  }
+}
+
 /* ------------------------------------------------------ Aktionsleiste */
 function updateActionbar() {
   const info = $("#ab-info");
@@ -1334,14 +1442,19 @@ function updateActionbar() {
   } else if (S.tab === "loc") {
     const cnt = S.loc.sel.size;
     const sure = S.loc.info ? S.loc.info.nach_sicherheit.hoch : 0;
-    info.textContent = cnt ? n(cnt, "Medium", "Medien") + " gewählt" : "Serie übernehmen oder Bilder antippen";
+    info.textContent = cnt ? n(cnt, "Medium", "Medien") + " gewählt" : "Serie vormerken oder Bilder antippen";
     if (cnt) {
       const chosen = S.loc.series.flatMap((s) => s.medien).filter((m) => S.loc.sel.has(m.id));
       buttons.push(h("button", { class: "btn small", type: "button", onclick: () => openPlaceSearch({ ids: [...S.loc.sel], count: cnt, label: "Auswahl" }) }, "Ort wählen …"));
-      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !chosen.some(selectable), onclick: (e) => applyLocation(e.currentTarget) }, "Übernehmen"));
+      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !chosen.some(selectable), onclick: (e) => applyLocation(e.currentTarget) }, "Vormerken"));
     } else {
       buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !sure, onclick: (e) => applyAllSure(e.currentTarget) }, `Alle sicheren (${sure})`));
     }
+  } else if (S.tab === "stage") {
+    const st = S.stage.info;
+    const cnt = st ? st.anzahl : 0;
+    info.textContent = cnt ? `${n(cnt, "Eintrag", "Einträge")} · ${n(st.medien, "Medium", "Medien")}` : "Nichts vorgemerkt";
+    buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !cnt, onclick: (e) => applyStaged(null, e.currentTarget) }, `Alle übertragen (${cnt})`));
   } else if (S.tab === "set") {
     const locked = S.set.data && S.set.data.gesperrt.length;
     info.textContent = locked ? "Gesperrte Felder stammen aus der .env" : "Änderungen gelten sofort";
@@ -1350,7 +1463,7 @@ function updateActionbar() {
     const cnt = S.tags.sel.size;
     const total = S.tags.rules.filter((r) => S.tags.sel.has(r.name)).reduce((a, r) => a + (r.neu || 0), 0);
     info.textContent = cnt ? `${n(cnt, "Regel", "Regeln")} · ${n(total, "Medium", "Medien")}` : "Regeln anhaken";
-    buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !cnt, onclick: (e) => applyTags(e.currentTarget) }, "Tags anwenden"));
+    buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !cnt, onclick: (e) => applyTags(e.currentTarget) }, "Tags vormerken"));
   }
   $("#ab-buttons").replaceChildren(...buttons);
 }
@@ -1366,13 +1479,14 @@ function loadTab(tab, force = false) {
   return p;
 }
 
-const TAB_TARGET = { dup: "#dup-list", loc: "#loc-list", tags: "#tags-list", set: "#set-welcome" };
+const TAB_TARGET = { dup: "#dup-list", loc: "#loc-list", tags: "#tags-list", stage: "#stage-list", set: "#set-welcome" };
 
 async function doLoadTab(tab, force) {
   try {
     if (tab === "dup" && (force || !S.dup.loaded)) await loadDuplicates(true);
     if (tab === "loc" && (force || !S.loc.loaded)) await loadLocation(true);
     if (tab === "tags" && (force || !S.tags.loaded)) await loadTags();
+    if (tab === "stage" && (force || !S.stage.loaded)) await loadStaged();
     if (tab === "set" && (force || !S.set.loaded)) { await loadSettings(); loadVersion(); }
     if (tab !== "set" && S.status && !S.status.bibliothek) loadStatus(false);
   } catch (e) {
@@ -1396,7 +1510,7 @@ function showTab(tab) {
 
 function loadOtherCounts() {
   if (S.status && !S.status.eingerichtet) return;
-  for (const t of ["dup", "loc", "tags"]) if (t !== S.tab) loadTab(t).then(updateActionbar);
+  for (const t of ["dup", "loc", "tags", "stage"]) if (t !== S.tab) loadTab(t).then(updateActionbar);
 }
 
 /* ------------------------------------------------------------- Start */
@@ -1441,7 +1555,7 @@ $("#version-update").addEventListener("click", (e) => startUpdate(e.currentTarge
     await showTab("set");
     return;
   }
-  await showTab(["dup", "loc", "tags", "set"].includes(tab) ? tab : "dup");
+  await showTab(["dup", "loc", "tags", "stage", "set"].includes(tab) ? tab : "dup");
   // Nach dem ersten Laden (ggf. Einlesen) Status aktualisieren und Zähler der anderen Tabs holen
   loadStatus(false);
   loadOtherCounts();

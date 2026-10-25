@@ -35,7 +35,7 @@ from .auth import COOKIE, RENEW_BELOW_S, Sessions, basic_credentials
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
 HELP = Path(__file__).parent.parent / "hilfe"
-HELP_TOPICS = ("duplikate", "ohne-ort", "tags", "einstellungen")
+HELP_TOPICS = ("duplikate", "ohne-ort", "tags", "vorgemerkt", "einstellungen")
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 OPEN_PATHS = {"/healthz", "/login", "/api/login", "/api/logout", "/favicon.ico"}
 OPEN_PREFIXES = ("/static/",)
@@ -67,6 +67,20 @@ class Place(BaseModel):
     name: Optional[str] = None
 
 
+class StageDuplicates(BaseModel):
+    action: Literal["album", "papierkorb"]
+    groups: Optional[list[GroupSelection]] = None
+    all: bool = False
+    art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "aehnlich"]] = None
+    monat: Optional[str] = None
+    benutzeruebergreifend: bool = False
+
+
+class StagedApply(BaseModel):
+    ids: Optional[list[str]] = None
+    confirm: Optional[str] = None
+
+
 class DuplicatesIgnore(BaseModel):
     groups: list[str]
     undo: bool = False
@@ -79,6 +93,7 @@ class NoLocationApply(BaseModel):
     place: Optional[Place] = None
     ort: Optional[str] = None
     monat: Optional[str] = None
+    label: Optional[str] = None  # nur beim Vormerken: Titel in der Liste
     max_hours: Optional[float] = Field(default=None, gt=0, le=48)
 
 
@@ -463,6 +478,37 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/tags/apply")
     def tags_apply(body: Optional[TagsApply] = None):
         return svc().tags_apply(body.rules if body else None)
+
+    # ------------------------------------------------------------- Vormerken
+    @app.get("/api/staged")
+    def staged():
+        return svc().staged_view()
+
+    @app.post("/api/staged/duplicates")
+    def stage_duplicates(body: StageDuplicates):
+        groups = [g.model_dump() for g in body.groups] if body.groups else None
+        return svc().stage_duplicates(body.action, groups, body.all, body.art, body.monat,
+                                      body.benutzeruebergreifend)
+
+    @app.post("/api/staged/no-location")
+    def stage_no_location(body: NoLocationApply):
+        return svc().stage_no_location(
+            label=body.label, ids=body.ids, max_hours=body.max_hours, min_confidence=body.min_confidence,
+            series=body.series, place=body.place.model_dump() if body.place else None,
+            ort=body.ort, monat=body.monat)
+
+    @app.post("/api/staged/tags")
+    def stage_tags(body: TagsApply):
+        return svc().stage_tags(body.rules or [])
+
+    @app.delete("/api/staged/{entry_id}")
+    def unstage(entry_id: str):
+        return svc().unstage([entry_id])
+
+    @app.post("/api/staged/apply")
+    def apply_staged(body: Optional[StagedApply] = None):
+        body = body or StagedApply()
+        return svc().apply_staged(body.ids, body.confirm)
 
     # ---------------------------------------------------------------- Hilfe
     @app.get("/api/help/{topic}")
