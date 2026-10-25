@@ -36,6 +36,7 @@ class MockState:
     assets: dict[str, dict[str, Any]] = field(default_factory=dict)
     albums: dict[str, dict[str, Any]] = field(default_factory=dict)
     tags: dict[str, dict[str, Any]] = field(default_factory=dict)
+    stacks: dict[str, dict[str, Any]] = field(default_factory=dict)  # id -> {ownerId, assetIds (erstes = oben)}
     people: dict[str, dict[str, Any]] = field(default_factory=dict)
     paging: str = "cursor"  # "cursor" (v3.2) oder "page" (älter)
     version: tuple[int, int, int] = (3, 2, 4)
@@ -481,6 +482,42 @@ def create_app(state: MockState) -> FastAPI:
         body = await record(request, user)
         return [state.upsert_tag(user["id"], name) for name in body["tags"]]
 
+    @app.get("/api/stacks")
+    async def list_stacks(request: Request):
+        user = auth(request)
+        return [{"id": sid, "primaryAssetId": st["assetIds"][0],
+                 "assets": [public(state.assets[a]) for a in st["assetIds"] if a in state.assets]}
+                for sid, st in state.stacks.items() if st["ownerId"] == user["id"]]
+
+    @app.post("/api/stacks", status_code=201)
+    async def create_stack(request: Request):
+        user = auth(request)
+        body = await record(request, user)
+        ids = body["assetIds"]
+        if len(ids) < 2:
+            raise HTTPException(400, "assetIds must contain at least 2 elements")
+        for aid in ids:
+            a = state.assets.get(aid)
+            if a is None or a["ownerId"] != user["id"]:
+                raise HTTPException(400, "Not found or no asset.update access")
+        merged = [sid for sid, st in state.stacks.items() if st["assetIds"][0] in ids]
+        members = list(ids)
+        for sid in merged:  # wie Immich: Hauptbild eines Stapels -> Stapel wird eingegliedert
+            members += [a for a in state.stacks.pop(sid)["assetIds"] if a not in members]
+        sid = new_id()
+        state.stacks[sid] = {"ownerId": user["id"], "assetIds": members}
+        return {"id": sid, "primaryAssetId": members[0], "assets": [public(state.assets[a]) for a in members]}
+
+    @app.delete("/api/stacks/{stack_id}", status_code=204)
+    async def delete_stack(stack_id: str, request: Request):
+        user = auth(request)
+        await record(request, user)
+        st = state.stacks.get(stack_id)
+        if not st or st["ownerId"] != user["id"]:
+            raise HTTPException(400, "Not found or no stack.delete access")
+        del state.stacks[stack_id]
+        return Response(status_code=204)
+
     @app.delete("/api/tags/{tag_id}/assets")
     async def untag(tag_id: str, request: Request):
         user = auth(request)
@@ -638,6 +675,12 @@ def full_state() -> MockState:
                         make="SONY", model="ILCE-7M4", library=True)
     s.add_asset("julia", "IMG-20230815-WA0007.jpg", "2024-01-03T18:00:00.000Z", make=None, model=None)
     s.add_asset("frank", "alt.jpg", "2020-01-01T00:00:00.000Z", trashed=True, size=3 * mb)
+    stapel = [s.add_asset("frank", "DSC7001.ARW", "2024-08-20T10:00:00.000Z", make="SONY", model="ILCE-7M4", size=25 * mb),
+              s.add_asset("frank", "DSC7001.JPG", "2024-08-20T10:00:00.000Z", make="SONY", model="ILCE-7M4")]
+    stapel += [s.add_asset("frank", f"IMG_71{i}.HEIC", f"2024-08-21T10:00:0{i}.000Z", image=f"welle#{b}")
+               for i, b in enumerate((2, 0, 3))]
+    stapel += [s.add_asset("frank", "IMG_7200.HEIC", "2024-08-22T10:00:00.000Z")]
+    s.add_album("frank", "Zum Stapeln", stapel)
     return s
 
 

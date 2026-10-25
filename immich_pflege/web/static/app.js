@@ -1402,11 +1402,12 @@ async function openHelp(topic) {
 
 /* ---------------------------------------------------------- Aufräumen */
 const PAGE_CLN = 30;
-const CLN_BEREICHE = { speicher: "Speicherfresser", serien: "Serienbilder", qualitaet: "Unscharf & dunkel", zeit: "Falsche Zeit", papierkorb: "Papierkorb" };
+const CLN_BEREICHE = { speicher: "Speicherfresser", serien: "Serienbilder", qualitaet: "Unscharf & dunkel", zeit: "Falsche Zeit", stapel: "Stapeln aus Alben", papierkorb: "Papierkorb" };
 
 async function loadCleanup(reset) {
   const c = S.cln;
   if (c.bereich === "papierkorb") return loadTrash();
+  if (c.bereich === "stapel") return loadStacks();
   if (reset) { c.items = []; c.sel.clear(); c.keep = {}; c.edit = {}; $("#cln-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
   const isTime = c.bereich === "zeit";
   const params = new URLSearchParams({ offset: c.items.length, limit: PAGE_CLN, ignoriert: c.ignored });
@@ -1451,10 +1452,10 @@ function renderCleanupFilters(r, time) {
   const timeCount = Object.values(time.arten).reduce((s, x) => s + x, 0);
   const area = h("select", { onchange: (e) => { c.bereich = e.target.value; c.kategorie = null; loadTab("cln", true); } },
     ...Object.entries(CLN_BEREICHE).map(([k, v]) => h("option", { value: k }, k === "zeit" ? `${v} (${timeCount})`
-      : !r.arten[k] ? v  // Papierkorb: Zahlen erst beim Öffnen (fragt Immich)
+      : !r.arten[k] ? v  // Papierkorb und Stapeln: Zahlen erst beim Öffnen
         : `${v} (${r.arten[k].anzahl}${r.arten[k].groesse ? ", " + fmtBig(r.arten[k].groesse) : ""})`)));
   area.value = c.bereich;
-  const cats = c.bereich === "papierkorb" ? [] : c.bereich === "zeit"
+  const cats = ["papierkorb", "stapel"].includes(c.bereich) ? [] : c.bereich === "zeit"
     ? Object.entries(time.arten).map(([k, v]) => [k, { name: time.namen[k], anzahl: v }])
     : Object.entries(r.kategorien).filter(([, v]) => v.art === c.bereich);
   const cat = h("select", { onchange: (e) => { c.kategorie = e.target.value || null; loadTab("cln", true); } },
@@ -1596,6 +1597,98 @@ async function stageCleanup(action, items, btn) {
   } finally { busy(btn, false); }
 }
 
+/* ------------------------------------------------------------- Stapeln */
+async function loadStacks() {
+  const c = S.cln;
+  c.items = []; c.sel.clear(); c.top = c.top || {};
+  $("#cln-list").replaceChildren(h("p", { class: "empty" }, "Lade …"));
+  const params = new URLSearchParams({ ganz: !!c.whole });
+  if (c.album) params.set("album", c.album);
+  const [r, counts, time] = await Promise.all([api("api/stacks?" + params), api("api/cleanup?limit=0"), api("api/timefix?limit=0")]);
+  renderCleanupFilters(counts, time);
+  c.loaded = true; c.info = r; $("#cln-more").hidden = true;
+  if (r.laedt) {
+    $("#cln-list").replaceChildren(h("div", { class: "banner warn" }, "Die Alben werden gerade gelesen – gleich noch einmal versuchen."));
+    $("#cln-summary").textContent = ""; updateActionbar(); return;
+  }
+  const sel = h("select", { onchange: (e) => { c.album = e.target.value || null; c.top = {}; loadTab("cln", true); } },
+    h("option", { value: "" }, "Album wählen …"),
+    ...r.alben.map((a) => h("option", { value: a.id }, `${a.name} (${a.anzahl}${a.gestapelt ? `, ${a.gestapelt} gestapelt` : ""})`)));
+  sel.value = c.album || "";
+  const opts = h("div", { class: "toolbar" },
+    h("label", { class: "field grow" }, "Album", sel),
+    h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: !!c.whole,
+      onchange: (e) => { c.whole = e.target.checked; c.top = {}; loadTab("cln", true); } }), "ganzes Album als einen Stapel"),
+    h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: !!c.fromAlbum,
+      onchange: (e) => { c.fromAlbum = e.target.checked; } }), "danach aus dem Album nehmen"));
+  const list = [opts];
+  if (!c.album) {
+    list.push(h("p", { class: "empty" }, r.alben.length ? "Wähle das Album, in dem du Zusammengehöriges gesammelt hast." : "Keine Alben gefunden."));
+    $("#cln-summary").textContent = `${n(r.alben.length, "Album", "Alben")}`;
+  } else {
+    c.items = r.vorschlaege;
+    const z = r.zahlen || {};
+    $("#cln-summary").textContent = `${n(c.items.length, "Stapel", "Stapel")} vorgeschlagen` +
+      (z.medien ? ` · ${z.medien} Medien im Album${z.gestapelt ? `, ${z.gestapelt} schon gestapelt` : ""}${!c.whole && z.einzeln ? `, ${z.einzeln} ohne Partner` : ""}` : "");
+    if (!c.items.length) list.push(h("p", { class: "empty" }, c.whole ? "Nichts zu stapeln (je Benutzer mindestens 2 ungestapelte Medien nötig)." : "Keine zusammengehörigen Fotos gefunden – „ganzes Album“ probieren?"));
+    for (const p of c.items) list.push(renderStackProposal(p));
+  }
+  $("#cln-list").replaceChildren(...list);
+  updateActionbar();
+}
+
+function renderStackProposal(p) {
+  const c = S.cln;
+  const top = c.top[p.id] || p.oben;
+  const card = h("article", { class: "card" + (c.sel.has(p.id) ? " selected" : "") });
+  card.append(h("div", { class: "card-head" },
+    h("input", { type: "checkbox", checked: c.sel.has(p.id), "aria-label": "Auswählen",
+      onchange: (e) => { e.target.checked ? c.sel.add(p.id) : c.sel.delete(p.id); card.classList.toggle("selected", e.target.checked); updateActionbar(); } }),
+    h("b", {}, n(p.anzahl, "Medium", "Medien")), h("span", { class: "chip" }, p.benutzer)),
+    h("div", { class: "muted small" }, p.grund + " · antippen, um das obere Bild zu wählen"));
+  const grid = h("div", { class: "grid" });
+  for (const m of p.medien) {
+    const isTop = m.id === top;
+    grid.append(tile({ class: "tile " + (isTop ? "keep" : ""), title: m.pfad,
+      onclick: () => { c.top[p.id] = m.id; c.sel.add(p.id); card.replaceWith(renderStackProposal(p)); updateActionbar(); } },
+    thumb(m), h("span", { class: "badge" }, isTop ? "★ oben" : "im Stapel"),
+    h("div", { class: "meta" }, h("div", { class: "name" }, m.dateiname), h("div", {}, fmtTaken(m.aufnahme)),
+      h("div", {}, [m.breite && m.hoehe ? `${m.breite}×${m.hoehe}` : "", fmtSize(m.groesse)].filter(Boolean).join(" · ")), openLinks(m))));
+  }
+  card.append(grid);
+  return card;
+}
+
+async function stageStacks(props, btn) {
+  const c = S.cln;
+  if (!props.length) return;
+  const media = props.reduce((s, p) => s + p.anzahl, 0);
+  const ok = await confirmDialog({ title: "Stapeln vormerken?",
+    body: [h("p", {}, `${n(props.length, "Stapel", "Stapel")} aus ${n(media, "Medium", "Medien")}. Gelöscht wird nichts – in Immich liegt das obere Bild in der Zeitleiste, die anderen dahinter.`),
+      c.fromAlbum ? h("p", {}, "Danach werden sie aus dem Album genommen.") : null,
+      h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter ✓ Vorgemerkt.")].filter(Boolean),
+    okLabel: "Vormerken" });
+  if (!ok) return;
+  busy(btn, true);
+  try {
+    const all = props.length === c.items.length;
+    const top = Object.fromEntries(props.filter((p) => c.top[p.id]).map((p) => [p.id, c.top[p.id]]));
+    const r = await api("api/staged/stacks", { method: "POST", body: { album: c.album, ganz: !!c.whole, ids: all ? null : props.map((p) => p.id), oben: top, aus_album: !!c.fromAlbum } });
+    toast(`${n(r.vorgemerkt, "Stapel", "Stapel")} vorgemerkt`);
+    await afterStage("cln");
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
+
+async function stageBurstStacks(items, btn) {
+  busy(btn, true);
+  try {
+    const keep = Object.fromEntries(items.filter((it) => S.cln.keep[it.id]).map((it) => [it.id, S.cln.keep[it.id]]));
+    const r = await api("api/staged/cleanup", { method: "POST", body: { action: "stapel", ids: items.map((it) => it.id), keep } });
+    toast(`${n(r.vorgemerkt, "Stapel", "Stapel")} vorgemerkt – nichts wird gelöscht`);
+    await afterStage("cln");
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
+
 /* ---------------------------------------------------------- Papierkorb */
 async function loadTrash() {
   const c = S.cln;
@@ -1699,7 +1792,7 @@ function yearChart(years) {
   return h("div", {}, h("div", { class: "muted small" }, `meiste Aufnahmen: ${peak.jahr} (${max.toLocaleString("de-DE")})`), wrap, tip);
 }
 
-const DONE_LABEL = { duplikat: "Duplikate", aufraeumen: "Aufgeräumt", zeit: "Zeit", ort: "Verortet", album: "In Alben", tag: "Getaggt", papierkorb: "Wiederhergestellt" };
+const DONE_LABEL = { duplikat: "Duplikate", aufraeumen: "Aufgeräumt", stapel: "Gestapelt", zeit: "Zeit", ort: "Verortet", album: "In Alben", tag: "Getaggt", papierkorb: "Wiederhergestellt" };
 function doneTable(rows) {
   const keys = Object.keys(DONE_LABEL).filter((k) => rows.some((r) => r[k]));
   return h("table", { class: "tbl" },
@@ -1887,7 +1980,7 @@ async function ignoreTrip(t, undo) {
 }
 
 /* -------------------------------------------------------- Vorgemerkt */
-const STAGE_TYPES = [["duplikat", "Duplikate"], ["aufraeumen", "Aufräumen"], ["zeit", "Aufnahmezeit"], ["ort", "Orte"], ["album", "Alben"], ["tag", "Tags"]];
+const STAGE_TYPES = [["duplikat", "Duplikate"], ["aufraeumen", "Aufräumen"], ["stapel", "Stapel"], ["zeit", "Aufnahmezeit"], ["ort", "Orte"], ["album", "Alben"], ["tag", "Tags"]];
 const STAGE_ACTION = { papierkorb: "Papierkorb", album: "Prüf-Album", keine: "–" };
 
 // Nach dem Vormerken: Quelle neu laden (Vorgemerktes ist dort weg) und Zähler aktualisieren
@@ -1932,6 +2025,7 @@ async function undoHistory(e, btn) {
       tag: "Die gesetzten Tags werden wieder entfernt.",
       zeit: "Die Aufnahmezeit wird wieder zurückverschoben.",
       aufraeumen: "Medien kommen aus dem Papierkorb zurück bzw. wieder aus dem Prüf-Album heraus.",
+      stapel: "Die Stapel werden aufgelöst; aus dem Album genommene Fotos kommen wieder hinein.",
     }[e.typ] || "")],
     okLabel: "Rückgängig",
   });
@@ -1953,6 +2047,7 @@ function stageMedia(e) {
     let cap = "";
     if (e.typ === "duplikat") cap = m.bleibt ? "bleibt" : (STAGE_ACTION[m.aktion] || "–");
     else if (e.typ === "aufraeumen") cap = STAGE_ACTION[m.aktion] || "–";
+    else if (e.typ === "stapel") cap = "oben";
     else if (e.typ === "zeit") cap = m.neue_zeit ? fmtTaken(m.neue_zeit) : "";
     else if (e.typ === "ort") cap = m.neuer_ort || "";
     return h("figure", { class: "stage-fig" + (e.typ === "duplikat" ? (m.bleibt ? " keep" : " drop") : "") },
@@ -1997,7 +2092,7 @@ function renderStaged() {
   updateActionbar();
 }
 
-const STAGE_SOURCE = { duplikat: "dup", aufraeumen: "cln", zeit: "cln", ort: "loc", album: "alb", tag: "tags" };
+const STAGE_SOURCE = { duplikat: "dup", aufraeumen: "cln", stapel: "cln", zeit: "cln", ort: "loc", album: "alb", tag: "tags" };
 
 async function unstage(e, btn) {
   busy(btn, true);
@@ -2081,6 +2176,13 @@ function updateActionbar() {
     }
   } else if (S.tab === "ovw") {
     info.textContent = "Stand der Bibliothek";
+  } else if (S.tab === "cln" && S.cln.bereich === "stapel") {
+    const c = S.cln;
+    const chosen = c.items.filter((p) => c.sel.has(p.id));
+    const list = chosen.length ? chosen : c.items;
+    info.textContent = chosen.length ? `${chosen.length} gewählt` : (c.items.length ? "Alle Vorschläge:" : "");
+    buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !list.length,
+      onclick: (e) => stageStacks(list, e.currentTarget) }, `Stapeln (${list.length})`));
   } else if (S.tab === "cln" && S.cln.bereich === "papierkorb") {
     const sel = [...S.cln.sel];
     info.textContent = sel.length ? `${sel.length} gewählt` : "Antippen zum Auswählen";
@@ -2098,8 +2200,11 @@ function updateActionbar() {
     const chosen = c.items.filter((it) => c.sel.has(it.id));
     const list = chosen.length ? chosen : c.items;
     info.textContent = c.ignored ? "Behaltene Einträge" : chosen.length ? `${chosen.length} gewählt` : (c.items.length ? "Alle angezeigten:" : "Nichts offen");
+    if (!c.ignored && c.bereich === "serien") {
+      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !list.length, onclick: (e) => stageBurstStacks(list, e.currentTarget) }, "Stapeln"));
+    }
     if (!c.ignored) {
-      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !list.length, onclick: (e) => stageCleanup("album", list, e.currentTarget) }, "Ins Prüf-Album"));
+      buttons.push(h("button", { class: "btn small" + (c.bereich === "serien" ? "" : " primary"), type: "button", disabled: !list.length, onclick: (e) => stageCleanup("album", list, e.currentTarget) }, "Ins Prüf-Album"));
       buttons.push(h("button", { class: "btn small danger", type: "button", disabled: !list.length, onclick: (e) => stageCleanup("papierkorb", list, e.currentTarget) }, "Papierkorb"));
     }
   } else if (S.tab === "alb") {

@@ -6,7 +6,7 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 |---|---|
 | **Duplikate** | Findet doppelte Medien über beide Benutzer und über Uploads und externe Bibliotheken hinweg: per Prüfsumme, Dateiname + Aufnahmezeit, Bild-Fingerabdruck (z. B. WhatsApp-Kopien) und Immichs eigener Erkennung. Jede Gruppe hat eine Art (identisch, sehr wahrscheinlich, ähnlich) und einen Behalten-Vorschlag. Nicht behaltene Kopien kommen ins Album „Duplikat-Prüfung“ oder in den Papierkorb. |
 | **Ohne Ort** | Medien ohne GPS bekommen einen Ortsvorschlag mit Sicherheit (sicher, wahrscheinlich, unsicher) aus den GPS-Fotos beider Benutzer, zusammengefasst nach Ort und Serie. Für den Rest gibt es die Ortssuche von Immich. Screenshots werden ausgeblendet. |
-| **Aufräumen** | Speicherfresser (große Videos, Bildschirmaufnahmen, doppelte Live-Photo-Videos), Serienbilder (das schärfste bleibt), unscharfe und dunkle Fotos, falsche Aufnahmezeiten samt Kamera-Zeitversatz, Papierkorb-Übersicht. |
+| **Aufräumen** | Speicherfresser (große Videos, Bildschirmaufnahmen, doppelte Live-Photo-Videos), Serienbilder (das schärfste bleibt oder alles stapeln), **Stapeln aus eigenen Alben**, unscharfe und dunkle Fotos, falsche Aufnahmezeiten samt Kamera-Zeitversatz, Papierkorb-Übersicht. |
 | **Alben** | Erkennt Reisen (weg von zu Hause, beide Benutzer zusammen) und schlägt Alben vor. Vorher wird gegen alle vorhandenen Alben beider Benutzer abgeglichen: schon vorhanden, ergänzen oder neu. Neue Alben werden mit dem anderen Benutzer geteilt. |
 | **Tags** | Massen-Tagging nach Regeln, die du in der Oberfläche anlegst, auch nach Land, Region oder Ort. Tags werden nur ergänzt, nie entfernt. |
 | **Übersicht** | Kennzahlen je Benutzer, offene Aufgaben, Aufnahmen je Jahr, Erledigtes je Monat. Auf Wunsch wöchentlich als Nachricht per ntfy oder Telegram. |
@@ -212,8 +212,10 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | POST | `/api/staged/no-location` | Orte vormerken (Felder wie `/api/no-location/apply`, dazu `label`) |
 | POST | `/api/staged/albums` | Alben vormerken (Felder wie `/api/album-suggestions/apply`) |
 | GET | `/api/cleanup` | Aufräumen: `art` (`speicher`, `serien`, `qualitaet`), `kategorie`, `ignoriert`, `offset`, `limit` |
-| POST | `/api/staged/cleanup` | Aufräumen vormerken: `action` (`album`/`papierkorb`), `ids` oder `kategorie`, optional `keep` {Eintrag: Medium} |
+| POST | `/api/staged/cleanup` | Aufräumen vormerken: `action` (`album`/`papierkorb`, bei Serien auch `stapel`), `ids` oder `kategorie`, optional `keep` {Eintrag: Medium} |
 | POST | `/api/cleanup/keep` | „Behalten“/„Passt so“: `{"ids": [...]}`, mit `"undo": true` zurück |
+| GET | `/api/stacks` | Stapel-Vorschläge: `album`, `ganz` (ganzes Album je Benutzer) |
+| POST | `/api/staged/stacks` | Stapel vormerken: `album`, `ids` (ohne = alle), `ganz`, `oben` {Vorschlag: Medium}, `aus_album` |
 | GET | `/api/timefix` | Falsche Aufnahmezeiten: `art` (`zeitversatz`, `dateiname`, `zukunft`, `standard`) |
 | POST | `/api/staged/timefix` | Zeitkorrektur vormerken: `{"eintraege": [{"id", "minuten"? , "ziel"?}]}` |
 | GET | `/api/trash` | Papierkorb beider Benutzer |

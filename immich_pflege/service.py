@@ -27,6 +27,7 @@ from .models import Asset
 from .location import (LEVELS, LocationChange, analyze, execute_location_changes, level_at_least,
                        month_facets, month_key, month_label, place_facets, place_key, resolve_locations)
 from .rules import Resolver, Rule, RuleError, apply as apply_rules, load_rules, preview as preview_rules
+from .stacking import execute_stacks, propose as propose_stacks, whole_album
 from .staging import StagingStore
 
 log = logging.getLogger(__name__)
@@ -272,7 +273,10 @@ class Pflege:
         with self._calc_lock:
             cache = self._groups_cache
             if not cache or cache[0] != key:
-                cache = self._groups_cache = (key, find_groups(lib, pairs, self.settings.dup_edit_keep))
+                groups = find_groups(lib, pairs, self.settings.dup_edit_keep)
+                # schon in einem gemeinsamen Immich-Stapel (z. B. von Immich gestapelte Handy-Bearbeitung): erledigt
+                groups = [g for g in groups if len({a.stack_id for a in g.assets}) > 1 or g.assets[0].stack_id is None]
+                cache = self._groups_cache = (key, groups)
         return cache[1]
 
     def duplicate_groups(self, include_ignored: bool = False) -> list[DuplicateGroup]:
@@ -614,6 +618,8 @@ class Pflege:
                         res = execute_plan(lib, self.clients, e["daten"])
                     elif e["typ"] == "zeit":
                         res = execute_shifts(lib, self.clients, e["daten"]["aenderungen"])
+                    elif e["typ"] == "stapel":
+                        res = execute_stacks(lib, self.clients, e["daten"])
                     else:
                         res = self.tags_apply([e["daten"]["regel"]], record=False)
                 except (ImmichError, ActionError, RuleError, AlbumError) as exc:
@@ -624,7 +630,7 @@ class Pflege:
                 count = {"duplikat": lambda r: r["album"] + r["papierkorb"],
                          "aufraeumen": lambda r: r["album"] + r["papierkorb"], "ort": lambda r: r["aktualisiert"],
                          "album": lambda r: r["hinzugefuegt"], "tag": lambda r: r["getaggt"],
-                         "zeit": lambda r: r["verschoben"]}[e["typ"]](res)
+                         "zeit": lambda r: r["verschoben"], "stapel": lambda r: r["medien"]}[e["typ"]](res)
                 self._record(e["typ"], e["titel"], count, res, "oberflaeche")
                 results.append({"id": e["id"], "titel": e["titel"], "ergebnis": res})
             self.staging.remove(done)
@@ -660,8 +666,9 @@ class Pflege:
             if not self._cleanup_cache or self._cleanup_cache[0] != key:
                 self._cleanup_cache = (key, find_items(lib, self.hash_store))
             items = self._cleanup_cache[1]
-        staged = self.staging.asset_ids("aufraeumen") | self.staging.asset_ids("duplikat")
-        return lib, [i for i in items if not (i.drop & staged)]
+        staged = (self.staging.asset_ids("aufraeumen") | self.staging.asset_ids("duplikat")
+                  | self.staging.asset_ids("stapel"))
+        return lib, [i for i in items if not (i.ids & staged if i.kategorie == "serien" else i.drop & staged)]
 
     def keep_list(self) -> KeepList:
         return KeepList(self.settings.data_dir / "aufraeumen_behalten.json")
@@ -742,6 +749,86 @@ class Pflege:
             raise ActionError("Keine Einträge angegeben")
         self.keep_list().update(ids, remove=undo)
         return {"eintraege": len(ids), "rueckgaengig": undo}
+
+    # ------------------------------------------------------------- Stapeln
+    def stack_albums(self) -> list[dict[str, Any]]:
+        lib = self.library()
+        out = []
+        for al in lib.albums.values():
+            members = [lib.assets[i] for i in al["medien"] if i in lib.assets]
+            if len(members) >= 2:
+                out.append({"id": al["id"], "name": al["name"], "besitzer": al["besitzer"] or "anderer Benutzer",
+                            "anzahl": len(members), "gestapelt": sum(1 for a in members if a.stack_id)})
+        return sorted(out, key=lambda a: a["name"].lower())
+
+    def stack_view(self, album_id: str | None = None, whole: bool = False) -> dict[str, Any]:
+        if self.albums_pending(wait_s=3):
+            return {"laedt": True}
+        albums = self.stack_albums()
+        out: dict[str, Any] = {"alben": albums, "album": None, "vorschlaege": [], "zahlen": None}
+        if not album_id:
+            return out
+        lib = self.library()
+        if album_id not in lib.albums:
+            raise ActionError("Album nicht gefunden – bitte neu einlesen")
+        proposals, stats = propose_stacks(lib, album_id, self.hash_store)
+        if whole:
+            proposals = whole_album(lib, album_id, self.hash_store)
+        staged = self.staging.asset_ids("stapel")
+        proposals = [p for p in proposals if not ({a.id for a in p.assets} & staged)]
+        out.update(album={"id": album_id, "name": lib.albums[album_id]["name"]},
+                   vorschlaege=[p.to_dict() for p in proposals], zahlen=stats, ganz=whole)
+        return out
+
+    def stage_stacks(self, album_id: str, ids: list[str] | None = None, whole: bool = False,
+                     top: dict[str, str] | None = None, remove_from_album: bool = False) -> dict[str, Any]:
+        """Vorschläge (ids, ohne = alle) eines Albums als Stapel vormerken; ``top``: {Vorschlag: Medium oben}."""
+        from .stacking import order
+
+        with self._lock:
+            lib = self.library()
+            if album_id not in lib.albums:
+                raise ActionError("Album nicht gefunden – bitte neu einlesen")
+            proposals = whole_album(lib, album_id, self.hash_store) if whole else \
+                propose_stacks(lib, album_id, self.hash_store)[0]
+            known = {p.id: p for p in proposals}
+            missing = [i for i in ids or [] if i not in known]
+            if missing:
+                raise ActionError(f"Vorschlag/Vorschläge {', '.join(missing)} nicht gefunden – bitte neu laden")
+            chosen = [known[i] for i in ids] if ids else proposals
+            if not chosen:
+                raise ActionError("Nichts zu stapeln")
+            stacks = []
+            for p in chosen:
+                assets = order(p.assets, self.hash_store, (top or {}).get(p.id))
+                stacks.append({"user": p.owner, "ids": [a.id for a in assets]})
+            name = lib.albums[album_id]["name"]
+            n = sum(len(s["ids"]) for s in stacks)
+            title = f"📚 „{name}“: {len(stacks)} Stapel aus {n} Medien" + \
+                (" – danach aus dem Album" if remove_from_album else "")
+            media = [{**lib.assets[s["ids"][0]].summary(), "oben": True} for s in stacks[:8]]
+            self.staging.add("stapel", title, {"stapel": stacks, "album": album_id, "aus_album": remove_from_album,
+                                               "alle_medien": [i for s in stacks for i in s["ids"]]},
+                             media, n, key=f"{album_id}:{'ganz' if whole else ','.join(sorted(p.id for p in chosen))}")
+            return {"vorgemerkt": len(stacks), "medien": n}
+
+    def stage_burst_stacks(self, ids: list[str], keep: dict[str, str] | None = None) -> dict[str, Any]:
+        """Serienbilder aus „Aufräumen“ stapeln statt wegräumen."""
+        with self._lock:
+            chosen = self._cleanup_selection(ids, None)
+            stacks = []
+            for item in chosen:
+                if item.kategorie != "serien":
+                    raise ActionError("Stapeln geht nur für Serienbilder")
+                top = (keep or {}).get(item.id) or next(a.id for a in item.assets if a.id not in item.drop)
+                ordered = [a for a in item.assets if a.id == top] + [a for a in item.assets if a.id != top]
+                stacks.append({"user": ordered[0].owner, "ids": [a.id for a in ordered]})
+            n = sum(len(s["ids"]) for s in stacks)
+            self.staging.add("stapel", f"📚 Serienbilder: {len(stacks)} Stapel aus {n} Medien",
+                             {"stapel": stacks, "album": None, "aus_album": False,
+                              "alle_medien": [i for s in stacks for i in s["ids"]]},
+                             [{**self.library().assets[s["ids"][0]].summary(), "oben": True} for s in stacks[:8]], n)
+            return {"vorgemerkt": len(stacks), "medien": n}
 
     # -------------------------------------------------------- Aufnahmezeit
     def time_fixes(self):

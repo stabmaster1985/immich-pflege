@@ -40,6 +40,23 @@ Nach dem Update werden Schärfe und Helligkeit für alle Fotos einmalig im Hinte
 
 Korrigiert wird mit Immichs relativer Zeitverschiebung. **Rückgängig** verschiebt um denselben Betrag zurück. Orte, Serien und Albumvorschläge rechnen danach mit der richtigen Zeit.
 
+## Stapeln aus Alben
+
+Statt Zusammengehöriges zu löschen, kann es in Immich **gestapelt** werden. In der Zeitleiste liegt dann nur das obere Bild, die anderen dahinter (in Immich über das Stapel-Symbol aufklappbar). Gelöscht wird nichts.
+
+1. Unter **Album** eines deiner Alben wählen, in dem du Zusammengehöriges gesammelt hast.
+2. Das Tool schlägt Stapel vor. Zusammen kommen Fotos **desselben Benutzers** (Immich stapelt nur eigene Medien), die
+   - denselben Namen haben und höchstens 2 Sekunden auseinanderliegen (RAW+JPG, HEIC+JPG, Original + Bearbeitung),
+   - höchstens 2 Sekunden auseinanderliegen (Serienbild) oder
+   - höchstens 60 Sekunden auseinanderliegen und sich im Bild-Fingerabdruck ähneln.
+   Mit **ganzes Album als einen Stapel** wird stattdessen alles (je Benutzer) zu einem Stapel.
+3. **Oben** liegt ein Favorit, sonst kein RAW, sonst die bearbeitete Fassung, sonst das schärfste, sonst das größte Bild. Antippen wählt ein anderes.
+4. Optional **danach aus dem Album nehmen**, damit das Album leer wird, sobald alles gestapelt ist.
+
+Schon gestapelte Fotos bleiben außen vor. Serienbilder lassen sich auch unter **Serienbilder** mit **Stapeln** zusammenfassen. **Rückgängig** löst die Stapel wieder auf und legt herausgenommene Fotos zurück ins Album.
+
+Seit Immich 3.3 werden Bearbeitungen vom Handy automatisch gestapelt. Liegen Original und Bearbeitung schon in einem Stapel, zeigt sie die Duplikat-Suche nicht mehr an.
+
 ## Papierkorb
 
 Zeigt, was bei euch beiden im Immich-Papierkorb liegt, mit Größe. Bei Medien, die das Tool selbst verschoben hat, steht auch, ab wann Immich sie **endgültig löscht** (Einstellung „Papierkorb“ in Immich, meist 30 Tage). Antippen und **Wiederherstellen**, oder alles auf einmal. Wiederhergestellte Medien erscheinen nach dem nächsten **Neu einlesen** wieder in den Listen.

@@ -57,6 +57,7 @@ class Asset:
     duration_ms: int | None = None  # Videos
     in_album: bool = False
     in_review_album: bool = False
+    stack_id: str | None = None  # Immich-Stapel, in dem das Medium liegt
     extra: dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------ abgeleitet

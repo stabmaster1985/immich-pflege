@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .client import ImmichClient
+from .client import ImmichClient, ImmichError
 from .models import Asset
 
 log = logging.getLogger(__name__)
@@ -249,6 +249,14 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str, previous: 
             asset.in_album = aid not in not_in_album
             asset.in_review_album = aid in review_members
         t_album = time.monotonic() - t0
+
+        try:
+            for st in client.stacks():
+                for raw in st.get("assets") or []:
+                    if raw.get("id") in own:
+                        own[raw["id"]].stack_id = st["id"]
+        except ImmichError as exc:  # Stapel sind nur eine Zusatzinfo
+            log.warning("Stapel von %s nicht lesbar: %s", name, exc)
 
         for d in client.duplicates():
             ids = [a["id"] for a in d.get("assets") or [] if a.get("id")]

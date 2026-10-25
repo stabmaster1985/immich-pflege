@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from immich_pflege import albums, cleanup, duplicates, imagehash, location, timefix
+from immich_pflege import albums, cleanup, duplicates, imagehash, location, stacking, timefix
 from immich_pflege.web.app import HELP, HELP_TOPICS, create_app
 
 
@@ -40,6 +40,8 @@ def test_help_matches_code():
     assert cleanup.DARK_MAX == 25 and "**25**" in cln and cleanup.BLUR_MAX == 3.0 and "**3**" in cln
     assert timefix.STEP_MIN == 30 and timefix.MAX_OFFSET_MIN == 12 * 60 and "±12 Stunden" in cln
     assert timefix.MATCH_MIN == 10 and "10 Minuten" in cln and timefix.MIN_SHARE == 0.5
+    assert stacking.PAIR_GAP_S == stacking.BURST_GAP_S == 2 and "höchstens 2 Sekunden" in cln
+    assert stacking.SIMILAR_GAP_S == 60 and "höchstens 60 Sekunden" in cln
 
 
 def test_readme_links_help():

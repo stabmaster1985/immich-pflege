@@ -124,6 +124,17 @@ class ImmichClient:
     def duplicates(self) -> list[dict]:
         return self.request("GET", "/duplicates") or []
 
+    # ---------------------------------------------------------------- Stapel
+    def stacks(self) -> list[dict]:
+        return self.request("GET", "/stacks") or []
+
+    def create_stack(self, ids: list[str]) -> dict:
+        """Erstes Medium liegt oben (Hauptbild)."""
+        return self.request("POST", "/stacks", json={"assetIds": ids}) or {}
+
+    def delete_stack(self, stack_id: str) -> None:
+        self.request("DELETE", f"/stacks/{stack_id}")
+
     # ----------------------------------------------------------------- Alben
     def albums(self, owned_only: bool = False, asset_id: str | None = None) -> list[dict]:
         params: dict[str, Any] = {}

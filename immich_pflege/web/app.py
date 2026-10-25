@@ -104,8 +104,16 @@ class TagsApply(BaseModel):
     rules: Optional[list[str]] = None
 
 
+class StackStage(BaseModel):
+    album: str
+    ids: Optional[list[str]] = None  # ohne = alle Vorschläge
+    ganz: bool = False
+    oben: Optional[dict[str, str]] = None
+    aus_album: bool = False
+
+
 class CleanupStage(BaseModel):
-    action: Literal["album", "papierkorb"]
+    action: Literal["album", "papierkorb", "stapel"]
     ids: Optional[list[str]] = None
     kategorie: Optional[str] = None
     keep: Optional[dict[str, str]] = None
@@ -552,6 +560,8 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
 
     @app.post("/api/staged/cleanup")
     def stage_cleanup(body: CleanupStage):
+        if body.action == "stapel":
+            return svc().stage_burst_stacks(body.ids or [], body.keep)
         return svc().stage_cleanup(body.action, body.ids, body.kategorie, body.keep)
 
     @app.get("/api/timefix")
@@ -562,6 +572,14 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/staged/timefix")
     def stage_timefix(body: TimeStage):
         return svc().stage_timefix([e.model_dump(exclude_none=True) for e in body.eintraege])
+
+    @app.get("/api/stacks")
+    def stacks(album: Optional[str] = None, ganz: bool = False):
+        return svc().stack_view(album, ganz)
+
+    @app.post("/api/staged/stacks")
+    def stage_stacks(body: StackStage):
+        return svc().stage_stacks(body.album, body.ids, body.ganz, body.oben, body.aus_album)
 
     @app.post("/api/cleanup/keep")
     def cleanup_keep(body: CleanupKeep):

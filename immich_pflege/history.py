@@ -9,6 +9,8 @@ ein kleines Wörterbuch ``{"op": …, "user": …, …}``, ausgeführt mit dem K
 - ``teilen_aufheben``  {album, nutzer}    Freigabe für einen Benutzer zurücknehmen
 - ``tag_entfernen``    {tag, ids}         gesetzten Tag wieder abnehmen
 - ``zeit``             {ids, minuten}     Aufnahmezeit zurückverschieben
+- ``stapel_aufloesen`` {stack, ids}       angelegten Stapel wieder auflösen
+- ``album_hinzufuegen`` {album, ids}      wieder ins Album legen
 """
 
 from __future__ import annotations
@@ -148,6 +150,17 @@ def _undo_one(lib: Library | None, client: ImmichClient, op: dict[str, Any]) -> 
             lib.albums[op["album"]]["rollen"].pop(names.get(op["nutzer"], ""), None)
     elif kind == "tag_entfernen":
         client.untag_assets(op["tag"], op["ids"])
+    elif kind == "stapel_aufloesen":
+        client.delete_stack(op["stack"])
+        if lib:
+            for i in op["ids"]:
+                if i in lib.assets and lib.assets[i].stack_id == op["stack"]:
+                    lib.assets[i].stack_id = None
+    elif kind == "album_hinzufuegen":
+        client.add_to_album(op["album"], op["ids"])
+        if lib and op["album"] in lib.albums:
+            album = lib.albums[op["album"]]
+            album["medien"] = sorted(set(album["medien"]) | set(op["ids"]))
     elif kind == "zeit":
         client.shift_time(op["ids"], op["minuten"])
         if lib:

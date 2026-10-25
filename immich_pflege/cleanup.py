@@ -116,7 +116,7 @@ def storage_hogs(lib: Library) -> list[Item]:
 def bursts(lib: Library, store: HashStore) -> list[Item]:
     by_cam: dict[tuple, list[Asset]] = {}
     for a in lib.assets.values():
-        if a.type == "IMAGE" and a.taken_utc and not a.in_review_album and not is_screenshot(a):
+        if a.type == "IMAGE" and a.taken_utc and not a.in_review_album and not a.stack_id and not is_screenshot(a):
             by_cam.setdefault((a.owner, a.make, a.model, a.is_external), []).append(a)
     items: list[Item] = []
     for photos in by_cam.values():

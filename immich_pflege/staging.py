@@ -15,7 +15,7 @@ from typing import Any, Iterable
 
 log = logging.getLogger(__name__)
 
-TYPES = ("duplikat", "aufraeumen", "zeit", "ort", "album", "tag")
+TYPES = ("duplikat", "aufraeumen", "stapel", "zeit", "ort", "album", "tag")
 SAMPLES = 8
 
 
@@ -88,7 +88,7 @@ class StagingStore:
         out: set[str] = set()
         for e in self.of_type(typ):
             d = e["daten"]
-            if typ in ("duplikat", "album", "aufraeumen", "zeit"):
+            if typ in ("duplikat", "album", "aufraeumen", "zeit", "stapel"):
                 out.update(d.get("alle_medien", []))
             elif typ == "ort":
                 out.update(ch["asset_id"] for ch in d.get("aenderungen", []))
