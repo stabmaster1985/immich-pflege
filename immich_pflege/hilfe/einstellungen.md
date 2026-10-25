@@ -5,6 +5,7 @@ Alle Einstellungen werden hier gemacht und in `data/einstellungen.json` gespeich
 ## Immich
 
 - **Adresse:** IP oder Name des Immich-Servers mit Port, z. B. `http://192.168.1.20:2283`.
+- **Adresse für Links im Browser** (optional): Die Links „Web ↗“ an den Bildern führen hierhin, z. B. zu deiner externen Immich-Adresse. Leer heißt: die Adresse oben.
 - **API-Keys:** Pro Benutzer einer. In Immich als dieser Benutzer anmelden, dann *Kontoeinstellungen → API-Schlüssel → Neuer API-Schlüssel*. Ein leeres Feld beim Speichern behält den bisherigen Key. Keys werden nie an den Browser zurückgegeben.
 - **Verbindung testen** zeigt die Immich-Version und zu jedem Key das zugehörige Konto, ohne zu speichern.
 

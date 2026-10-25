@@ -131,3 +131,15 @@ def test_compose_file_works_with_older_compose():
     # env_file mit "required: false" kennt Compose erst ab 2.24 – Fehler auf dem Docker-Server
     assert "env_file" not in svc
     assert "networks" not in compose  # Immich läuft auf eigenem LXC, kein gemeinsames Docker-Netz
+
+
+def test_link_url(tmp_path):
+    s = Settings.load({"DATA_DIR": str(tmp_path), "IMMICH_URL": "http://192.168.1.20:2283"})
+    assert s.browser_url == "http://192.168.1.20:2283"
+    update_settings(s, {"link_url": "https://fotos.example.de/"})
+    s = Settings.load({"DATA_DIR": str(tmp_path), "IMMICH_URL": "http://192.168.1.20:2283"})
+    assert s.browser_url == "https://fotos.example.de"
+    update_settings(s, {"link_url": ""})
+    assert Settings.load({"DATA_DIR": str(tmp_path)}).link_url == ""
+    with pytest.raises(ConfigError):
+        update_settings(s, {"link_url": "fotos.example.de"})

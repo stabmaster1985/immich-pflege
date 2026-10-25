@@ -45,6 +45,12 @@ Unter jedem Bild stehen die zutreffenden Gründe als Häkchen. **Grün** sind di
 
 **Bevorzugte Fassung:** Bei Original und Bearbeitung entscheidet die Einstellung, Standard ist die bearbeitete Fassung. Bei unterschiedlichen Formaten gewinnt das Originalformat (HEIC, RAW, DNG) vor der daraus erzeugten JPG- oder PNG-Kopie. **Tippe auf ein Bild**, um selbst zu wählen, welches bleibt.
 
+## Original ansehen
+
+Unter jedem Bild stehen zwei Links:
+- **App ↗** öffnet das Foto direkt in der Immich-App auf dem Handy (`immich://asset?id=…`). Die App findet nur Fotos, die sie für das dort angemeldete Konto kennt. Fotos des anderen Benutzers also nur, wenn ihr sie per Partner-Freigabe teilt.
+- **Web ↗** öffnet das Foto in der Immich-Weboberfläche. Welche Adresse dafür benutzt wird, stellst du unter ⚙ Einstellungen → „Adresse für Links im Browser“ ein.
+
 ## Aktionen
 
 - **Ins Prüf-Album:** Die nicht behaltenen Kopien kommen in das Album „Duplikat-Prüfung“ ihres Besitzers. Das Album wird bei Bedarf angelegt. Gelöscht wird dabei nichts.

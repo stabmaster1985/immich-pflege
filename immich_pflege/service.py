@@ -127,6 +127,7 @@ class Pflege:
             "pruef_album": self.settings.review_album,
             "ort_max_stunden": self.settings.location_max_hours,
             "ort_extern_erlaubt": self.settings.location_include_external,
+            "link_url": self.settings.browser_url,
             "regeldatei": str(self.settings.rules_file),
             "einlesen_laeuft": self.scanning,
             "letzter_fehler": self.last_error,

@@ -105,6 +105,7 @@ class Settings:
     immich_url: str = DEFAULT_URL
     users: dict[str, str] = field(default_factory=dict)  # Benutzername -> API-Key
     review_album: str = "Duplikat-Prüfung"
+    link_url: str = ""  # Immich-Adresse für Links im Browser (leer = immich_url)
     location_max_hours: float = 2.0
     location_include_external: bool = False
     location_skip_screenshots: bool = True
@@ -147,6 +148,11 @@ class Settings:
     @property
     def settings_file(self) -> Path:
         return self.data_dir / SETTINGS_FILE
+
+    @property
+    def browser_url(self) -> str:
+        """Adresse für Links zu Immich im Browser."""
+        return self.link_url or self.immich_url
 
     @property
     def configured(self) -> bool:
@@ -223,6 +229,7 @@ class Settings:
             **update,
             immich_url=pick("IMMICH_URL", "immich_url", DEFAULT_URL, normalize_url),
             users=dict(sorted(users.items())),
+            link_url=pick("IMMICH_LINK_URL", "link_url", "", lambda v: normalize_url(v) if str(v).strip() else ""),
             review_album=pick("REVIEW_ALBUM", "review_album", "Duplikat-Prüfung", lambda v: str(v).strip()),
             location_max_hours=pick("LOCATION_MAX_HOURS", "location_max_hours", 2.0, parse_hours),
             dup_edit_keep=pick("DUP_EDIT_KEEP", "dup_edit_keep", "bearbeitung", parse_edit_keep),
@@ -248,6 +255,7 @@ class Settings:
             "benutzer": [{"name": n, "key_gesetzt": bool(k), "key_ende": k[-4:] if len(k) > 8 else ""}
                          for n, k in self.users.items()],
             "review_album": self.review_album,
+            "link_url": self.link_url,
             "location_max_hours": self.location_max_hours,
             "location_include_external": self.location_include_external,
             "location_skip_screenshots": self.location_skip_screenshots,
@@ -307,6 +315,7 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
 
     attempt("immich_url", normalize_url)
     attempt("review_album", lambda v: _non_empty(v, "Name des Prüf-Albums"))
+    attempt("link_url", lambda v: normalize_url(v) if str(v or "").strip() else "")
     attempt("location_max_hours", parse_hours)
     attempt("location_include_external", lambda v: _bool(v, False))
     attempt("location_skip_screenshots", lambda v: _bool(v, True))

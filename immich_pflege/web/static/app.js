@@ -86,6 +86,23 @@ function thumb(m, alt) {
   return h("img", { src: m.thumb || ("thumb/" + m.id), loading: "lazy", decoding: "async", alt: alt || m.dateiname || "" });
 }
 
+// Kachel als <div role="button">: darin dürfen Links stehen (in <button> nicht erlaubt)
+function tile(attrs, ...children) {
+  const click = attrs.onclick;
+  const el = h("div", { ...attrs, role: "button", tabindex: "0", onclick: null }, ...children);
+  el.addEventListener("click", (e) => { if (!e.target.closest("a")) click(e); });
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); click(e); } });
+  return el;
+}
+
+// Original öffnen: Immich-App (immich://asset?id=…) oder Weboberfläche (/photos/<id>)
+function openLinks(m) {
+  const web = S.status && S.status.link_url;
+  return h("div", { class: "open-links" },
+    h("a", { href: "immich://asset?id=" + encodeURIComponent(m.id), title: "In der Immich-App öffnen" }, "App ↗"),
+    web ? h("a", { href: `${web}/photos/${encodeURIComponent(m.id)}`, target: "_blank", rel: "noopener", title: "In Immich im Browser öffnen" }, "Web ↗") : null);
+}
+
 function busy(btn, on) {
   btn.disabled = on;
   btn.classList.toggle("busy", on);
@@ -332,8 +349,8 @@ function renderGroup(g) {
   for (const m of g.medien) {
     const isKeep = m.id === keep;
     const badge = isKeep ? "★ bleibt" : (m.im_pruef_album ? "im Prüf-Album" : "weg");
-    grid.append(h("button", {
-      type: "button", class: "tile " + (isKeep ? "keep" : "drop"),
+    grid.append(tile({
+      class: "tile " + (isKeep ? "keep" : "drop"),
       "aria-pressed": isKeep ? "true" : "false",
       title: m.pfad,
       onclick: () => {
@@ -351,6 +368,7 @@ function renderGroup(g) {
       h("div", {}, fmtTaken(m.aufnahme)),
       h("div", {}, [m.breite && m.hoehe ? `${m.breite}×${m.hoehe}` : "", fmtSize(m.groesse)].filter(Boolean).join(" · ")),
       renderReasons(m, g),
+      openLinks(m),
     )));
   }
   card.append(head, grid);
@@ -591,8 +609,8 @@ function renderSeries(ser) {
     if (mv && !m.aenderbar) info = h("div", { class: "nosug" }, `📍 ${mv.ort || "Ort"} · extern gesperrt`);
     else if (mv) info = h("div", {}, h("span", { class: "sug" }, `📍 ${mv.ort || mv.breite.toFixed(3) + ", " + mv.laenge.toFixed(3)}`), " ", confChip(mv.sicherheit));
     else info = h("div", { class: "nosug" }, "kein Vorschlag");
-    grid.append(h("button", {
-      type: "button", class: "tile" + (can ? "" : " locked") + (sel ? " selected" : ""), "aria-pressed": sel ? "true" : "false",
+    grid.append(tile({
+      class: "tile" + (can ? "" : " locked") + (sel ? " selected" : ""), "aria-pressed": sel ? "true" : "false",
       title: mv ? mv.grund : m.pfad,
       onclick: () => {
         if (!m.aenderbar) return;
@@ -605,7 +623,7 @@ function renderSeries(ser) {
     h("div", { class: "meta" },
       h("div", { class: "name" }, m.dateiname),
       h("div", {}, `${fmtTime(m.aufnahme)} · ${m.benutzer}${m.extern ? " · extern" : ""}`),
-      info)));
+      info, openLinks(m))));
   }
   card.append(grid);
   if (!showAll) {
@@ -937,6 +955,7 @@ async function loadSettings() {
   };
   $("#set-url").value = d.immich_url; lock("#set-url", "immich_url");
   $("#set-album").value = d.review_album; lock("#set-album", "review_album");
+  $("#set-link-url").value = d.link_url; lock("#set-link-url", "link_url");
   $("#set-hours").value = d.location_max_hours; lock("#set-hours", "location_max_hours");
   $("#set-ext").checked = d.location_include_external; lock("#set-ext", "location_include_external");
   $("#set-shots").checked = d.location_skip_screenshots; lock("#set-shots", "location_skip_screenshots");
@@ -1008,6 +1027,7 @@ function readSettingsForm() {
   const put = (key, val) => { if (!d.gesperrt.includes(key)) body[key] = val; };
   put("immich_url", $("#set-url").value.trim());
   put("review_album", $("#set-album").value.trim());
+  put("link_url", $("#set-link-url").value.trim());
   put("location_max_hours", $("#set-hours").value);
   put("location_include_external", $("#set-ext").checked);
   put("location_skip_screenshots", $("#set-shots").checked);

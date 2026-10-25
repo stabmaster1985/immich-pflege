@@ -34,6 +34,8 @@ Medien ohne Ort mit höchstens **2 Stunden** Abstand bilden eine **Serie**.
 
 Die Ortssuche nutzt Immichs eigene Ortsdatenbank, ohne Internetdienst.
 
+Mit **App ↗** und **Web ↗** unter jedem Bild öffnest du das Original in Immich, um es dir genauer anzusehen.
+
 ## Was ausgeblendet wird
 
 - **Screenshots und Bildschirmaufnahmen:** Erkannt am Dateinamen (Screenshot, Bildschirmfoto, Bildschirmaufnahme, RPReplay …) oder als PNG ohne Kameradaten, so speichert das iPhone Screenshots. Abschaltbar unter ⚙ Einstellungen.

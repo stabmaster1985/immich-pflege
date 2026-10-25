@@ -1,3 +1,4 @@
+import re
 import base64
 
 import pytest
@@ -19,7 +20,9 @@ def test_healthz_and_ui(web):
     assert web.get("/static/app.js").status_code == 200
     # keine externen Ressourcen
     for f in ("/", "/static/app.js", "/static/app.css"):
-        assert "https://" not in web.get(f).text
+        text = web.get(f).text
+        assert not re.search(r'(src|href)\s*=\s*["\']https?://', text), f
+        assert "url(http" not in text and "@import" not in text
 
 
 def test_status_and_scan(web):
