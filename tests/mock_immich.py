@@ -161,7 +161,8 @@ class MockState:
         users += [{"user": self.user_by_id(uid), "role": r} for uid, r in al.get("members", {}).items()]
         return {"id": al["id"], "albumName": al["albumName"], "assetCount": len(members),
                 "shared": bool(al.get("members")), "albumUsers": users, "hasSharedLink": False,
-                "description": "", "albumThumbnailAssetId": None, "isActivityEnabled": True,
+                "description": "",
+                "albumThumbnailAssetId": al.get("thumb") if al.get("thumb") in members else min(members, default=None), "isActivityEnabled": True,
                 "startDate": dates[0] if dates else None, "endDate": dates[-1] if dates else None,
                 "createdAt": "2024-01-01T00:00:00.000Z", "updatedAt": "2024-01-01T00:00:00.000Z"}
 
@@ -467,6 +468,19 @@ def create_app(state: MockState) -> FastAPI:
             out.append({"id": aid, "success": ok})
         return out
 
+    @app.patch("/api/albums/{album_id}")
+    async def update_album(album_id: str, request: Request):
+        user = auth(request)
+        body = await record(request, user)
+        album = state.albums.get(album_id)
+        if not album or album["ownerId"] != user["id"]:
+            raise HTTPException(400, "Not found or no album.update access")
+        if "albumThumbnailAssetId" in body:
+            if body["albumThumbnailAssetId"] not in state.asset_ids_in_album(album_id):
+                raise HTTPException(400, "Asset is not in album")
+            album["thumb"] = body["albumThumbnailAssetId"]
+        return state.album_dto(album)
+
     @app.delete("/api/albums/{album_id}", status_code=204)
     async def delete_album(album_id: str, request: Request):
         user = auth(request)
@@ -688,7 +702,7 @@ def full_state() -> MockState:
     """Alles für den Browsertest: Reisen, Speicherfresser, Serie, dunkle Fotos, Kamera mit falscher Uhr."""
     s = album_state()
     mb = 1024 * 1024
-    s.add_asset("frank", "IMG_9001.MOV", "2024-06-01T10:00:00.000Z", type="VIDEO", size=1200 * mb, duration=900_000)
+    video = s.add_asset("frank", "IMG_9001.MOV", "2024-06-01T10:00:00.000Z", type="VIDEO", size=1200 * mb, duration=900_000)
     s.add_asset("julia", "RPReplay_Final1717.MP4", "2024-06-02T10:00:00.000Z", type="VIDEO", size=90 * mb,
                 make=None, model=None)
     s.add_asset("julia", "IMG_9100.HEIC", "2024-06-03T10:00:00.000Z")
@@ -717,6 +731,8 @@ def full_state() -> MockState:
         s.add_asset(u, f"IMG_H{i}.HEIC", f"2024-09-1{i}T10:00:00.000Z", motiv="dog", image=f"hund{i}")
     s.add_album("frank", "Toskana 2024", s.toskana[:4])  # Julia hat auch eins -> doppelt
     s.add_album("julia", "Neues Album")
+    juni = s.add_album("frank", "Juni", [video] + stapel[2:])
+    s.albums[juni]["thumb"] = video  # Titelbild ist ein Video -> besseres vorschlagen
     return s
 
 

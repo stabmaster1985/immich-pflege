@@ -6,7 +6,7 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 |---|---|
 | **Duplikate** | Findet doppelte Medien über beide Benutzer und über Uploads und externe Bibliotheken hinweg: per Prüfsumme, Dateiname + Aufnahmezeit, Bild-Fingerabdruck (z. B. WhatsApp-Kopien) und Immichs eigener Erkennung. Jede Gruppe hat eine Art (identisch, sehr wahrscheinlich, ähnlich) und einen Behalten-Vorschlag. Nicht behaltene Kopien kommen ins Album „Duplikat-Prüfung“ oder in den Papierkorb. |
 | **Ohne Ort** | Medien ohne GPS bekommen einen Ortsvorschlag mit Sicherheit (sicher, wahrscheinlich, unsicher) aus den GPS-Fotos beider Benutzer, zusammengefasst nach Ort und Serie. Für den Rest gibt es die Ortssuche von Immich. Screenshots werden ausgeblendet. |
-| **Aufräumen** | Speicherfresser (große Videos, Bildschirmaufnahmen, doppelte Live-Photo-Videos), Serienbilder (das schärfste bleibt oder alles stapeln), **Stapeln aus eigenen Alben**, **Alben aufräumen** (doppelte von beiden Benutzern zusammenführen, leere/Mini-Alben), unscharfe und dunkle Fotos, falsche Aufnahmezeiten samt Kamera-Zeitversatz, verwaiste Dateien der externen Bibliothek, Papierkorb-Übersicht. |
+| **Aufräumen** | Speicherfresser (große Videos, Bildschirmaufnahmen, doppelte Live-Photo-Videos), Serienbilder (das schärfste bleibt oder alles stapeln), **Stapeln aus eigenen Alben**, **Alben aufräumen** (doppelte von beiden Benutzern zusammenführen, leere/Mini-Alben, bessere Titelbilder), unscharfe und dunkle Fotos, falsche Aufnahmezeiten samt Kamera-Zeitversatz, verwaiste Dateien der externen Bibliothek, Papierkorb-Übersicht. |
 | **Alben** | Erkennt Reisen (weg von zu Hause, beide Benutzer zusammen) und schlägt Alben vor. Vorher wird gegen alle vorhandenen Alben beider Benutzer abgeglichen: schon vorhanden, ergänzen oder neu. Neue Alben werden mit dem anderen Benutzer geteilt. Außerdem **Alben aus Ordnern** der externen Bibliothek, auf Wunsch automatisch aktuell gehalten. |
 | **Tags** | Fertige Vorschläge zum Abhaken (Länder, Kameras, Screenshots, WhatsApp) und Suche mit Immichs KI (Hund, Strand, Quittung …): erstes unpassendes Bild antippen, alles davor wird getaggt. Eigene Regeln für Sonderfälle. Tags werden nur ergänzt, nie entfernt. **Archivieren** nimmt Screenshots, WhatsApp-Bilder, Quittungen u. Ä. aus der Zeitleiste, ohne zu löschen. |
 | **Übersicht** | Kennzahlen je Benutzer, offene Aufgaben, Aufnahmen je Jahr, Erledigtes je Monat. Auf Wunsch wöchentlich als Nachricht per ntfy oder Telegram, dazu täglich „An diesem Tag“. |
@@ -222,8 +222,8 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | POST | `/api/staged/suggestions`, `/api/staged/smart` | Vorschläge (`ids`) bzw. KI-Treffer (`tag`, `ids`) vormerken |
 | POST | `/api/staged/archive` | Archivieren vormerken: `vorschlag` (ID) oder `ids`, optional `label` |
 | POST | `/api/suggestions/hide` | „Kein Interesse“: `ids`, mit `undo` zurück |
-| GET | `/api/album-care` | Alben aufräumen: doppelt, fast gleich, leer, mini |
-| POST | `/api/staged/album-care` | vormerken: `id`, `aktion` (`zusammenfuehren`/`loeschen`), `ziel`, `loeschen` |
+| GET | `/api/album-care` | Alben aufräumen: doppelt, fast gleich, leer, mini, schlechtes Titelbild |
+| POST | `/api/staged/album-care` | vormerken: `id`, `aktion` (`zusammenfuehren`/`loeschen`/`titelbild`), `ziel`, `loeschen`, `titelbild` (eigene Wahl) |
 | GET | `/api/stacks` | Stapel-Vorschläge: `album`, `ganz` (ganzes Album je Benutzer) |
 | POST | `/api/staged/stacks` | Stapel vormerken: `album`, `ids` (ohne = alle), `ganz`, `oben` {Vorschlag: Medium}, `aus_album` |
 | GET | `/api/timefix` | Falsche Aufnahmezeiten: `art` (`zeitversatz`, `dateiname`, `zukunft`, `standard`) |
@@ -314,5 +314,6 @@ DATA_DIR=./data .venv/bin/uvicorn immich_pflege.web.app:create_app --factory --p
 
 - `PUT /api/assets` (Koordinaten setzen) ist in v3 als *deprecated* markiert, ist aber in 3.2.4 und 3.3.1 der einzige Weg dafür. Der Aufruf steckt an einer Stelle in `client.py` (`set_location`).
 - In `POST /api/search/metadata` sind seit 3.2.0 die einfachen Filter (`isNotInAlbum`, `albumIds`, `personIds`, `tagIds`, `page`) *deprecated* zugunsten von `filter` und `cursor`. Sie funktionieren weiter. Das Tool liest `nextCursor` und fällt auf `nextPage` zurück.
+- Titelbilder setzt das Tool mit `PATCH /api/albums/{id}` (`albumThumbnailAssetId`), immer mit dem Key des Album-Besitzers.
 - Bulk-Aufrufe gehen in Blöcken zu 500 IDs. Ist Immich nicht 3.x, erscheint eine Warnung.
 - Assets mit `visibility` `hidden` (Live-Photo-Videos) oder `locked` sowie Medien im Papierkorb werden ignoriert. Über Partner-Freigaben sichtbare Medien werden nur ihrem Besitzer zugeordnet.

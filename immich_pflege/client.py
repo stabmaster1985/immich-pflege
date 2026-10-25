@@ -175,6 +175,10 @@ class ImmichClient:
             n += sum(1 for r in res if r.get("success"))
         return n
 
+    def update_album(self, album_id: str, **fields: Any) -> dict:
+        """z. B. ``albumThumbnailAssetId`` (nur der Besitzer)."""
+        return self.request("PATCH", f"/albums/{album_id}", json=fields)
+
     def delete_album(self, album_id: str) -> None:
         self.request("DELETE", f"/albums/{album_id}")
 

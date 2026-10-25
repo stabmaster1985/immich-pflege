@@ -14,6 +14,7 @@ import httpx
 from . import __version__
 from .folders import SyncedFolders, pending_sync, plan_folder, proposals as folder_proposals
 from .albumcare import ARTEN as CARE_ARTEN, execute_care, find_issues, plan_delete, plan_merge
+from .covers import find_covers, plan_cover
 from .albums import STATUS as ALBUM_STATUS, AlbumError, ExcludedMedia, Home, TripIgnoreList, execute_plan, overlaps, plan_title, plan_trip, suggest
 from .client import ImmichClient, ImmichError
 from .config import Settings
@@ -858,7 +859,7 @@ class Pflege:
                          "aufraeumen": lambda r: r["album"] + r["papierkorb"], "ort": lambda r: r["aktualisiert"],
                          "album": lambda r: r["hinzugefuegt"], "tag": lambda r: r["getaggt"],
                          "zeit": lambda r: r["verschoben"], "stapel": lambda r: r["medien"],
-                         "albenpflege": lambda r: r["hinzugefuegt"] + r["geloescht"],
+                         "albenpflege": lambda r: r["hinzugefuegt"] + r["geloescht"] + r.get("titelbild", 0),
                          "archiv": lambda r: r["archiviert"]}[e["typ"]](res)
                 self._record(e["typ"], e["titel"], count, res, "oberflaeche")
                 results.append({"id": e["id"], "titel": e["titel"], "ergebnis": res})
@@ -984,7 +985,7 @@ class Pflege:
         if self.albums_pending(wait_s=3):
             return {"laedt": True}
         lib = self.library()
-        items = find_issues(lib)
+        items = self._care_items(lib)
         keep = self.keep_list().ids
         staged = {a for e in self.staging.of_type("albenpflege") for a in e["daten"]["alben"]}
         items = [it for it in items if not ({a["id"] for a in it["alben"]} & staged)]
@@ -993,15 +994,21 @@ class Pflege:
                                                for k, v in CARE_ARTEN.items()},
                 "ausgeblendet": sum(1 for it in items if it["id"] in keep)}
 
-    def stage_album_care(self, item_id: str, action: str, target: str | None = None, delete_rest: bool = True) -> dict[str, Any]:
-        """action: zusammenfuehren (in ``target``) oder loeschen."""
+    def _care_items(self, lib: Library) -> list[dict[str, Any]]:
+        return find_issues(lib) + find_covers(lib, self.hash_store)
+
+    def stage_album_care(self, item_id: str, action: str, target: str | None = None, delete_rest: bool = True,
+                         cover: str | None = None) -> dict[str, Any]:
+        """action: zusammenfuehren (in ``target``), loeschen oder titelbild (``cover``, sonst der Vorschlag)."""
         with self._lock:
             lib = self.library()
-            item = next((it for it in find_issues(lib) if it["id"] == item_id), None)
+            item = next((it for it in self._care_items(lib) if it["id"] == item_id), None)
             if item is None:
                 raise ActionError("Eintrag nicht gefunden – bitte neu laden")
             ids = [a["id"] for a in item["alben"]]
             names = " + ".join(f"„{a['name']}“ ({a['besitzer']})" for a in item["alben"])
+            if (item["art"] == "titelbild") != (action == "titelbild"):
+                raise ActionError("Diese Aktion passt nicht zu diesem Eintrag")
             if action == "zusammenfuehren":
                 if len(ids) < 2:
                     raise ActionError("Zum Zusammenführen braucht es mindestens zwei Alben")
@@ -1013,12 +1020,23 @@ class Pflege:
                 title = (f"🗂 {names} → in „{plan['ziel_name']}“ ({lib.albums[target]['besitzer']}) zusammenführen: {n} Medien dazu"
                          + (f", {len(plan['loeschen'])} Album gelöscht" if plan["loeschen"] else "")
                          + (f", geteilt mit {', '.join(plan['teilen'])}" if plan["teilen"] else ""))
+            elif action == "titelbild":
+                try:
+                    plan = plan_cover(lib, ids[0], cover or item["vorschlag"])
+                except ValueError as exc:
+                    raise ActionError(str(exc)) from None
+                n = 1
+                title = f"🖼 Neues Titelbild für {names}"
+                media = [lib.assets[plan["titelbild"]].summary()]
+                plan["alben"] = ids
+                self.staging.add("albenpflege", title, plan, media, n, key=item_id)
+                return {"vorgemerkt": 1}
             elif action == "loeschen":
                 plan = plan_delete(lib, ids)
                 n = len(ids)
                 title = f"🗂 {names} löschen (die Fotos bleiben in Immich)"
             else:
-                raise ActionError("Aktion muss zusammenfuehren oder loeschen sein")
+                raise ActionError("Aktion muss zusammenfuehren, loeschen oder titelbild sein")
             plan["alben"] = ids
             media = [m for a in item["alben"] for m in a["beispiele"]][:8]
             self.staging.add("albenpflege", title, plan, media, n, key=item_id)

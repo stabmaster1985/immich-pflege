@@ -13,6 +13,7 @@ ein kleines Wörterbuch ``{"op": …, "user": …, …}``, ausgeführt mit dem K
 - ``album_hinzufuegen`` {album, ids}      wieder ins Album legen
 - ``sichtbarkeit``     {ids, sichtbarkeit}  Archivieren zurücknehmen (timeline)
 - ``album_wiederherstellen`` {name, rollen, medien}  gelöschtes Album neu anlegen (mit Inhalt und Freigaben)
+- ``titelbild``        {album, asset}     früheres Titelbild wieder einstellen
 """
 
 from __future__ import annotations
@@ -176,6 +177,10 @@ def _undo_one(lib: Library | None, client: ImmichClient, op: dict[str, Any]) -> 
             for i in op["ids"]:
                 if i in lib.assets:
                     lib.assets[i].visibility = op["sichtbarkeit"]
+    elif kind == "titelbild":
+        client.update_album(op["album"], albumThumbnailAssetId=op["asset"])
+        if lib and op["album"] in lib.albums:
+            lib.albums[op["album"]]["titelbild"] = op["asset"]
     elif kind == "zeit":
         client.shift_time(op["ids"], op["minuten"])
         if lib:

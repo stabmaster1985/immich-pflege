@@ -164,7 +164,7 @@ def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any
                 old = previous.get(al["id"])
                 entry = albums[al["id"]] = {
                     "id": al["id"], "name": al.get("albumName") or "", "besitzer": owner,
-                    "rollen": roles, "anzahl": al.get("assetCount") or 0,
+                    "rollen": roles, "anzahl": al.get("assetCount") or 0, "titelbild": al.get("albumThumbnailAssetId"),
                     "start": al.get("startDate"), "ende": al.get("endDate"), "stand": sig,
                     "medien": set(old["medien"]) if old and old.get("stand") == sig else None,
                 }

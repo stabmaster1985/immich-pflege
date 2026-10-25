@@ -21,7 +21,8 @@ from .library import Library
 
 OVERLAP = 0.9
 MINI_MAX = 2
-ARTEN = {"doppelt": "Gleicher Name", "ueberlappend": "Fast gleicher Inhalt", "leer": "Leer", "mini": "Nur 1–2 Medien"}
+ARTEN = {"doppelt": "Gleicher Name", "ueberlappend": "Fast gleicher Inhalt", "leer": "Leer", "mini": "Nur 1–2 Medien",
+         "titelbild": "Titelbild"}
 WRITE_ROLES = ("owner", "editor")
 
 
@@ -121,6 +122,9 @@ def _snapshot(lib: Library, album_id: str) -> dict[str, Any]:
 def execute_care(lib: Library, clients: dict[str, ImmichClient], plan: dict[str, Any]) -> dict[str, Any]:
     undo: list[dict[str, Any]] = []
     added = 0
+    if plan["aktion"] == "titelbild":
+        from .covers import execute_cover
+        return {"hinzugefuegt": 0, "geloescht": 0, "titelbild": 1, "rueck": execute_cover(lib, clients, plan)}
     if plan["aktion"] == "zusammenfuehren":
         target_id, owner = plan["ziel"], plan["besitzer"]
         target = lib.albums[target_id]

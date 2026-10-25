@@ -1755,7 +1755,7 @@ async function stageCleanup(action, items, btn) {
 /* ------------------------------------------------------- Alben aufräumen */
 async function loadAlbumCare() {
   const c = S.cln;
-  c.items = []; c.sel.clear(); c.target = c.target || {}; c.delRest = c.delRest || {};
+  c.items = []; c.sel.clear(); c.target = c.target || {}; c.delRest = c.delRest || {}; c.cover = c.cover || {};
   $("#cln-list").replaceChildren(h("p", { class: "empty" }, "Lade …"));
   const [r, counts, time] = await Promise.all([api("api/album-care?ausgeblendet=" + c.ignored), api("api/cleanup?limit=0"), api("api/timefix?limit=0")]);
   renderCleanupFilters(counts, time);
@@ -1787,9 +1787,21 @@ function renderCareItem(it) {
       al.beispiele.length ? h("div", { class: "strip" }, al.beispiele.map((m) => thumb(m))) : null);
     card.append(row);
   }
+  if (it.art === "titelbild") {
+    const pick = c.cover[it.id] || it.vorschlag;
+    card.append(h("div", { class: "cover-row" },
+      h("div", { class: "cover-now" }, h("div", { class: "muted small" }, "Jetzt"),
+        it.titelbild ? thumb(it.titelbild) : h("div", { class: "cover-none" }, "–")),
+      h("div", { class: "cover-choice" }, h("div", { class: "muted small" }, c.ignored ? "Vorschläge" : "Neues Titelbild – antippen zum Wählen"),
+        h("div", { class: "strip" }, it.auswahl.map((m) => h("button", {
+          type: "button", class: "cover-pick" + (m.id === pick ? " on" : ""), "aria-pressed": String(m.id === pick), disabled: c.ignored,
+          onclick: () => { c.cover[it.id] = m.id; card.replaceWith(renderCareItem(it)); } }, thumb(m)))))));
+  }
   if (!c.ignored) {
     const actions = h("div", { class: "row-gap", style: "margin-top:8px" });
-    if (merge) {
+    if (it.art === "titelbild") {
+      actions.append(h("button", { type: "button", class: "btn small primary", onclick: (e) => stageCare(it, "titelbild", e.currentTarget) }, "Als Titelbild vormerken"));
+    } else if (merge) {
       const del = c.delRest[it.id] !== false;
       actions.append(
         h("button", { type: "button", class: "btn small primary", onclick: (e) => stageCare(it, "zusammenfuehren", e.currentTarget) }, "Zusammenführen"),
@@ -1806,8 +1818,8 @@ async function stageCare(it, aktion, btn) {
   const c = S.cln;
   busy(btn, true);
   try {
-    await api("api/staged/album-care", { method: "POST", body: { id: it.id, aktion, ziel: c.target[it.id] || it.ziel, loeschen: c.delRest[it.id] !== false } });
-    toast(aktion === "loeschen" ? "Löschen vorgemerkt – die Fotos bleiben in Immich" : "Zusammenführen vorgemerkt");
+    await api("api/staged/album-care", { method: "POST", body: { id: it.id, aktion, ziel: c.target[it.id] || it.ziel, loeschen: c.delRest[it.id] !== false, titelbild: c.cover[it.id] || it.vorschlag } });
+    toast({ loeschen: "Löschen vorgemerkt – die Fotos bleiben in Immich", titelbild: "Titelbild vorgemerkt" }[aktion] || "Zusammenführen vorgemerkt");
     await afterStage("cln");
   } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
 }
@@ -2362,7 +2374,7 @@ async function undoHistory(e, btn) {
       aufraeumen: "Medien kommen aus dem Papierkorb zurück bzw. wieder aus dem Prüf-Album heraus.",
       stapel: "Die Stapel werden aufgelöst; aus dem Album genommene Fotos kommen wieder hinein.",
       archiv: "Die Medien kommen zurück in die Zeitleiste.",
-      albenpflege: "Hinzugefügte Fotos kommen wieder heraus, Freigaben werden zurückgenommen, gelöschte Alben mit Inhalt neu angelegt.",
+      albenpflege: "Hinzugefügte Fotos kommen wieder heraus, Freigaben werden zurückgenommen, gelöschte Alben mit Inhalt neu angelegt, das alte Titelbild kommt zurück.",
     }[e.typ] || "")],
     okLabel: "Rückgängig",
   });

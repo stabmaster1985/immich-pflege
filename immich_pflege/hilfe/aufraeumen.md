@@ -71,8 +71,11 @@ Findet unter euren Alben (beide Benutzer, eigene und geteilte):
 | **Fast gleicher Inhalt** | das kleinere Album liegt zu mindestens **90 %** im größeren |
 | **Leer** | Album ohne Medien |
 | **Nur 1–2 Medien** | Mini-Alben, oft aus Versehen angelegt |
+| **Titelbild** | das Titelbild ist ein Video, ein Bildschirmfoto, sehr dunkel, unscharf oder die Datei fehlt |
 
 **Zusammenführen:** Das markierte **Ziel**-Album (antippen zum Ändern) bekommt alle Fotos der anderen. Hat der andere Benutzer noch keinen Zugriff, teilt der Besitzer es mit ihm. Jeder legt seine eigenen Fotos hinein. Mit **die anderen danach löschen** verschwinden die übrigen Alben, die Fotos selbst bleiben natürlich erhalten.
+
+**Titelbild:** Vorgeschlagen wird das beste Foto aus dem Album: Favoriten zuerst, dann scharf und weder zu dunkel noch zu hell. Darunter stehen bis zu acht weitere gute Fotos; antippen wählt ein anderes. Setzen darf das Titelbild nur der Besitzer des Albums, das Tool nimmt dafür seinen Key. Schärfe und Helligkeit sind erst bekannt, wenn die Bild-Fingerabdrücke berechnet sind (siehe oben). Rückgängig stellt das alte Titelbild wieder ein.
 
 **Album löschen** entfernt nur das Album, nie die Fotos. **Passt so** blendet einen Eintrag aus. **Rückgängig** im Verlauf legt gelöschte Alben mit Inhalt und Freigaben neu an. Das neue Album bekommt eine neue Adresse, geteilte Links auf das alte funktionieren danach nicht mehr.
 

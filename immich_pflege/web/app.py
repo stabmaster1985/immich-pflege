@@ -107,9 +107,10 @@ class TagsApply(BaseModel):
 
 class AlbumCareStage(BaseModel):
     id: str
-    aktion: Literal["zusammenfuehren", "loeschen"]
+    aktion: Literal["zusammenfuehren", "loeschen", "titelbild"]
     ziel: Optional[str] = None
     loeschen: bool = True  # beim Zusammenführen die übrigen Alben löschen
+    titelbild: Optional[str] = None  # eigene Wahl statt des Vorschlags
 
 
 class StackStage(BaseModel):
@@ -646,7 +647,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
 
     @app.post("/api/staged/album-care")
     def stage_album_care(body: AlbumCareStage):
-        return svc().stage_album_care(body.id, body.aktion, body.ziel, body.loeschen)
+        return svc().stage_album_care(body.id, body.aktion, body.ziel, body.loeschen, body.titelbild)
 
     @app.get("/api/stacks")
     def stacks(album: Optional[str] = None, ganz: bool = False):
