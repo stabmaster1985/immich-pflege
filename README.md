@@ -127,7 +127,7 @@ Das Menü ist nach Aufgaben sortiert. Auf dem Handy liegt es unten, am großen B
 | **Alben** | Reisen, Ordner, Alben aufräumen |
 | **Vorgemerkt** | Vormerkliste und Verlauf mit Rückgängig |
 
-Oben rechts: **Einlesen** und **⚙ Einstellungen**. **Großansicht:** Kleine Vorschaubilder antippen, bei großen Kacheln auf **Groß**, in der KI-Suche auf ⤢. Dann wischen oder mit den Pfeiltasten durch die ganze Gruppe blättern. Jeder Punkt hat eine eigene Adresse (z. B. `…:2222/#serien`), der Zurück-Knopf funktioniert. Unten erscheint bei Bedarf eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet. Sie lässt sich **als App auf den Startbildschirm legen** (Safari: „Zum Home-Bildschirm“, Chrome: „App installieren“ – als eigenes Fenster nur über HTTPS).
+Oben rechts: **Einlesen** und **⚙ Einstellungen**. **Prüf-Ansicht:** Überall, wo viele Bilder auf einmal vorgemerkt werden, öffnet **Prüfen** alle betroffenen Bilder als dichtes Raster, auch Tausende. Die Bilder sind nach Monat, Tag, Ort oder Passgenauigkeit gruppiert. Du wählst einzelne Bilder oder ganze Gruppen ab, und vorgemerkt wird genau die Auswahl. Das gilt für Tag-Vorschläge, eigene Regeln, KI-Suche, Archivieren, sichere Orte, Aufräumen, Falsche Zeit, Reisen und Ordner-Alben (abgewählte Dateien bleiben auch beim automatischen Abgleich draußen). **Großansicht:** Kleine Vorschaubilder antippen, bei großen Kacheln auf **Groß**, in der KI-Suche auf ⤢. Dann wischen oder mit den Pfeiltasten durch die ganze Gruppe blättern. Jeder Punkt hat eine eigene Adresse (z. B. `…:2222/#serien`), der Zurück-Knopf funktioniert. Unten erscheint bei Bedarf eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet. Sie lässt sich **als App auf den Startbildschirm legen** (Safari: „Zum Home-Bildschirm“, Chrome: „App installieren“ – als eigenes Fenster nur über HTTPS).
 
 **Jede Seite hat oben ein „?“** mit einer ausführlichen Erklärung: wie Treffer und Vorschläge entstehen, nach welchen Kriterien bewertet wird und wo die Grenzen liegen. Dieselben Texte liegen im Repository:
 
@@ -206,7 +206,7 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/api/album-suggestions` | Reisen mit Albumvorschlag. Parameter: `status` (`neu`, `ergaenzen`, `vorhanden`; ohne = offene), `jahr`, `ignoriert`, `offset`, `limit` |
 | GET | `/api/album-suggestions/{id}/media` | Alle Medien einer Reise, `im_album` bezogen auf `album` (ohne = Vorschlag, leer = neues Album) |
 | GET | `/api/folder-albums` | Ordner der externen Bibliothek als Albumvorschlag: `status` (`neu`, `ergaenzen`, `abgeglichen`, `vorhanden`) |
-| POST | `/api/staged/folder-albums` | vormerken: `{"ordner": [{"id", "name"?, "album"?, "sync"}]}`; `sync` hält das Album nach jedem Einlesen aktuell |
+| POST | `/api/staged/folder-albums` | vormerken: `{"ordner": [{"id", "name"?, "album"?, "sync", "ohne"?}]}`; `sync` hält das Album nach jedem Einlesen aktuell, `ohne` bleibt dauerhaft draußen |
 | POST | `/api/album-suggestions/apply` | Direkt anlegen/ergänzen: `{"trips": [{"id": "…"}]}`, optional je Reise `album` (Album-ID, `null` = neues Album) `name` und `ohne` (abgewählte Medien) |
 | POST | `/api/album-suggestions/ignore` | „Kein Album“: `{"trips": [...]}`, mit `"undo": true` wieder aufnehmen |
 | GET | `/api/tags` | Regel-Vorschau (`rules=Name`, mehrfach möglich) |
@@ -228,7 +228,7 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | POST | `/api/staged/cleanup` | Aufräumen vormerken: `action` (`album`/`papierkorb`, bei Serien auch `stapel`), `ids` oder `kategorie`, optional `keep` {Eintrag: Medium} |
 | POST | `/api/cleanup/keep` | „Behalten“/„Passt so“: `{"ids": [...]}`, mit `"undo": true` zurück |
 | GET | `/api/suggestions` | Tag-Vorschläge aus den Daten (`ausgeblendet=true` für ausgeblendete) und Begriffe der KI-Suche |
-| GET | `/api/suggestions/smart` | KI-Suche: `begriff` (aus der Liste) oder `suche` (eigener Text), optional `tag` |
+| GET | `/api/suggestions/smart` | KI-Suche: `begriff` (aus der Liste) oder `suche` (eigener Text), optional `tag`, `anzahl` (Treffer je Benutzer, bis 1000; Standard 120) |
 | POST | `/api/staged/suggestions`, `/api/staged/smart` | Vorschläge (`ids`) bzw. KI-Treffer (`tag`, `ids`) vormerken |
 | POST | `/api/staged/archive` | Archivieren vormerken: `vorschlag` (ID) oder `ids`, optional `label` |
 | GET | `/api/suggestions/{id}/media` | alle Treffer eines Vorschlags zum Prüfen (`aktion`: `tag` oder `archiv`), neueste zuerst |
@@ -239,8 +239,12 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/api/stacks` | Stapel-Vorschläge: `album`, `ganz` (ganzes Album je Benutzer) |
 | POST | `/api/staged/stacks` | Stapel vormerken: `album`, `ids` (ohne = alle), `ganz`, `oben` {Vorschlag: Medium}, `aus_album` |
 | GET | `/api/timefix` | Falsche Aufnahmezeiten: `art` (`zeitversatz`, `dateiname`, `zukunft`, `standard`) |
+| GET | `/api/tags/rules/{name}/media` | alle neuen Treffer einer eigenen Regel |
+| POST | `/api/staged/tags/{name}/auswahl` | eigene Regel ohne abgewählte Medien vormerken: `ohne` |
+| GET | `/api/no-location/media` | alle Medien mit Ortsvorschlag ab `min_confidence` (Standard `hoch`), mit `ort_neu` |
+| GET | `/api/folder-albums/{id}/media` | Dateien eines Ordners, die noch nicht im Album (`album`) liegen |
 | GET | `/api/timefix/{id}/media` | alle Medien eines Eintrags (die Liste enthält nur eine Auswahl) |
-| POST | `/api/staged/timefix` | Zeitkorrektur vormerken: `{"eintraege": [{"id", "minuten"? , "ziel"?}]}` |
+| POST | `/api/staged/timefix` | Zeitkorrektur vormerken: `{"eintraege": [{"id", "minuten"? , "ziel"?, "ohne"?}]}` – `ohne`: Medien, die nicht verschoben werden |
 | GET | `/api/trash` | Papierkorb beider Benutzer |
 | POST | `/api/trash/restore` | Wiederherstellen: `{"ids": [...]}`, ohne = alles |
 | GET | `/api/dashboard` | Kennzahlen der Übersicht |

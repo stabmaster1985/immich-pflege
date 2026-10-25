@@ -4,6 +4,10 @@ Hier steht alles, was Platz kostet oder offensichtlich daneben ist. Die Bereiche
 
 **Behalten** bzw. **Passt so** blendet einen Eintrag dauerhaft aus. Unter „behaltene“ holst du ihn zurück.
 
+## Alle Treffer prüfen
+
+Unten steht **Alle … prüfen**: Alles, was in diesem Bereich weg soll, erscheint in der **Prüf-Ansicht**, auch die Einträge, die in der Liste noch nicht geladen sind, nach Art gruppiert. Abwählen, was bleiben soll, dann **… ins Prüf-Album** oder **… Papierkorb**. Hast du Karten in der Liste angehakt, gelten die Knöpfe nur für diese. Bei **Falsche Zeit** hat jeder Eintrag **Alle … prüfen**: Abgewählte Fotos werden nicht verschoben.
+
 ## Speicherfresser
 
 | Art | Erkannt an |

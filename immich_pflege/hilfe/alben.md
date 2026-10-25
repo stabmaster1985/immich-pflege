@@ -34,11 +34,11 @@ Neben jedem gefundenen Album stehen **App ↗** und **Web ↗**: Sie öffnen das
 
 ## Alle Bilder ansehen und einzelne abwählen
 
-Die Karte zeigt nur ein paar Beispielbilder. **Alle … ansehen** klappt sämtliche Bilder der Reise auf:
+Die Karte zeigt nur ein paar Beispielbilder. **Alle … prüfen** öffnet sämtliche Bilder der Reise in der **Prüf-Ansicht**, nach Tagen gruppiert (Bedienung siehe Hilfe unter Vorgemerkt):
 
-- Grün umrandet = kommt ins Album.
-- Mit **✓ im Album** = liegt schon im gewählten Album, bleibt dort.
-- **Antippen** nimmt ein Bild heraus (grau) oder wieder hinein. Oben steht „28 von 31 ausgewählt“.
+- **Antippen** nimmt ein Bild heraus (grau mit ✕) oder wieder hinein. Das Häkchen am Tag nimmt den ganzen Tag heraus.
+- Bilder, die schon im gewählten Album liegen, fehlen dort. Oben steht, wie viele das sind.
+- **Übernehmen** merkt sich die Auswahl auf der Karte („28 von 31 ausgewählt“). **… vormerken** merkt die Reise gleich vor.
 
 Herausgenommene Bilder gehören danach **nicht mehr zu dieser Reise**. Die Reise gilt also als erledigt, auch wenn sie nicht im Album liegen. Nimmst du den Eintrag unter Vorgemerkt wieder zurück, ist auch die Abwahl aufgehoben.
 
@@ -53,6 +53,8 @@ Herausgenommene Bilder gehören danach **nicht mehr zu dieser Reise**. Die Reise
 Im Menü **Alben → Ordner** öffnen. Für die **externe Bibliothek** (z. B. die Kamera-Fotos auf der Festplatte) schlägt das Tool für jeden Ordner mit mindestens **5 Medien** ein Album vor, benannt nach dem Ordner. Bei Ordnern wie `2019` oder `100MSDCF` kommt der übergeordnete Ordner dazu, z. B. „Toskana 2019“. Liegen die Medien schon zu **95 %** in Alben, steht der Ordner unter „Schon in Alben“. Gibt es ein Album mit dem Ordnernamen, wird es ergänzt.
 
 Mit **neue Dateien aus dem Ordner automatisch hinzufügen** hält das Tool das Album aktuell: Nach jedem Einlesen kommen neue Dateien aus dem Ordner dazu. Es wird nur hinzugefügt, nie entfernt, und jeder Abgleich steht im Verlauf (Quelle „automatisch“) und lässt sich rückgängig machen. Wird das Album gelöscht, endet der Abgleich.
+
+**Alle … prüfen** zeigt jede Datei, die ins Album käme, in der Prüf-Ansicht (nach Monaten). Abgewählte Dateien kommen nicht ins Album, **auch später beim automatischen Abgleich nicht**.
 
 ## Grenzen
 

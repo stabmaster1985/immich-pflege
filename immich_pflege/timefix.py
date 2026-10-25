@@ -227,10 +227,11 @@ def summary(fixes: list[TimeFix]) -> dict[str, int]:
     return {k: c.get(k, 0) for k in ARTEN}
 
 
-def plan_shifts(fix: TimeFix, minutes: int) -> list[dict[str, Any]]:
+def plan_shifts(fix: TimeFix, minutes: int, without: set[str] | None = None) -> list[dict[str, Any]]:
     by_user: dict[str, list[str]] = {}
     for a in fix.assets:
-        by_user.setdefault(a.owner, []).append(a.id)
+        if not without or a.id not in without:
+            by_user.setdefault(a.owner, []).append(a.id)
     return [{"user": u, "ids": ids, "minuten": minutes} for u, ids in sorted(by_user.items())]
 
 

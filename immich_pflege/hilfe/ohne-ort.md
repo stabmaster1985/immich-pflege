@@ -29,7 +29,7 @@ Medien ohne Ort mit höchstens **2 Stunden** Abstand bilden eine **Serie**.
 
 1. Die **Übersicht nach Ort** zeigt pro vorgeschlagenem Ort, wie viele Medien und Serien betroffen sind.
 2. **Alle vormerken** auf einer Ortskarte merkt den Ort für alle Medien mit Vorschlag vor. Steht oben „nur sichere“, werden nur die sicheren vorgemerkt.
-3. **Alle sicheren** unten merkt alle sicheren Vorschläge auf einmal vor.
+3. **Alle sicheren prüfen** unten öffnet alle sicheren Vorschläge in der Prüf-Ansicht, nach neuem Ort gruppiert. Einzelne Bilder oder ganze Orte abwählen, dann **… verorten**.
 
 Vorgemerktes verschwindet aus der Liste. An Immich geht es erst, wenn du es unter **Vorgemerkt** überträgst.
 4. Für **Ohne Vorschlag**: Mit dem **Monat** eingrenzen und **Ort für alle suchen …** wählen, z. B. „Hamburg“ für die Scans eines Urlaubs. Oder pro Serie über **Ort suchen …** einzeln.

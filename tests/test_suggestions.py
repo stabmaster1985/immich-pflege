@@ -115,3 +115,13 @@ def test_review_all_media_and_stage_selection(web, state):
     assert web.post(f"/api/staged/suggestions/{wa['id']}/auswahl", json={"ohne": all_wa, "aktion": "archiv"}).status_code == 400
     assert web.post(f"/api/staged/suggestions/{wa['id']}/auswahl", json={"ohne": all_wa[:2], "aktion": "archiv"}).json()["vorgemerkt"] == 10
     assert web.get("/api/suggestions/vgibtsnicht/media").status_code == 400
+
+
+def test_smart_search_size_for_review(web, state):
+    few = web.get("/api/suggestions/smart", params={"begriff": "Hund", "anzahl": 3}).json()
+    assert len(few["medien"]) == 6  # 3 je Benutzer
+    many = web.get("/api/suggestions/smart", params={"begriff": "Hund", "anzahl": 400}).json()
+    assert len(many["medien"]) > 120
+    assert web.get("/api/suggestions/smart", params={"begriff": "Hund", "anzahl": 5000}).status_code == 422
+    calls = [c for c in state.calls if c[1] == "/api/search/smart"]
+    assert calls  # Immich wurde gefragt

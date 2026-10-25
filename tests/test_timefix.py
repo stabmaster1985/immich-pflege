@@ -92,3 +92,14 @@ def test_stage_apply_and_undo(web, state):
 def test_manual_time_needed(web):
     r = web.get("/api/timefix", params={"art": "zukunft"}).json()
     assert web.post("/api/staged/timefix", json={"eintraege": [{"id": r["eintraege"][0]["id"]}]}).status_code == 400
+
+
+def test_stage_without_some(web, state):
+    cam = next(e for e in web.get("/api/timefix").json()["eintraege"] if e["art"] == "zeitversatz")
+    alle = [m["id"] for m in web.get(f"/api/timefix/{cam['id']}/media").json()["medien"]]
+    web.post("/api/staged/timefix", json={"eintraege": [{"id": cam["id"], "ohne": alle[:10]}]})
+    entry = web.get("/api/staged").json()["eintraege"][0]
+    assert entry["anzahl"] == 50 and "von 60" in entry["titel"]
+    web.post("/api/staged/apply", json={})
+    e = web.get("/api/history").json()["eintraege"][0]
+    assert e["anzahl"] == 50

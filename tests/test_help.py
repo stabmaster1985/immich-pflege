@@ -46,7 +46,9 @@ def test_help_matches_code():
     assert albumcare.OVERLAP == 0.9 and "**90 %**" in cln and albumcare.MINI_MAX == 2 and "1–2 Medien" in cln
     tags = (HELP / "tags.md").read_text()
     assert suggestions.MIN_COUNTRY == 10 and "ab 10 Fotos" in tags and suggestions.MIN_CAMERA == 30 and "ab 30 Medien" in tags
-    assert suggestions.SMART_SIZE == 120 and "bis zu 120" in tags
+    # die Oberfläche holt für die Prüf-Ansicht 400 KI-Treffer je Benutzer (höchstens SMART_MAX)
+    app_js = (Path(__file__).parent.parent / "immich_pflege/web/static/app.js").read_text(encoding="utf-8")
+    assert "const SMART_REVIEW = 400;" in app_js and "bis zu 400" in tags and suggestions.SMART_MAX >= 400
     assert all(name in tags for name, _, _ in suggestions.BEGRIFFE)
 
 

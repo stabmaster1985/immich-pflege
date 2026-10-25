@@ -477,3 +477,19 @@ dialog.review[open] { display: flex; flex-direction: column; }
   background: var(--drop); color: #fff; font-size: .65rem; font-weight: 700; display: grid; place-items: center;
 }
 .rv-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px calc(env(safe-area-inset-bottom) + 10px); background: var(--card); border-top: 1px solid var(--line); }
+.rv-mark {
+  position: absolute; left: 3px; bottom: 3px; max-width: calc(100% - 6px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: rgba(0,0,0,.65); color: #fff; font-size: .62rem; font-weight: 600; padding: 1px 4px; border-radius: 4px; pointer-events: none;
+}
+#rv-extra:empty { display: none; }
+#rv-extra { margin-top: 6px; }
+#rv-extra p { margin: 4px 0 0; }
+.rv-tag input { width: 14em; max-width: 60vw; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+#rv-actions { flex-wrap: nowrap; justify-content: flex-end; }
+#rv-actions .btn { white-space: nowrap; }
+@media (max-width: 599px) {
+  .rv-foot { flex-wrap: wrap; }
+  .rv-foot #rv-foot-info { flex: 1 1 100%; }
+  #rv-actions { flex: 1; }
+  #rv-actions .btn { flex: 1; padding: 10px 8px; font-size: .9rem; }
+}

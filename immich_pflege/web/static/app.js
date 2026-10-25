@@ -9,7 +9,7 @@ const S = {
   loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, loaded: false, info: null },
   ovw: { loaded: false },
   cln: { bereich: "speicher", kategorie: null, ignored: false, items: [], total: 0, sel: new Set(), keep: {}, loaded: false, info: null },
-  fol: { items: [], status: null, ignored: false, choice: {}, sync: {} },
+  fol: { items: [], status: null, ignored: false, choice: {}, sync: {}, ohne: {} },
   alb: { quelle: "reisen", trips: [], total: 0, status: null, jahr: null, ignored: false, sel: new Set(), choice: {}, ohne: {}, open: {}, loaded: false, info: null },
   sug: { items: [], hidden: false, info: null, smart: null, cut: null, tag: "" },
   tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [], items: [], fileErrors: [], users: [], yaml: "" },
@@ -193,6 +193,7 @@ function albumLinks(al) {
 }
 
 function busy(btn, on) {
+  if (!btn) return;
   btn.disabled = on;
   btn.classList.toggle("busy", on);
 }
@@ -768,14 +769,20 @@ async function applyLocation(btn) {
   if (ok) await doApplyLocation({ ids: withSugg.map((m) => m.id) }, btn, "Auswahl");
 }
 
+// Alle sicheren Vorschläge prüfen: nach neuem Ort gruppiert, einzelne oder ganze Orte abwählen
 async function applyAllSure(btn) {
-  const count = S.loc.info ? S.loc.info.nach_sicherheit.hoch : 0;
-  const ok = await confirmDialog({
-    title: "Alle sicheren Vorschläge vormerken?",
-    body: h("p", {}, `${n(count, "Medium erhält", "Medien erhalten")} den Ort eines GPS-Fotos, das höchstens 30 Minuten entfernt ist oder bei dem die Fotos davor und danach am selben Ort entstanden.`),
-    okLabel: "Alle vormerken",
+  busy(btn, true);
+  let r;
+  try { r = await api(`api/no-location/media?min_confidence=hoch&max_hours=${S.loc.hours}`); } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  if (!r.medien.length) { toast("Keine sicheren Vorschläge offen"); return; }
+  for (const m of r.medien) m.info = "📍 " + m.ort_neu;
+  openReview({
+    titel: "Alle sicheren Ortsvorschläge", medien: r.medien,
+    gruppe: (m) => [m.ort_neu, "📍 " + m.ort_neu],
+    hinweis: "Jedes Bild bekommt den Ort eines GPS-Fotos, das höchstens 30 Minuten entfernt ist oder bei dem die Fotos davor und danach am selben Ort entstanden.",
+    aktionen: [{ klasse: "primary", text: (k) => `${k.toLocaleString("de-DE")} verorten`, run: async (ids, ohne) =>
+      doApplyLocation(ohne.length ? { ids } : { min_confidence: "hoch" }, null, "Alle sicheren Vorschläge") }],
   });
-  if (ok) await doApplyLocation({ min_confidence: "hoch" }, btn, "Alle sicheren Vorschläge");
 }
 
 /* Ortssuche über Immich (eigene Ortsdatenbank, kein Internetdienst) */
@@ -919,6 +926,8 @@ function renderTags() {
         r.vorgemerkt ? h("span", { class: "chip ok" }, "✓ vorgemerkt") : null),
         h("div", { class: "muted" }, Object.entries(r.benutzer).map(([u, c]) => `${u}: ${c.neu} neu von ${c.treffer}`).join(" · ")));
       if (r.beispiele.length) card.append(h("div", { class: "strip" }, r.beispiele.map((m) => thumb(m))));
+      if (r.neu && !r.vorgemerkt) card.append(h("div", { class: "row-gap", style: "margin-top:8px" },
+        h("button", { type: "button", class: "btn small primary", onclick: (e) => openRuleReview(name, e.currentTarget) }, `Prüfen & taggen (${r.neu})`)));
     }
     list.append(card);
   });
@@ -926,6 +935,21 @@ function renderTags() {
   if (t.items.length) $("#rules-details").open = true;
   updateTagsCount();
   updateActionbar();
+}
+
+// Eigene Regel prüfen: alle neuen Treffer, abwählen, dann genau diese taggen
+async function openRuleReview(name, btn) {
+  busy(btn, true);
+  let r;
+  try { r = await api(`api/tags/rules/${encodeURIComponent(name)}/media`); } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  openReview({
+    titel: `${name} → ${r.tags.join(", ")}`, medien: r.medien, gruppe: "monat",
+    aktionen: [{ klasse: "primary", text: (k) => `${k.toLocaleString("de-DE")} taggen`, run: async (ids, ohne) => {
+      await api(`api/staged/tags/${encodeURIComponent(name)}/auswahl`, { method: "POST", body: { ohne } });
+      toast(`${n(ids.length, "Medium", "Medien")} zum Taggen vorgemerkt`);
+      await afterStage("tags");
+    } }],
+  });
 }
 
 function updateTagsCount() {
@@ -960,10 +984,10 @@ function renderSuggestion(s) {
     h("div", { class: "muted small" }, `${s.grund} · ${s.neu} noch ohne Tag${s.schon_getaggt ? `, ${s.schon_getaggt} schon getaggt` : ""}`),
     s.beispiele.length ? h("div", { class: "strip" }, s.beispiele.map((m) => thumb(m))) : null,
     g.hidden ? null : h("div", { class: "row-gap", style: "margin-top:8px" },
-      s.neu ? h("button", { type: "button", class: "btn small primary", onclick: (e) => openReview(s, "tag", e.currentTarget) }, `Prüfen & taggen (${s.neu})`) : null,
+      s.neu ? h("button", { type: "button", class: "btn small primary", onclick: (e) => openSuggestionReview(s, "tag", e.currentTarget) }, `Prüfen & taggen (${s.neu})`) : null,
       s.neu ? h("button", { type: "button", class: "btn small", title: "Ohne Prüfen: alle Treffer taggen", onclick: (e) => stageSuggestions([s], e.currentTarget) }, "Alle taggen") : null,
       s.art === "quelle" && s.archivierbar ? h("button", { type: "button", class: "btn small", title: "Aus der Zeitleiste nehmen – bleibt in Suche und Alben",
-        onclick: (e) => openReview(s, "archiv", e.currentTarget) }, `Archivieren … (${s.archivierbar})`) : null));
+        onclick: (e) => openSuggestionReview(s, "archiv", e.currentTarget) }, `Archivieren … (${s.archivierbar})`) : null));
 }
 
 async function stageSuggestions(list, btn) {
@@ -976,52 +1000,59 @@ async function stageSuggestions(list, btn) {
   } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
 }
 
-async function stageArchive(body, btn) {
-  busy(btn, true);
-  try {
-    const r = await api("api/staged/archive", { method: "POST", body });
-    toast(`${n(r.vorgemerkt, "Medium", "Medien")} zum Archivieren vorgemerkt`);
-    S.stage.loaded = false;
-    loadTab("stage", true);
-    await loadSuggestions();
-    if (body.ids && S.sug.smart) {
-      const gone = new Set(body.ids);
-      S.sug.smart.medien = S.sug.smart.medien.filter((m) => !gone.has(m.id)); S.sug.cut = null; renderSmart();
-    }
-  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
-}
-
-/* ----------------------------------------- Treffer prüfen (auch Tausende) */
-// Alle Treffer eines Vorschlags als dichtes Raster, nach Monaten gruppiert. Ganze Monate oder einzelne
-// Bilder abwählen; Kacheln entstehen erst, wenn ihr Monat in die Nähe des sichtbaren Bereichs kommt.
-const RV = { s: null, aktion: "tag", medien: [], off: new Set(), months: [], mode: "waehlen", size: "m", obs: null };
+/* ------------------------------------------- Prüf-Ansicht (auch Tausende) */
+// Viele Medien als dichtes Raster in Gruppen (Monat, Tag, Rang oder eigene). Einzelne Bilder oder ganze
+// Gruppen abwählen; Kacheln entstehen erst, wenn ihre Gruppe in die Nähe des sichtbaren Bereichs kommt.
+// cfg: { titel, medien, gruppe: "monat" | "tag" | "rang" | (m) => [key, label], ohne?: ids, extra?: Element,
+//        rang?: true (Modus „ab hier abwählen“), hinweis?: text,
+//        aktionen: [{ text: (n) => "…", klasse?: "primary" | "danger", run: async (ids, ohne) => schließen? }] }
+const RV = { cfg: null, medien: [], off: new Set(), groups: [], mode: "waehlen", size: "m", obs: null };
 const RV_PX = { s: 46, m: 84, l: 140 };
 const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+const WEEKDAYS = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+const RANK_BLOCK = 50;
+const RV_NOUN = { monat: ["Monat", "Monate"], tag: ["Tag", "Tage"], rang: ["Block", "Blöcke"] };
 
-async function openReview(s, aktion, btn) {
-  busy(btn, true);
-  let r;
-  try {
-    r = await api(`api/suggestions/${s.id}/media?aktion=${aktion}`);
-  } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
-  try { RV.size = localStorage.getItem("pflege-rv-size") || "m"; } catch (_) { /* egal */ }
-  Object.assign(RV, { s, aktion, medien: r.medien, off: new Set(), mode: "waehlen" });
-  const groups = new Map();
-  for (const m of r.medien) {
-    const key = m.aufnahme ? m.aufnahme.slice(0, 7) : "ohne";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(m);
+function rvGrouper(cfg) {
+  if (typeof cfg.gruppe === "function") return cfg.gruppe;
+  if (cfg.gruppe === "rang") {
+    return (m, i) => {
+      const b = Math.floor(i / RANK_BLOCK);
+      return [String(b), `Treffer ${b * RANK_BLOCK + 1}–${Math.min((b + 1) * RANK_BLOCK, cfg.medien.length)}` + (b ? "" : " (passen am besten)")];
+    };
   }
-  RV.months = [...groups].map(([key, list]) => ({ key, list,
-    label: key === "ohne" ? "Ohne Datum" : `${MONTHS[parseInt(key.slice(5, 7), 10) - 1]} ${key.slice(0, 4)}` }));
-  $("#rv-title").textContent = aktion === "archiv" ? `${s.titel}: archivieren` : `${s.titel} → ${r.tag}`;
+  if (cfg.gruppe === "tag") {
+    return (m) => {
+      if (!m.aufnahme) return ["ohne", "Ohne Datum"];
+      const d = new Date(m.aufnahme.slice(0, 10) + "T12:00:00");
+      return [m.aufnahme.slice(0, 10), `${WEEKDAYS[d.getDay()]} ${fmtTaken(m.aufnahme).slice(0, 10)}`];
+    };
+  }
+  return (m) => (m.aufnahme ? [m.aufnahme.slice(0, 7), `${MONTHS[parseInt(m.aufnahme.slice(5, 7), 10) - 1]} ${m.aufnahme.slice(0, 4)}`] : ["ohne", "Ohne Datum"]);
+}
+
+function openReview(cfg) {
+  try { RV.size = localStorage.getItem("pflege-rv-size") || "m"; } catch (_) { /* egal */ }
+  Object.assign(RV, { cfg, medien: cfg.medien, off: new Set(cfg.ohne || []), mode: "waehlen" });
+  const key = rvGrouper(cfg);
+  const groups = new Map();
+  cfg.medien.forEach((m, i) => {
+    m._i = i;
+    const [k, label] = key(m, i);
+    if (!groups.has(k)) groups.set(k, { label, list: [] });
+    groups.get(k).list.push(m);
+  });
+  RV.groups = [...groups.values()];
+  $("#rv-title").textContent = cfg.titel;
+  $("#rv-extra").replaceChildren(...[cfg.extra, cfg.hinweis ? h("p", { class: "muted small" }, cfg.hinweis) : null].filter(Boolean));
+  $('[data-rv-mode="ab"]').hidden = !cfg.rang;
   renderReview();
-  $("#review").showModal();
+  if (!$("#review").open) $("#review").showModal();
 }
 
 function rvCols() {
   const w = $("#rv-body").clientWidth || window.innerWidth;
-  return Math.max(3, Math.floor((w + 4) / (RV_PX[RV.size] + 4)));
+  return Math.max(3, Math.floor((w + 3) / (RV_PX[RV.size] + 3)));
 }
 
 function renderReview() {
@@ -1031,88 +1062,113 @@ function renderReview() {
   body.style.setProperty("--rv-px", RV_PX[RV.size] + "px");
   if (RV.obs) RV.obs.disconnect();
   RV.obs = new IntersectionObserver((entries) => {
-    for (const e of entries) if (e.isIntersecting) { fillMonth(e.target); RV.obs.unobserve(e.target); }
+    for (const e of entries) if (e.isIntersecting) { fillGroup(e.target); RV.obs.unobserve(e.target); }
   }, { root: body, rootMargin: "1200px 0px" });
   const cols = rvCols();
-  const jump = $("#rv-jump");
-  jump.replaceChildren(h("option", { value: "" }, "Springe zu …"), ...RV.months.map((mo, i) => {
-    const off = mo.list.filter((m) => RV.off.has(m.id)).length;
-    return h("option", { value: i }, `${mo.label} (${mo.list.length}${off ? `, ${off} ab` : ""})`);
-  }));
-  body.replaceChildren(...RV.months.map((mo, i) => {
+  body.replaceChildren(...RV.groups.map((g, i) => {
     const grid = h("div", { class: "rv-grid", "data-i": i,
-      style: `min-height:${Math.ceil(mo.list.length / cols) * (RV_PX[RV.size] + 4)}px` });
+      style: `min-height:${Math.ceil(g.list.length / cols) * (RV_PX[RV.size] + 3)}px` });
     RV.obs.observe(grid);
-    return h("section", { class: "rv-month" }, monthHead(mo), grid);
+    return h("section", { class: "rv-month" }, groupHead(g), grid);
   }));
+  rvJump();
   rvCount();
 }
 
-function monthHead(mo) {
-  const off = mo.list.filter((m) => RV.off.has(m.id)).length;
-  const box = h("input", { type: "checkbox", checked: off < mo.list.length, "aria-label": "Monat auswählen",
-    onchange: (e) => {
-      for (const m of mo.list) e.target.checked ? RV.off.delete(m.id) : RV.off.add(m.id);
-      refreshMonth(mo);
-    } });
-  box.indeterminate = off > 0 && off < mo.list.length;
-  return h("label", { class: "rv-mhead" }, box, h("b", {}, mo.label),
-    h("span", { class: "muted small" }, `${mo.list.length}${off ? ` · ${off} abgewählt` : ""}`));
+function rvJump() {
+  const offIn = (g) => g.list.filter((m) => RV.off.has(m.id)).length;
+  $("#rv-jump").hidden = RV.groups.length < 2;
+  $("#rv-jump").replaceChildren(h("option", { value: "" }, "Springe zu …"), ...RV.groups.map((g, i) =>
+    h("option", { value: i }, `${g.label} (${g.list.length}${offIn(g) ? `, ${offIn(g)} ab` : ""})`)));
 }
 
-function fillMonth(grid) {
-  const mo = RV.months[+grid.dataset.i];
+function groupHead(g) {
+  const off = g.list.filter((m) => RV.off.has(m.id)).length;
+  const box = h("input", { type: "checkbox", checked: off < g.list.length, "aria-label": "Gruppe auswählen",
+    onchange: (e) => {
+      for (const m of g.list) e.target.checked ? RV.off.delete(m.id) : RV.off.add(m.id);
+      refreshGroup(g);
+      rvCount();
+    } });
+  box.indeterminate = off > 0 && off < g.list.length;
+  return h("label", { class: "rv-mhead" }, box, h("b", {}, g.label),
+    h("span", { class: "muted small" }, `${g.list.length}${off ? ` · ${off} abgewählt` : ""}`));
+}
+
+function fillGroup(grid) {
+  const g = RV.groups[+grid.dataset.i];
   grid.style.minHeight = "";
-  grid._list = mo.list;  // Großansicht blättert im Monat
-  grid.replaceChildren(...mo.list.map((m) => {
-    const img = thumb(m);
-    const el = h("button", { type: "button", class: "rv-tile" + (RV.off.has(m.id) ? " off" : ""), title: `${m.dateiname} · ${fmtTaken(m.aufnahme)} · ${m.benutzer}`,
+  grid.dataset.filled = "1";
+  grid._list = g.list;  // Großansicht blättert in der Gruppe
+  grid.replaceChildren(...g.list.map((m) => {
+    const el = h("button", { type: "button", class: "rv-tile" + (RV.off.has(m.id) ? " off" : ""),
+      title: [m.dateiname, fmtTaken(m.aufnahme), m.benutzer, m.info].filter(Boolean).join(" · "),
       onclick: () => {
         if (RV.mode === "ansehen") { openViewerFrom(el.querySelector("img")); return; }
-        RV.off.has(m.id) ? RV.off.delete(m.id) : RV.off.add(m.id);
-        el.classList.toggle("off", RV.off.has(m.id));
-        const sec = el.closest(".rv-month");
-        sec.replaceChild(monthHead(mo), sec.firstChild);
+        if (RV.mode === "ab") {  // Rangliste: davor alles an, ab hier alles ab
+          RV.medien.forEach((x) => (x._i < m._i ? RV.off.delete(x.id) : RV.off.add(x.id)));
+          RV.groups.forEach((x) => refreshGroup(x));
+        } else {
+          RV.off.has(m.id) ? RV.off.delete(m.id) : RV.off.add(m.id);
+          el.classList.toggle("off", RV.off.has(m.id));
+          refreshGroup(g, false);
+        }
         rvCount();
-      } }, img);
+      } }, thumb(m), m.marke ? h("span", { class: "rv-mark" }, m.marke) : null);
     return el;
   }));
 }
 
-function refreshMonth(mo) {
-  const i = RV.months.indexOf(mo);
+function refreshGroup(g, tiles = true) {
+  const i = RV.groups.indexOf(g);
   const grid = $(`#rv-body .rv-grid[data-i="${i}"]`);
-  if (grid && !grid.style.minHeight) grid.querySelectorAll(".rv-tile").forEach((el, k) => el.classList.toggle("off", RV.off.has(mo.list[k].id)));
+  if (!grid) return;
+  if (tiles && grid.dataset.filled) grid.querySelectorAll(".rv-tile").forEach((el, k) => el.classList.toggle("off", RV.off.has(g.list[k].id)));
   const sec = grid.closest(".rv-month");
-  sec.replaceChild(monthHead(mo), sec.firstChild);
-  rvCount();
+  sec.replaceChild(groupHead(g), sec.firstChild);
 }
+
+function rvChosen() { return RV.medien.filter((m) => !RV.off.has(m.id)).map((m) => m.id); }
 
 function rvCount() {
-  const total = RV.medien.length, chosen = total - RV.off.size;
+  const total = RV.medien.length, chosen = total - RV.medien.filter((m) => RV.off.has(m.id)).length;
   const de = (x) => x.toLocaleString("de-DE");
-  $("#rv-count").textContent = `${de(chosen)} von ${de(total)} ausgewählt · ${RV.months.length} ${RV.months.length === 1 ? "Monat" : "Monate"}`;
-  $("#rv-foot-info").textContent = RV.off.size ? `${de(RV.off.size)} abgewählt` : "alle ausgewählt";
-  const go = $("#rv-go");
-  go.textContent = RV.aktion === "archiv" ? `${de(chosen)} archivieren` : `${de(chosen)} taggen`;
-  go.disabled = !chosen;
-}
-
-async function stageReview(btn) {
-  busy(btn, true);
-  try {
-    const r = await api(`api/staged/suggestions/${RV.s.id}/auswahl`, { method: "POST", body: { ohne: [...RV.off], aktion: RV.aktion } });
-    $("#review").close();
-    toast(RV.aktion === "archiv" ? `${n(r.vorgemerkt, "Medium", "Medien")} zum Archivieren vorgemerkt` : `${n(r.vorgemerkt, "Medium", "Medien")} zum Taggen vorgemerkt`);
-    S.stage.loaded = false;
-    await Promise.all([loadSuggestions(), loadTab("stage", true)]);
-    loadCounts();
-  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+  const noun = RV_NOUN[RV.cfg.gruppe] || ["Gruppe", "Gruppen"];
+  $("#rv-count").textContent = `${de(chosen)} von ${de(total)} ausgewählt · ${RV.groups.length} ${RV.groups.length === 1 ? noun[0] : noun[1]}`;
+  $("#rv-foot-info").textContent = chosen === total ? "alle ausgewählt" : `${de(total - chosen)} abgewählt`;
+  $("#rv-actions").replaceChildren(...RV.cfg.aktionen.map((a) => h("button", { type: "button", class: "btn " + (a.klasse || ""), disabled: !chosen && !a.leer,
+    onclick: async (e) => {
+      const btn = e.currentTarget;
+      busy(btn, true);
+      try {
+        const close = await a.run(rvChosen(), RV.medien.filter((m) => RV.off.has(m.id)).map((m) => m.id));
+        if (close !== false) $("#review").close();
+      } catch (err) { toast(err.message, true); } finally { busy(btn, false); }
+    } }, a.text(chosen))));
 }
 
 function setAllReview(on) {
   if (on) RV.off.clear(); else RV.medien.forEach((m) => RV.off.add(m.id));
-  RV.months.forEach(refreshMonth);
+  RV.groups.forEach((g) => refreshGroup(g));
+  rvCount();
+}
+
+// Vorschlag prüfen: taggen oder archivieren
+async function openSuggestionReview(s, aktion, btn) {
+  busy(btn, true);
+  let r;
+  try { r = await api(`api/suggestions/${s.id}/media?aktion=${aktion}`); } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  openReview({
+    titel: aktion === "archiv" ? `${s.titel}: archivieren` : `${s.titel} → ${r.tag}`, medien: r.medien, gruppe: "monat",
+    aktionen: [{ klasse: "primary", text: (k) => `${k.toLocaleString("de-DE")} ${aktion === "archiv" ? "archivieren" : "taggen"}`,
+      run: async (ids, ohne) => {
+        const res = await api(`api/staged/suggestions/${s.id}/auswahl`, { method: "POST", body: { ohne, aktion } });
+        toast(`${n(res.vorgemerkt, "Medium", "Medien")} ${aktion === "archiv" ? "zum Archivieren" : "zum Taggen"} vorgemerkt`);
+        S.stage.loaded = false;
+        await Promise.all([loadSuggestions(), loadTab("stage", true)]);
+        loadCounts();
+      } }],
+  });
 }
 
 async function hideSuggestion(s, undo) {
@@ -1122,59 +1178,64 @@ async function hideSuggestion(s, undo) {
   } catch (e) { toast(e.message, true); }
 }
 
+const SMART_REVIEW = 400;  // Treffer je Benutzer für die Prüf-Ansicht
+
 async function loadSmart(q) {
   const g = S.sug;
   const box = $("#smart-box");
   box.replaceChildren(h("p", { class: "empty" }, "Frage Immichs KI-Suche …"));
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ anzahl: SMART_REVIEW });
   if (q.begriff) params.set("begriff", q.begriff);
   if (q.suche) params.set("suche", q.suche);
   if (q.tag) params.set("tag", q.tag);
+  let r;
   try {
-    g.smart = await api("api/suggestions/smart?" + params);
+    r = await api("api/suggestions/smart?" + params);
   } catch (e) {
     box.replaceChildren(h("div", { class: "banner err" }, e.message)); return;
   }
-  g.cut = null; g.tag = g.smart.tag;
+  g.smart = r; g.tag = r.tag;
   document.querySelectorAll("#smart-terms .chip-btn").forEach((b) => b.classList.toggle("on", b.textContent === q.begriff));
-  renderSmart();
+  const again = h("button", { type: "button", class: "btn small", onclick: () => openSmartReview(r) }, "Wieder öffnen");
+  box.replaceChildren(h("p", { class: "muted small" }, r.medien.length ? `${r.medien.length} Treffer für „${r.suche}“ ` : "Keine neuen Treffer – alles schon getaggt?",
+    r.medien.length ? again : null));
+  if (r.medien.length) openSmartReview(r);
 }
 
-function renderSmart() {
+// KI-Treffer prüfen: nach Passgenauigkeit sortiert, in Blöcken zu 50. Anfangs ist nichts gewählt –
+// das erste Bild antippen, das nicht mehr passt; alles davor wird gewählt. Danach einzeln nachbessern.
+function openSmartReview(r) {
   const g = S.sug;
-  const r = g.smart;
-  const box = $("#smart-box");
-  if (!r) { box.replaceChildren(); return; }
-  if (!r.medien.length) { box.replaceChildren(h("p", { class: "empty" }, "Keine neuen Treffer – alles schon getaggt?")); updateActionbar(); return; }
-  const cut = g.cut === null ? 0 : g.cut;
-  const tagIn = h("input", { type: "text", value: g.tag, oninput: (e) => { g.tag = e.target.value; updateActionbar(); } });
-  const grid = h("div", { class: "smart-grid" });
-  r.medien.forEach((m, i) => {
-    const inside = g.cut !== null && i < g.cut;
-    grid.append(tile({ class: "smart-tile" + (inside ? " in" : g.cut === i ? " cut" : g.cut !== null ? " out" : ""), title: `${i + 1}. ${m.dateiname}`,
-      onclick: () => { g.cut = i; renderSmart(); } },
-    thumb(m), g.cut === i ? h("span", { class: "badge" }, "ab hier nicht") : null, zoomBtn()));
+  const tagIn = h("input", { type: "text", value: g.tag, "aria-label": "Tag", oninput: (e) => { g.tag = e.target.value; rvCount(); } });
+  openReview({
+    titel: `KI-Suche: ${r.begriff || r.suche}`, medien: r.medien, gruppe: "rang", rang: true,
+    ohne: r.medien.map((m) => m.id),
+    hinweis: "Sortiert nach Passgenauigkeit. Tippe auf das erste Bild, das nicht mehr passt – alles davor wird gewählt. Danach unter „abwählen“ einzeln nachbessern.",
+    extra: h("label", { class: "field rv-tag" }, "Tag", tagIn),
+    aktionen: [
+      { text: (k) => `${k} archivieren`, run: async (ids) => {
+        const res = await api("api/staged/archive", { method: "POST", body: { ids, label: r.begriff || r.suche } });
+        toast(`${n(res.vorgemerkt, "Medium", "Medien")} zum Archivieren vorgemerkt`);
+        await afterSmart(r);
+      } },
+      { klasse: "primary", text: (k) => `${k} taggen`, run: async (ids) => {
+        const tag = g.tag.trim();
+        if (!tag) { toast("Bitte einen Tag eintragen", true); return false; }
+        await api("api/staged/smart", { method: "POST", body: { tag, ids, begriff: r.begriff || r.suche } });
+        toast(`${n(ids.length, "Medium", "Medien")} für „${tag}“ vorgemerkt`);
+        await afterSmart(r);
+      } },
+    ],
   });
-  box.replaceChildren(
-    h("label", { class: "f" }, "Tag", tagIn),
-    h("p", { class: "muted small" }, g.cut === null ? `${r.medien.length} Treffer für „${r.suche}“ – tippe auf das erste, das nicht passt.`
-      : `${n(cut, "Treffer passt", "Treffer passen")}. Anderes Bild antippen, um die Grenze zu verschieben.`),
-    grid);
-  updateActionbar();
+  RV.mode = "ab";
+  renderReview();
 }
 
-async function stageSmart(btn) {
-  const g = S.sug;
-  const ids = g.smart.medien.slice(0, g.cut).map((m) => m.id);
-  if (!ids.length) return;
-  busy(btn, true);
-  try {
-    await api("api/staged/smart", { method: "POST", body: { tag: g.tag, ids, begriff: g.smart.begriff || g.smart.suche } });
-    toast(`${n(ids.length, "Medium", "Medien")} für „${g.tag}“ vorgemerkt`);
-    S.stage.loaded = false;
-    loadTab("stage", true);
-    await loadSmart({ begriff: g.smart.begriff, suche: g.smart.begriff ? null : g.smart.suche, tag: g.tag });
-  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+async function afterSmart(r) {
+  S.stage.loaded = false;
+  loadTab("stage", true);
+  loadCounts();
+  $("#smart-box").replaceChildren(h("p", { class: "muted small" }, `Vorgemerkt. Für weitere Treffer zu „${r.begriff || r.suche}“ den Begriff erneut antippen.`));
 }
 
 async function saveRules(items, errorBox) {
@@ -1843,13 +1904,7 @@ function renderTimeFix(it) {
   }
   card.append(grid);
   if (!all) {
-    card.append(h("button", { type: "button", class: "btn more", onclick: async (e) => {
-      busy(e.currentTarget, true);
-      try {
-        c.timeAll[it.id] = (await api(`api/timefix/${it.id}/media`)).medien;
-        card.replaceWith(renderTimeFix(it));
-      } catch (err) { toast(err.message, true); busy(e.currentTarget, false); }
-    } }, `Alle ${it.anzahl} zeigen`));
+    card.append(h("button", { type: "button", class: "btn more", onclick: (e) => openTimeReview(it, e.currentTarget) }, `Alle ${it.anzahl} prüfen`));
   }
   if (!c.ignored) {
     const row = h("div", { class: "row-gap", style: "margin-top:8px" });
@@ -1867,6 +1922,25 @@ function renderTimeFix(it) {
     card.append(row);
   }
   return card;
+}
+
+// Alle Medien eines Zeit-Eintrags prüfen (nach Tagen) und nur die gewählten verschieben
+async function openTimeReview(it, btn) {
+  busy(btn, true);
+  let r;
+  try { r = await api(`api/timefix/${it.id}/media`); } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  for (const m of r.medien) { m.info = m.neue_zeit ? "→ " + fmtTaken(m.neue_zeit) : ""; m.marke = m.neue_zeit ? "→ " + m.neue_zeit.slice(11, 16) : null; }
+  openReview({
+    titel: `${it.art_text}${it.minuten ? " " + fmtOffset(it.minuten) : ""}`, medien: r.medien.slice().reverse(), gruppe: "tag",
+    hinweis: it.grund.replace(/\.?$/, ". ") + "Abgewählte bleiben, wie sie sind.",
+    aktionen: [{ klasse: "primary", text: (k) => `${k} verschieben`, run: async (ids, ohne) => {
+      const choice = timeChoice(it);
+      if (!choice) { toast("Bitte zuerst die Verschiebung eintragen", true); return false; }
+      await api("api/staged/timefix", { method: "POST", body: { eintraege: [{ id: it.id, ...choice, ohne }] } });
+      toast(`${n(ids.length, "Medium", "Medien")} zum Verschieben vorgemerkt`);
+      await afterStage("cln");
+    } }],
+  });
 }
 
 async function stageTimeFixes(items, btn) {
@@ -1949,6 +2023,50 @@ async function stageCleanup(action, items, btn) {
   } catch (e) {
     toast(e.message, true);
   } finally { busy(btn, false); }
+}
+
+// Alle Treffer eines Aufräum-Bereichs prüfen (je Eintrag ein Medium, das weg soll), dann Prüf-Album oder Papierkorb
+async function openCleanupReview(btn) {
+  const c = S.cln;
+  busy(btn, true);
+  let r;
+  try {
+    const params = new URLSearchParams({ art: c.bereich, limit: 0 });
+    if (c.kategorie) params.set("kategorie", c.kategorie);
+    r = await api("api/cleanup?" + params);
+  } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  const itemOf = new Map();
+  const media = [];
+  for (const it of r.eintraege) {
+    for (const m of it.medien) {
+      if (m.aktion !== "weg") continue;
+      itemOf.set(m.id, it);
+      media.push({ ...m, info: `${it.kategorie_text} · ${it.grund}`, marke: it.groesse >= 1048576 ? fmtBig(it.groesse) : null, _kat: it.kategorie_text });
+    }
+  }
+  const stage = (action) => async (ids) => {
+    const items = [...new Set(ids.map((i) => itemOf.get(i)))];
+    const size = items.reduce((s, it) => s + it.groesse, 0);
+    if (action === "papierkorb") {
+      const ok = await confirmDialog({ title: "Für den Papierkorb vormerken?", danger: true, okLabel: "Vormerken",
+        body: [h("p", {}, `${n(ids.length, "Medium", "Medien")} (${fmtBig(size)}).`),
+          h("p", { class: "muted" }, c.bereich === "verwaist" ? "Die Dateien fehlen schon auf der Platte – der Papierkorb entfernt nur den Eintrag in Immich."
+            : "Medien aus externen Bibliotheken kommen nie in den Papierkorb, sondern ins Prüf-Album. Übertragen wird erst unter Vorgemerkt.")] });
+      if (!ok) return false;
+    }
+    const res = await api("api/staged/cleanup", { method: "POST", body: { action, ids: items.map((it) => it.id) } });
+    toast(`${n(res.medien, "Medium", "Medien")} vorgemerkt`);
+    await afterStage("cln");
+  };
+  openReview({
+    titel: VIEWS[S.view] ? VIEWS[S.view].label : "Aufräumen", medien: media,
+    gruppe: (m) => [m._kat, m._kat],
+    hinweis: `Alles hier soll weg (${fmtBig(r.groesse)}). Abwählen, was bleiben soll – „Behalten“ blendet es in der Liste dauerhaft aus.`,
+    aktionen: [
+      { text: (k) => `${k} ins Prüf-Album`, klasse: "primary", run: stage("album") },
+      { text: (k) => `${k} Papierkorb`, klasse: "danger", run: stage("papierkorb") },
+    ],
+  });
 }
 
 /* ------------------------------------------------------- Alben aufräumen */
@@ -2075,16 +2193,37 @@ function renderFolder(p) {
   card.append(h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: !!f.sync[p.id],
     onchange: (e) => { f.sync[p.id] = e.target.checked; } }), "neue Dateien aus dem Ordner automatisch hinzufügen"),
   h("div", { class: "row-gap", style: "margin-top:8px" },
-    h("button", { type: "button", class: "btn small primary", onclick: (e) => stageFolders([p], e.currentTarget) }, "Vormerken"),
-    h("button", { type: "button", class: "btn small", onclick: () => keepFolder(p, false) }, "Kein Album")));
+    h("button", { type: "button", class: "btn small primary", onclick: (e) => stageFolders([p], e.currentTarget) },
+      f.ohne[p.id] && f.ohne[p.id].length ? `Vormerken (${p.fehlend - f.ohne[p.id].length})` : "Vormerken"),
+    h("button", { type: "button", class: "btn small", onclick: (e) => openFolderReview(p, card, e.currentTarget) }, `Alle ${p.fehlend} prüfen`),
+    h("button", { type: "button", class: "btn small", onclick: () => keepFolder(p, false) }, "Kein Album")),
+  f.ohne[p.id] && f.ohne[p.id].length ? h("div", { class: "muted small" }, `${f.ohne[p.id].length} abgewählt – kommen auch beim automatischen Abgleich nicht ins Album`) : null);
   return card;
+}
+
+// Alle Dateien eines Ordners prüfen, die ins Album kämen; Abgewählte bleiben dauerhaft draußen
+async function openFolderReview(p, card, btn) {
+  const f = S.fol;
+  busy(btn, true);
+  let r;
+  try { r = await api(`api/folder-albums/${p.id}/media?album=` + encodeURIComponent(p.album ? p.album.id : "")); } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  const keep = (ohne) => { f.ohne[p.id] = ohne; card.replaceWith(renderFolder(p)); };
+  openReview({
+    titel: "📂 " + p.name, medien: r.medien, gruppe: "monat", ohne: f.ohne[p.id] || [],
+    hinweis: `${p.ordner} – abgewählte Dateien kommen nicht ins Album, auch nicht beim automatischen Abgleich.`,
+    aktionen: [
+      { text: () => "Übernehmen", leer: true, run: async (ids, ohne) => keep(ohne) },
+      { klasse: "primary", text: (k) => `${k} vormerken`, run: async (ids, ohne) => { keep(ohne); await stageFolders([p], null); } },
+    ],
+  });
 }
 
 async function stageFolders(list, btn) {
   const f = S.fol;
   busy(btn, true);
   try {
-    const body = { ordner: list.map((p) => ({ id: p.id, sync: !!f.sync[p.id], ...(p.status === "neu" && f.choice[p.id] && f.choice[p.id].name ? { name: f.choice[p.id].name } : {}) })) };
+    const body = { ordner: list.map((p) => ({ id: p.id, sync: !!f.sync[p.id], ...(f.ohne[p.id] && f.ohne[p.id].length ? { ohne: f.ohne[p.id] } : {}),
+      ...(p.status === "neu" && f.choice[p.id] && f.choice[p.id].name ? { name: f.choice[p.id].name } : {}) })) };
     const r = await api("api/staged/folder-albums", { method: "POST", body });
     toast(`${n(r.vorgemerkt, "Ordner", "Ordner")} vorgemerkt`);
     await afterStage("alb");
@@ -2411,14 +2550,8 @@ function renderTrip(t) {
   card.append(found);
 
   if (t.beispiele.length) card.append(h("div", { class: "strip" }, t.beispiele.map((m) => thumb(m))));
-  const all = h("div", { class: "trip-all" });
-  const allBtn = h("button", { type: "button", class: "btn small", onclick: () => {
-    a.open[t.id] = !a.open[t.id];
-    allBtn.textContent = a.open[t.id] ? "Weniger zeigen" : `Alle ${t.anzahl} ansehen`;
-    if (a.open[t.id]) loadTripMedia(t, all); else all.replaceChildren();
-  } }, a.open[t.id] ? "Weniger zeigen" : `Alle ${t.anzahl} ansehen`);
-  card.append(h("div", { class: "row-gap", style: "margin-top:8px" }, allBtn, h("span", { class: "muted small trip-sel" }, tripSelText(t))), all);
-  if (a.open[t.id]) loadTripMedia(t, all);
+  const allBtn = h("button", { type: "button", class: "btn small", onclick: (e) => openTripReview(t, card, e.currentTarget) }, `Alle ${t.anzahl} prüfen`);
+  card.append(h("div", { class: "row-gap", style: "margin-top:8px" }, allBtn, h("span", { class: "muted small trip-sel" }, tripSelText(t))));
 
   if (a.ignored) {
     card.append(h("div", { class: "row-gap" }, h("button", { type: "button", class: "btn small", onclick: () => ignoreTrip(t, true) }, "Wieder aufnehmen")));
@@ -2437,7 +2570,6 @@ function renderTrip(t) {
     const album = e.target.value || null;
     a.choice[t.id] = { album, name: nameIn.value };
     nameRow.hidden = album !== null;
-    if (a.open[t.id]) loadTripMedia(t, all);  // „schon im Album“ hängt vom Ziel ab
   } },
     ...targets.map((k) => h("option", { value: k.id }, `„${k.name}“ ergänzen`)),
     h("option", { value: "" }, "Neues Album anlegen"));
@@ -2454,30 +2586,26 @@ function tripSelText(t) {
   return off ? `${t.anzahl - off} von ${t.anzahl} ausgewählt` : "";
 }
 
-// Alle Medien einer Reise; antippen nimmt einzelne heraus bzw. wieder hinein
-async function loadTripMedia(t, box) {
+// Alle Medien einer Reise prüfen, nach Tagen; Abgewählte gehören danach nicht mehr zu dieser Reise
+async function openTripReview(t, card, btn) {
   const a = S.alb;
-  box.replaceChildren(h("p", { class: "muted small" }, "Lade alle Bilder …"));
   const c = tripChoice(t);
+  busy(btn, true);
   let r;
   try {
     r = await api(`api/album-suggestions/${t.id}/media?album=` + encodeURIComponent(c.album || ""));  // leer = neues Album
-  } catch (e) { box.replaceChildren(h("div", { class: "banner err" }, e.message)); return; }
-  const off = a.ohne[t.id] || (a.ohne[t.id] = new Set());
-  const grid = h("div", { class: "smart-grid" });
-  const label = box.parentElement && box.parentElement.querySelector(".trip-sel");
-  for (const m of r.medien) {
-    const el = tile({ class: "smart-tile" + (m.im_album ? " in-album" : off.has(m.id) ? " out" : " in"), title: m.dateiname,
-      onclick: () => {
-        if (m.im_album) return;
-        off.has(m.id) ? off.delete(m.id) : off.add(m.id);
-        el.className = "smart-tile " + (off.has(m.id) ? "out" : "in");
-        if (label) label.textContent = tripSelText(t);
-      } },
-    thumb(m), m.im_album ? h("span", { class: "badge ok" }, "✓ im Album") : null, zoomBtn());
-    grid.append(el);
-  }
-  box.replaceChildren(h("p", { class: "muted small" }, "Antippen nimmt ein Bild heraus (grau) bzw. wieder hinein. Herausgenommene gehören danach nicht mehr zu dieser Reise."), grid);
+  } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  const inside = r.medien.filter((m) => m.im_album).length;
+  const media = r.medien.filter((m) => !m.im_album);
+  const keep = (ohne) => { a.ohne[t.id] = new Set(ohne); card.replaceWith(renderTrip(t)); };
+  openReview({
+    titel: `${t.name}`, medien: media, gruppe: "tag", ohne: [...(a.ohne[t.id] || [])].filter((i) => media.some((m) => m.id === i)),
+    hinweis: (inside ? `${inside} liegen schon im Album und fehlen hier. ` : "") + "Abgewählte gehören danach nicht mehr zu dieser Reise.",
+    aktionen: [
+      { text: () => "Übernehmen", leer: true, run: async (ids, ohne) => keep(ohne) },
+      { klasse: "primary", text: (k) => `${k} vormerken`, run: async (ids, ohne) => { keep(ohne); await stageTrips([t], null); } },
+    ],
+  });
 }
 
 async function stageTrips(trips, btn) {
@@ -2502,7 +2630,7 @@ async function stageTrips(trips, btn) {
   busy(btn, true);
   try {
     const r = await api("api/staged/albums", { method: "POST", body });
-    toast(`${n(r.vorgemerkt, "Album", "Alben")} vorgemerkt` + (r.hinweise.length ? " – mit Hinweisen, siehe ✓" : ""));
+    toast(`${n(r.vorgemerkt, "Album", "Alben")} vorgemerkt` + (r.hinweise.length ? " – mit Hinweisen, siehe Vorgemerkt" : ""));
     await afterStage("alb");
   } catch (e) {
     toast(e.message, true);
@@ -2720,7 +2848,7 @@ function updateActionbar() {
       buttons.push(h("button", { class: "btn small", type: "button", onclick: () => openPlaceSearch({ ids: [...S.loc.sel], count: cnt, label: "Auswahl" }) }, "Ort wählen …"));
       buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !chosen.some(selectable), onclick: (e) => applyLocation(e.currentTarget) }, "Vormerken"));
     } else {
-      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !sure, onclick: (e) => applyAllSure(e.currentTarget) }, `Alle sicheren (${sure})`));
+      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !sure, onclick: (e) => applyAllSure(e.currentTarget) }, `Alle sicheren prüfen (${sure})`));
     }
   } else if (S.tab === "ovw") {
     info.textContent = "Stand der Bibliothek";
@@ -2753,7 +2881,11 @@ function updateActionbar() {
     if (!c.ignored && c.bereich === "serien") {
       buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !list.length, onclick: (e) => stageBurstStacks(list, e.currentTarget) }, "Stapeln"));
     }
-    if (!c.ignored) {
+    if (!c.ignored && !chosen.length && c.bereich !== "serien") {
+      // ohne Auswahl: alle Treffer des Bereichs in der Prüf-Ansicht (auch die noch nicht geladenen)
+      info.textContent = c.total ? "Alle Treffer:" : "Nichts offen";
+      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !c.total, onclick: (e) => openCleanupReview(e.currentTarget) }, `Alle ${c.total} prüfen`));
+    } else if (!c.ignored) {
       buttons.push(h("button", { class: "btn small" + (c.bereich === "serien" ? "" : " primary"), type: "button", disabled: !list.length, onclick: (e) => stageCleanup("album", list, e.currentTarget) }, "Ins Prüf-Album"));
       buttons.push(h("button", { class: "btn small danger", type: "button", disabled: !list.length, onclick: (e) => stageCleanup("papierkorb", list, e.currentTarget) }, "Papierkorb"));
     }
@@ -2792,11 +2924,6 @@ function updateActionbar() {
     if (cnt) {
       info.textContent = `${n(cnt, "Regel", "Regeln")} · ${n(total, "Medium", "Medien")}`;
       buttons.push(h("button", { class: "btn small primary", type: "button", onclick: (e) => applyTags(e.currentTarget) }, "Tags vormerken"));
-    } else if (g.smart && g.cut) {
-      info.textContent = `KI-Suche: ${n(g.cut, "Medium", "Medien")}`;
-      buttons.push(h("button", { class: "btn small", type: "button", title: "Aus der Zeitleiste nehmen – bleibt in Suche und Alben",
-        onclick: (e) => stageArchive({ ids: g.smart.medien.slice(0, g.cut).map((m) => m.id), label: g.smart.begriff || g.smart.suche }, e.currentTarget) }, "Archivieren"));
-      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !g.tag.trim(), onclick: (e) => stageSmart(e.currentTarget) }, `als „${g.tag}“ taggen`));
     } else {
       const open = g.hidden ? [] : g.items.filter((s) => s.neu);
       info.textContent = open.length ? "Alle Vorschläge:" : "";
@@ -2975,10 +3102,9 @@ $("#set-btn").append(icon("gear"));
 $("#scan-btn").addEventListener("click", () => rescan());
 $("#v-close").addEventListener("click", () => $("#viewer").close());
 $("#rv-close").addEventListener("click", () => $("#review").close());
-$("#rv-go").addEventListener("click", (e) => stageReview(e.currentTarget));
 $("#rv-all").addEventListener("click", () => setAllReview(true));
 $("#rv-jump").addEventListener("change", (e) => {
-  const sec = $("#rv-body").querySelectorAll(".rv-month")[+e.target.value];
+  const sec = $("#rv-body").querySelectorAll(".rv-month")[+e.target.value];  // Gruppe
   if (sec) $("#rv-body").scrollTop = sec.offsetTop - $("#rv-body").offsetTop;
   e.target.value = "";
 });

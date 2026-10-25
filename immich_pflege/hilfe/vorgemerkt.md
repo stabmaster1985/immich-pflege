@@ -41,3 +41,14 @@ Unter der Vormerkliste steht der **Verlauf**: jede Übertragung mit Zeitpunkt un
 | **Orte** | **nicht möglich:** Immich kann Koordinaten nur ändern, nicht entfernen. Bei einem falschen Ort einfach einen anderen setzen. |
 
 Jede Übertragung lässt sich einmal zurücknehmen. Danach steht „rückgängig gemacht“ am Eintrag.
+
+## Prüf-Ansicht: viele Bilder auf einmal kontrollieren
+
+Überall, wo viele Bilder auf einmal vorgemerkt werden, gibt es **Prüfen**. Das betrifft Tag-Vorschläge, eigene Regeln, KI-Suche, Archivieren, alle sicheren Orte, Aufräumen, Falsche Zeit, Reisen und Ordner-Alben. Es öffnet sich ein dichtes Raster aller betroffenen Bilder, auch bei Tausenden:
+
+- Die Bilder sind **in Gruppen** sortiert: Monat, Tag, Ort, Art oder bei der KI-Suche nach Passgenauigkeit. **Springe zu …** führt direkt zu einer Gruppe.
+- **Antippen** wählt ein Bild ab (grau mit ✕) und wieder an. Das **Häkchen an der Gruppe** wählt die ganze Gruppe ab oder an. **Alle / Keine** gelten für alles.
+- **Antippen: groß ansehen** öffnet stattdessen die Großansicht, dort wischst du durch die Gruppe. Bei der KI-Suche gibt es zusätzlich **ab hier abwählen**.
+- **Größe S/M/L** ändert die Kachelgröße. Bei S passen auf dem Handy etwa 7 Bilder in eine Reihe. Die Wahl bleibt gespeichert.
+- Vorschaubilder lädt das Tool erst, wenn ihre Gruppe in die Nähe kommt. Darum öffnet sich die Ansicht auch bei 4.000 Bildern sofort.
+- Unten steht, wie viele gewählt sind. Der Knopf merkt **genau diese** vor. Wie immer geht erst beim Übertragen etwas an Immich.

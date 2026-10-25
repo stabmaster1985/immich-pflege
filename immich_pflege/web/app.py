@@ -137,6 +137,7 @@ class TimeSelection(BaseModel):
     id: str
     minuten: Optional[int] = Field(None, ge=-60 * 24 * 365 * 100, le=60 * 24 * 365 * 100)
     ziel: Optional[str] = None
+    ohne: Optional[list[str]] = None  # Medien des Eintrags, die bleiben, wie sie sind
 
 
 class TimeStage(BaseModel):
@@ -189,6 +190,7 @@ class FolderSelection(BaseModel):
     name: Optional[str] = Field(None, max_length=200)
     album: Optional[str] = None  # weglassen = Vorschlag, null = neues Album
     sync: bool = False  # neue Dateien nach jedem Einlesen automatisch hinzufügen
+    ohne: Optional[list[str]] = None  # abgewählte Medien (bleiben auch beim Abgleich draußen)
 
 
 class FoldersStage(BaseModel):
@@ -629,8 +631,9 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         return svc().suggestions_view(ausgeblendet)
 
     @app.get("/api/suggestions/smart")
-    def suggestions_smart(begriff: Optional[str] = None, suche: Optional[str] = None, tag: Optional[str] = None):
-        return svc().smart_view(begriff, suche, tag)
+    def suggestions_smart(begriff: Optional[str] = None, suche: Optional[str] = None, tag: Optional[str] = None,
+                          anzahl: Optional[int] = Query(None, ge=1, le=1000)):
+        return svc().smart_view(begriff, suche, tag, anzahl)
 
     @app.post("/api/staged/suggestions")
     def stage_suggestions(body: SuggestionStage):
@@ -643,6 +646,14 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/staged/suggestions/{sugg_id}/auswahl")
     def stage_suggestion_selection(sugg_id: str, body: SuggestionSelection):
         return svc().stage_suggestion_selection(sugg_id, body.ohne, body.aktion)
+
+    @app.get("/api/tags/rules/{name}/media")
+    def rule_media(name: str):
+        return svc().rule_media(name)
+
+    @app.post("/api/staged/tags/{name}/auswahl")
+    def stage_rule_selection(name: str, body: SuggestionSelection):
+        return svc().stage_rule_selection(name, body.ohne)
 
     @app.post("/api/staged/smart")
     def stage_smart(body: SmartStage):
@@ -693,6 +704,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     def folder_albums(status: Optional[Literal["neu", "ergaenzen", "abgeglichen", "vorhanden"]] = None,
                       ausgeblendet: bool = False):
         return svc().folders_view(status, ausgeblendet)
+
+    @app.get("/api/folder-albums/{folder_id}/media")
+    def folder_media(folder_id: str, album: Optional[str] = None):
+        return svc().folder_media(folder_id, album or None)
 
     @app.post("/api/staged/folder-albums")
     def stage_folder_albums(body: FoldersStage):
@@ -763,6 +778,11 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         groups = [g.model_dump() for g in body.groups] if body.groups else None
         return svc().stage_duplicates(body.action, groups, body.all, body.art, body.monat,
                                       body.benutzeruebergreifend)
+
+    @app.get("/api/no-location/media")
+    def no_location_media(min_confidence: Literal["hoch", "mittel", "niedrig"] = "hoch",
+                          max_hours: Optional[float] = Query(None, gt=0, le=48)):
+        return svc().location_media(min_confidence, max_hours)
 
     @app.post("/api/staged/no-location")
     def stage_no_location(body: NoLocationApply):

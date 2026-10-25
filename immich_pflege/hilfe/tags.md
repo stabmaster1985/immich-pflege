@@ -34,16 +34,17 @@ Immich versteht Bildinhalte (maschinelles Lernen, „Smart Search“). Das Tool 
 
 Die KI-Suche liefert **keine feste Trefferzahl**, sondern alles nach Passgenauigkeit sortiert: oben die besten, weiter unten immer unpassender. Deshalb:
 
-1. Begriff antippen. Es erscheinen die passendsten Treffer von euch beiden (je Benutzer bis zu 120), schon getaggte und vorgemerkte nicht.
-2. Auf das **erste Bild tippen, das nicht mehr passt**. Alles davor wird grün, der Rest grau.
-3. Tag prüfen (Vorschlag z. B. `Tiere/Hund`) und unten **als „…“ vormerken**.
-4. Danach erscheinen die nächsten Treffer – so lässt sich Seite für Seite weitermachen.
+1. Begriff antippen. Die Prüf-Ansicht öffnet sich mit den passendsten Treffern von euch beiden (je Benutzer bis zu 400), in Blöcken zu 50. Schon getaggte und vorgemerkte fehlen. **Anfangs ist nichts ausgewählt.**
+2. Auf das **erste Bild tippen, das nicht mehr passt** (Modus „ab hier abwählen“). Alles davor wird ausgewählt, der Rest abgewählt.
+3. Unter **abwählen** einzelne Ausreißer davor herausnehmen oder spätere Treffer dazunehmen.
+4. Tag oben prüfen (Vorschlag z. B. `Tiere/Hund`) und unten **… taggen** oder **… archivieren**.
+5. Den Begriff erneut antippen: Dann kommen die nächsten Treffer.
 
 Voraussetzung: In Immich ist das maschinelle Lernen (Smart Search) aktiv.
 
 ## Erweitert: eigene Regeln
 
-Für Sonderfälle gibt es weiterhin eigene Regeln (ganz unten aufklappen).
+Für Sonderfälle gibt es weiterhin eigene Regeln (ganz unten aufklappen). Jede Regel mit neuen Treffern hat **Prüfen & taggen**: alle Treffer in der Prüf-Ansicht, getaggt werden genau die gewählten.
 
 ### Regeln anlegen
 

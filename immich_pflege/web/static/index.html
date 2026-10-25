@@ -409,6 +409,7 @@
       <div class="rv-title">
         <h2 id="rv-title"></h2>
         <div id="rv-count" class="muted small"></div>
+        <div id="rv-extra"></div>
       </div>
       <button type="button" id="rv-close" class="btn small" aria-label="Schließen">✕</button>
     </div>
@@ -421,6 +422,7 @@
       <div class="row-gap">
         <span class="muted small">Antippen:</span>
         <button type="button" class="chip-btn on" data-rv-mode="waehlen">abwählen</button>
+        <button type="button" class="chip-btn" data-rv-mode="ab" hidden>ab hier abwählen</button>
         <button type="button" class="chip-btn" data-rv-mode="ansehen">groß ansehen</button>
       </div>
       <div class="row-gap">
@@ -433,7 +435,7 @@
     <div class="rv-body" id="rv-body"></div>
     <div class="rv-foot">
       <span id="rv-foot-info" class="muted small"></span>
-      <button type="button" id="rv-go" class="btn primary"></button>
+      <div id="rv-actions" class="row-gap"></div>
     </div>
   </dialog>
 

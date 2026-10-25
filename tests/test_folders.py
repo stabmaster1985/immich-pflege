@@ -76,3 +76,22 @@ def test_extend_existing(web, state):
     assert state.asset_ids_in_album(state.ids["album"]) == set(state.ids["hochzeit"])
     assert web.get("/api/folder-albums").json()["ordner"] == [
         p for p in web.get("/api/folder-albums").json()["ordner"] if p["status"] == "neu"]
+
+
+def test_review_and_exclude_also_for_sync(web, state):
+    tosk = next(p for p in web.get("/api/folder-albums").json()["ordner"] if p["status"] == "neu")
+    media = web.get(f"/api/folder-albums/{tosk['id']}/media").json()["medien"]
+    assert {m["id"] for m in media} == set(state.ids["tosk"])
+    off = state.ids["tosk"][:2]
+    web.post("/api/staged/folder-albums", json={"ordner": [{"id": tosk["id"], "sync": True, "ohne": off}]})
+    assert "2 abgewählt" in web.get("/api/staged").json()["eintraege"][0]["titel"]
+    web.post("/api/staged/apply", json={})
+    album = next(a for a in state.albums.values() if a["albumName"] == "2019 Toskana")
+    assert state.asset_ids_in_album(album["id"]) == set(state.ids["tosk"][2:])
+    new = ext(state, "frank", "/mnt/fotos/2019 Toskana", 1, 300)
+    web.post("/api/scan", json={})  # Abgleich: Neue kommen dazu, Abgewählte nicht
+    assert state.asset_ids_in_album(album["id"]) == set(state.ids["tosk"][2:] + new)
+    hz = next(p for p in web.get("/api/folder-albums").json()["ordner"] if p["status"] == "ergaenzen")
+    missing = web.get(f"/api/folder-albums/{hz['id']}/media", params={"album": state.ids["album"]}).json()["medien"]
+    assert {m["id"] for m in missing} == set(state.ids["hochzeit"][2:])  # was schon im Album liegt, fehlt
+    assert web.get("/api/folder-albums/ogibtsnicht/media").status_code == 400

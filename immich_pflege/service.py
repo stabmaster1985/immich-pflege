@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 
 from . import __version__
-from .folders import SyncedFolders, pending_sync, plan_folder, proposals as folder_proposals
+from .folders import SyncedFolders, folder_missing, pending_sync, plan_folder, proposals as folder_proposals
 from .albumcare import ARTEN as CARE_ARTEN, execute_care, find_issues, plan_delete, plan_merge
 from .covers import find_covers, plan_cover
 from .albums import STATUS as ALBUM_STATUS, AlbumError, ExcludedMedia, Home, TripIgnoreList, execute_plan, overlaps, plan_title, plan_trip, suggest
@@ -31,7 +31,7 @@ from .location import (LEVELS, LocationChange, analyze, execute_location_changes
                        month_facets, month_key, month_label, place_facets, place_key, resolve_locations)
 from .rules import (Resolver, Rule, RuleError, apply as apply_rules, dump_rules, evaluate_rule, load_rules, parse_rules,
                     preview as preview_rules, tag_ids)
-from .suggestions import BEGRIFFE, HiddenList, data_suggestions, smart_results
+from .suggestions import BEGRIFFE, SMART_SIZE, HiddenList, data_suggestions, smart_results
 from .stacking import execute_stacks, propose as propose_stacks, whole_album
 from .staging import StagingStore
 
@@ -214,8 +214,17 @@ class Pflege:
         shown = [p for p in base if (p["status"] == status if status else p["status"] in ("neu", "ergaenzen"))]
         return {"ordner": shown, "status": counts, "ausgeblendet": sum(1 for p in items if p["id"] in keep)}
 
+    def folder_media(self, folder_id: str, album_id: str | None = None) -> dict[str, Any]:
+        """Medien eines Ordners, die noch nicht im Ziel-Album liegen – für die Prüf-Ansicht."""
+        lib = self.library()
+        p = next((x for x in folder_proposals(lib, self.synced_folders().data) if x["id"] == folder_id), None)
+        if p is None:
+            raise ActionError("Ordner nicht gefunden – bitte neu laden")
+        return {"id": folder_id, "ordner": p["ordner"],
+                "medien": self._review_media(folder_missing(lib, p["benutzer"], p["ordner"], album_id))}
+
     def stage_folders(self, selection: list[dict]) -> dict[str, Any]:
-        """selection: [{id, name?, album? (null = neu), sync}]."""
+        """selection: [{id, name?, album? (null = neu), sync, ohne?}]."""
         with self._lock:
             lib = self.library()
             known = {p["id"]: p for p in folder_proposals(lib, self.synced_folders().data)}
@@ -227,18 +236,21 @@ class Pflege:
                 album_id = sel["album"] if "album" in sel else (p["album"]["id"] if p["album"] else None)
                 if album_id and album_id not in lib.albums:
                     raise ActionError("Album nicht gefunden – bitte neu einlesen")
-                plan = plan_folder(lib, p["benutzer"], p["ordner"], sel.get("name"), album_id, bool(sel.get("sync")))
+                plan = plan_folder(lib, p["benutzer"], p["ordner"], sel.get("name"), album_id, bool(sel.get("sync")),
+                                   set(sel.get("ohne") or []))
                 if not plan["anzahl"] and not plan["sync"]:
                     raise ActionError(f"„{plan['name']}“: alles schon im Album")
                 title = (f"📁 Ordner {p['ordner']} → " + (f"„{plan['name']}“ ergänzen" if album_id else f"neues Album „{plan['name']}“")
-                         + f" ({plan['anzahl']} Medien)" + (", danach automatisch aktuell halten" if plan["sync"] else ""))
+                         + f" ({plan['anzahl']} Medien" + (f", {len(plan['ordner_ohne'])} abgewählt" if plan["ordner_ohne"] else "") + ")"
+                         + (", danach automatisch aktuell halten" if plan["sync"] else ""))
                 self.staging.add("album", title, plan, p["beispiele"], plan["anzahl"], key=p["id"])
                 staged += 1
             return {"vorgemerkt": staged}
 
     def _after_album_plan(self, plan: dict[str, Any], res: dict[str, Any]) -> None:
         if plan.get("ordner") and plan.get("sync"):
-            self.synced_folders().set(plan["ordner_key"], plan["besitzer"], plan["ordner"], res["album_id"])
+            self.synced_folders().set(plan["ordner_key"], plan["besitzer"], plan["ordner"], res["album_id"],
+                                      plan.get("ordner_ohne"))
 
     def albums_pending(self, wait_s: float = 0) -> bool:
         lib = self.library()
@@ -592,6 +604,16 @@ class Pflege:
                                  min_confidence=min_confidence if selected is None else None,
                                  manual=manual, exclude=self.staging.asset_ids("ort"))
 
+    def location_media(self, min_confidence: str = "hoch", max_hours: float | None = None) -> dict[str, Any]:
+        """Alle Medien mit Ortsvorschlag ab dieser Sicherheit – für die Prüf-Ansicht, mit dem neuen Ort."""
+        changes, _ = self._select_locations(max_hours=max_hours, min_confidence=min_confidence)
+        new = {ch.asset_id: ch for ch in changes}
+        media = self._review_media(list(new))
+        for m in media:
+            ch = new[m["id"]]
+            m["ort_neu"] = ch.place or f"{ch.latitude:.3f}, {ch.longitude:.3f}"
+        return {"sicherheit": min_confidence, "medien": media}
+
     def apply_no_location(self, ids: list[str] | None = None, max_hours: float | None = None,
                           min_confidence: str | None = None, series: list[str] | None = None,
                           place: dict | None = None, ort: str | None = None,
@@ -691,7 +713,8 @@ class Pflege:
         return {"stand": lib.scanned_at, "vorschlaege": shown, "ausgeblendet": sum(1 for s in items if s["id"] in off),
                 "begriffe": [{"name": n, "tag": t} for n, _, t in BEGRIFFE]}
 
-    def smart_view(self, begriff: str | None = None, query: str | None = None, tag: str | None = None) -> dict[str, Any]:
+    def smart_view(self, begriff: str | None = None, query: str | None = None, tag: str | None = None,
+                   size: int | None = None) -> dict[str, Any]:
         """KI-Suche: Treffer nach Passgenauigkeit, ohne schon getaggte und vorgemerkte."""
         known = {n: (q, t) for n, q, t in BEGRIFFE}
         if begriff:
@@ -707,7 +730,7 @@ class Pflege:
         exclude = {i for u in self.clients for i in resolver.tagged_assets(u, tag)}
         exclude |= {i for e in self.staging.of_type("tag") for ids in (e["daten"].get("medien") or {}).values() for i in ids}
         try:
-            ids = smart_results(self.clients, lib, query.strip(), exclude)
+            ids = smart_results(self.clients, lib, query.strip(), exclude, size or SMART_SIZE)
         except ImmichError as exc:
             raise ActionError(f"KI-Suche nicht möglich (ist das maschinelle Lernen in Immich aktiv?): {exc}") from exc
         return {"begriff": begriff, "suche": query, "tag": tag, "medien": [lib.assets[i].summary() for i in ids]}
@@ -738,12 +761,52 @@ class Pflege:
     def suggestion_media(self, sugg_id: str, action: str = "tag") -> dict[str, Any]:
         """Alle Medien eines Vorschlags zum Prüfen, neueste zuerst (knapp gehalten, auch für Tausende)."""
         d, rule, ids = self._suggestion_ids(sugg_id, action)
+        return {"id": sugg_id, "titel": d["titel"], "tag": rule.tags[0], "aktion": action, "medien": self._review_media(ids)}
+
+    def _review_media(self, ids: list[str]) -> list[dict[str, Any]]:
+        """Medien für die Prüf-Ansicht: neueste zuerst, knapp gehalten (auch für Tausende)."""
         lib = self.library()
-        assets = sorted((lib.assets[i] for i in ids), key=lambda a: a.local_dt or datetime.min, reverse=True)
-        return {"id": sugg_id, "titel": d["titel"], "tag": rule.tags[0], "aktion": action, "medien": [
-            {"id": a.id, "dateiname": a.file_name, "aufnahme": a.local_dt.isoformat(sep=" ") if a.local_dt else None,
-             "benutzer": a.owner, "typ": "video" if a.type == "VIDEO" else "foto", "extern": a.is_external,
-             "dauer_s": round(a.duration_ms / 1000, 1) if a.duration_ms else None} for a in assets]}
+        assets = sorted((lib.assets[i] for i in ids if i in lib.assets), key=lambda a: a.local_dt or datetime.min, reverse=True)
+        return [{"id": a.id, "dateiname": a.file_name, "aufnahme": a.local_dt.isoformat(sep=" ") if a.local_dt else None,
+                 "benutzer": a.owner, "typ": "video" if a.type == "VIDEO" else "foto", "extern": a.is_external,
+                 "dauer_s": round(a.duration_ms / 1000, 1) if a.duration_ms else None} for a in assets]
+
+    def _rule_missing(self, name: str) -> tuple[Rule, dict[str, set[str]]]:
+        """Eigene Regel: je Tag die Medien, denen er noch fehlt."""
+        rules = self._select_rules([name])
+        rule = rules[0]
+        missing: dict[str, set[str]] = {t: set() for t in rule.tags}
+        for m in evaluate_rule(rule, self.library(), Resolver(self.clients)):
+            for tag, ids in m.missing.items():
+                missing[tag] |= set(ids)
+        return rule, missing
+
+    def rule_media(self, name: str) -> dict[str, Any]:
+        rule, missing = self._rule_missing(name)
+        return {"regel": name, "tags": rule.tags, "medien": self._review_media(sorted(set().union(*missing.values())))}
+
+    def stage_rule_selection(self, name: str, without: list[str]) -> dict[str, Any]:
+        """Eigene Regel ohne die abgewählten Medien vormerken (ein Eintrag je Tag)."""
+        rule, missing = self._rule_missing(name)
+        off = set(without)
+        if not off:
+            return self.stage_tags([name])
+        lib = self.library()
+        total = 0
+        for tag, ids in missing.items():
+            chosen = sorted(ids - off)
+            if not chosen:
+                continue
+            by_user: dict[str, list[str]] = {}
+            for i in chosen:
+                by_user.setdefault(lib.assets[i].owner, []).append(i)
+            self.staging.add("tag", f"🏷 {name} → {tag}: {len(chosen)} von {len(ids)} Medien (geprüft)",
+                             {"medien": by_user, "tags": [tag], "regel_name": name},
+                             [lib.assets[i].summary() for i in chosen[:8]], len(chosen), key=f"{name}|{tag}")
+            total += len(chosen)
+        if not total:
+            raise ActionError("Alles abgewählt – nichts vorzumerken")
+        return {"vorgemerkt": total}
 
     def stage_suggestion_selection(self, sugg_id: str, without: list[str], action: str = "tag") -> dict[str, Any]:
         """Vorschlag ohne die abgewählten Medien vormerken (taggen oder archivieren)."""
@@ -1197,7 +1260,8 @@ class Pflege:
         return {"id": fix.id, "medien": fix.media(sorted(fix.assets, key=lambda a: (a.local_dt is None, a.local_dt)))}
 
     def stage_timefix(self, selection: list[dict]) -> dict[str, Any]:
-        """selection: [{id, minuten?}] – ohne minuten gilt der Vorschlag; ``ziel`` (ISO-Zeit) für Einzelmedien."""
+        """selection: [{id, minuten?, ohne?}] – ohne minuten gilt der Vorschlag; ``ziel`` (ISO-Zeit) für
+        Einzelmedien; ``ohne``: Medien des Eintrags, die nicht verschoben werden."""
         from datetime import datetime
 
         if not selection:
@@ -1223,13 +1287,17 @@ class Pflege:
                     minutes = fix.minutes
                 if not minutes:
                     raise ActionError(f"Für „{fix.grund}“ bitte eine Zeit wählen")
-                changes = plan_shifts(fix, int(minutes))
+                without = set(sel.get("ohne") or [])
+                assets = [a for a in fix.assets if a.id not in without]
+                if not assets:
+                    raise ActionError("Alles abgewählt – nichts vorzumerken")
+                changes = plan_shifts(fix, int(minutes), without)
                 title = (f"🕑 {fix.extra.get('kamera') or fix.assets[0].file_name}: "
-                         f"{n_media(len(fix.assets))} um {fmt_offset(int(minutes))}")
-                sample = fix.assets[:: max(1, len(fix.assets) // 6)][:6]
+                         f"{n_media(len(assets))}{f' von {len(fix.assets)}' if without else ''} um {fmt_offset(int(minutes))}")
+                sample = assets[:: max(1, len(assets) // 6)][:6]
                 media = [{**a.summary(), "neue_zeit": shifted(a, int(minutes))} for a in sample]
-                self.staging.add("zeit", title, {"aenderungen": changes, "alle_medien": [a.id for a in fix.assets]},
-                                 media, len(fix.assets), key=fix.id)
+                self.staging.add("zeit", title, {"aenderungen": changes, "alle_medien": [a.id for a in assets]},
+                                 media, len(assets), key=fix.id)
                 staged += 1
             return {"vorgemerkt": staged}
 
@@ -1391,7 +1459,7 @@ class Pflege:
         rules = self._select_rules(names)
         resolver = Resolver(self.clients)
         lib = self.library()
-        staged = {e["daten"].get("regel") for e in self.staging.of_type("tag")}
+        staged = {e["daten"].get("regel") or e["daten"].get("regel_name") for e in self.staging.of_type("tag")}
         regeln = [{**r, "vorgemerkt": r["name"] in staged} for r in preview_rules(rules, lib, resolver)]
         return {"stand": lib.scanned_at, "regeldatei": str(self.settings.rules_file),
                 "regeln": regeln, "warnungen": resolver.warnings}

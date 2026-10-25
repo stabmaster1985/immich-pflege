@@ -250,3 +250,21 @@ def test_nav_counts(web):
     assert set(c) == {"dup", "serien", "speicher", "qualitaet", "verwaist", "ort", "zeit", "tags",
                       "reisen", "ordner", "albenpflege", "stage"}
     assert c["dup"] >= 1 and c["stage"] == 0
+
+
+def test_review_endpoints_rules_and_location(web, settings):
+    settings.rules_file.parent.mkdir(parents=True, exist_ok=True)
+    settings.rules_file.write_text("regeln:\n  - name: Sony\n    tags: [Kamera/Sony, Marke/Sony]\n    hersteller: SONY\n")
+    media = web.get("/api/tags/rules/Sony/media").json()
+    assert media["tags"] == ["Kamera/Sony", "Marke/Sony"] and len(media["medien"]) == 6
+    off = [m["id"] for m in media["medien"][:2]]
+    assert web.post("/api/staged/tags/Sony/auswahl", json={"ohne": off}).json()["vorgemerkt"] == 8  # 4 je Tag
+    staged = web.get("/api/staged").json()["eintraege"]
+    assert len(staged) == 2 and all("4 von 6" in e["titel"] for e in staged)
+    assert web.get("/api/tags").json()["regeln"][0]["vorgemerkt"]
+    assert web.get("/api/tags/rules/Gibts/media").status_code == 400
+    # Ohne Ort: alle sicheren mit dem neuen Ort
+    loc = web.get("/api/no-location/media", params={"min_confidence": "hoch"}).json()
+    assert len(loc["medien"]) == 2 and all(m["ort_neu"] for m in loc["medien"])
+    res = web.post("/api/staged/no-location", json={"ids": [loc["medien"][0]["id"]], "label": "Test"}).json()
+    assert res["vorgemerkt"] == 1

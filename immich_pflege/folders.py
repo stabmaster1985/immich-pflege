@@ -81,21 +81,29 @@ def proposals(lib: Library, synced: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def folder_missing(lib: Library, owner: str, folder: str, album_id: str | None) -> list[str]:
+    """Medien des Ordners, die noch nicht im Ziel-Album liegen (alle bei neuem Album)."""
+    inside = set(lib.albums[album_id]["medien"]) if album_id in lib.albums else set()
+    return sorted(a.id for a in folder_groups(lib).get((owner, folder), []) if a.id not in inside)
+
+
 def plan_folder(lib: Library, owner: str, folder: str, name: str | None, album_id: str | None,
-                sync: bool) -> dict[str, Any]:
+                sync: bool, without: set[str] | None = None) -> dict[str, Any]:
+    """``without``: abgewählte Medien – kommen nicht ins Album, auch später beim Abgleich nicht."""
+    without = without or set()
     ids = sorted(a.id for a in folder_groups(lib).get((owner, folder), []))
     if not ids:
         raise ValueError("Ordner nicht gefunden – bitte neu einlesen")
     if album_id:
         inside = set(lib.albums[album_id]["medien"])
-        media = [i for i in ids if i not in inside]
+        media = [i for i in ids if i not in inside and i not in without]
         plan = {"aktion": "ergaenzen", "album_id": album_id, "name": lib.albums[album_id]["name"]}
     else:
-        media = ids
+        media = [i for i in ids if i not in without]
         plan = {"aktion": "neu", "album_id": None, "name": (name or folder_name(folder)).strip()}
     plan.update(besitzer=owner, teilen=[], medien={owner: media} if media else {}, anzahl=len(media),
-                hinweise=[], reise=None, alle_medien=ids, ohne=[], ordner=folder, sync=sync,
-                ordner_key=folder_key(owner, folder))
+                hinweise=[], reise=None, alle_medien=ids, ordner_ohne=sorted(without & set(ids)), ordner=folder,
+                sync=sync, ordner_key=folder_key(owner, folder))
     return plan
 
 
@@ -117,9 +125,9 @@ class SyncedFolders:
         tmp.write_text(json.dumps({"ordner": self.data}, ensure_ascii=False), encoding="utf-8")
         tmp.replace(self.path)
 
-    def set(self, key: str, owner: str, folder: str, album_id: str) -> None:
+    def set(self, key: str, owner: str, folder: str, album_id: str, without: list[str] | None = None) -> None:
         with self._lock:
-            self.data[key] = {"benutzer": owner, "ordner": folder, "album": album_id}
+            self.data[key] = {"benutzer": owner, "ordner": folder, "album": album_id, "ohne": sorted(without or [])}
             self._save()
 
     def remove(self, key: str) -> None:
@@ -137,8 +145,8 @@ def pending_sync(lib: Library, synced: SyncedFolders) -> list[dict[str, Any]]:
         if album is None:
             synced.remove(key)  # Album gelöscht -> Abgleich beenden
             continue
-        inside = set(album["medien"])
-        new = sorted(a.id for a in groups.get((s["benutzer"], s["ordner"]), []) if a.id not in inside)
+        skip = set(album["medien"]) | set(s.get("ohne") or [])  # abgewählte bleiben draußen
+        new = sorted(a.id for a in groups.get((s["benutzer"], s["ordner"]), []) if a.id not in skip)
         if new:
             out.append({"aktion": "ergaenzen", "album_id": s["album"], "name": album["name"], "besitzer": s["benutzer"],
                         "teilen": [], "medien": {s["benutzer"]: new}, "anzahl": len(new), "ordner": s["ordner"]})

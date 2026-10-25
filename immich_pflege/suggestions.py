@@ -27,7 +27,8 @@ log = logging.getLogger(__name__)
 MIN_COUNTRY = 10  # so viele Fotos braucht ein Land für einen Vorschlag
 MIN_CAMERA = 30
 MIN_SOURCE = 10
-SMART_SIZE = 120  # Treffer je Benutzer, die die KI-Suche holt
+SMART_SIZE = 120  # Treffer je Benutzer, die die KI-Suche holt (Standard)
+SMART_MAX = 1000  # mehr gibt Immich pro Abfrage nicht her
 WHATSAPP_RE = r"-WA\d{4}"
 
 # Begriffe für die KI-Suche: Anzeige, Suchtext (englisch – Immichs Standardmodell versteht Englisch am
@@ -92,11 +93,11 @@ def data_suggestions(lib: Library) -> list[dict[str, Any]]:
 
 
 def smart_results(clients: dict[str, ImmichClient], lib: Library, query: str,
-                  exclude: set[str]) -> list[str]:
+                  exclude: set[str], size: int = SMART_SIZE) -> list[str]:
     """Treffer der KI-Suche beider Benutzer, abwechselnd nach Rang zusammengeführt (nur eigene Medien)."""
     per_user: list[list[str]] = []
     for name, client in clients.items():
-        ids = [raw["id"] for raw in client.smart_search(query, SMART_SIZE)
+        ids = [raw["id"] for raw in client.smart_search(query, max(1, min(size, SMART_MAX)))
                if raw.get("id") in lib.assets and lib.assets[raw["id"]].owner == name]
         per_user.append([i for i in ids if i not in exclude])
     merged: list[str] = []
