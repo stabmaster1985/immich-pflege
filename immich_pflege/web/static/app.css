@@ -61,9 +61,10 @@ h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
 }
 .top-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .status { color: var(--muted); font-size: .8rem; margin: 2px 0 6px; }
-.tabs { display: flex; gap: 4px; }
+.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
 .tabs button {
-  flex: 1; border: 0; background: none; padding: 10px 2px; white-space: nowrap; font-size: .95rem;
+  flex: 1 0 auto; border: 0; background: none; padding: 10px 6px; white-space: nowrap; font-size: .95rem;
   border-bottom: 3px solid transparent; font-weight: 600; color: var(--muted); cursor: pointer;
 }
 .tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
@@ -180,7 +181,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 #toast.err { background: var(--drop); color: #fff; }
 
 /* Einstellungen und Editor */
-.tabs button.gear { flex: 0 0 48px; font-size: 1.2rem; }
+.tabs button.gear { flex: 0 0 44px; font-size: 1.2rem; }
 .row-gap { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 fieldset.card { margin: 0 0 12px; }
 legend { font-weight: 700; padding: 0 4px; }
@@ -261,3 +262,8 @@ div.tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 .stage-fig.keep img { outline: 2px solid var(--keep); outline-offset: -2px; }
 .stage-fig.drop img { opacity: .75; }
 .stage-actions { margin-top: 10px; }
+
+/* Alben */
+.alb-found { margin: 4px 0 6px; font-size: .9rem; }
+.alb-name { margin-top: 8px; }
+.card-head .grow { flex: 1; min-width: 0; }

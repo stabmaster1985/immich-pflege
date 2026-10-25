@@ -15,7 +15,7 @@ from typing import Any, Iterable
 
 log = logging.getLogger(__name__)
 
-TYPES = ("duplikat", "ort", "tag")
+TYPES = ("duplikat", "ort", "album", "tag")
 SAMPLES = 8
 
 
@@ -76,6 +76,10 @@ class StagingStore:
                     e["fehler"] = message
             self._save()
 
+    def id_sets(self, typ: str) -> list[set[str]]:
+        """Medien je Eintrag (für das Wiedererkennen vorgemerkter Reisen)."""
+        return [set(e["daten"].get("alle_medien", [])) for e in self.of_type(typ)]
+
     def of_type(self, typ: str) -> list[dict[str, Any]]:
         return [e for e in self.entries if e["typ"] == typ]
 
@@ -84,7 +88,7 @@ class StagingStore:
         out: set[str] = set()
         for e in self.of_type(typ):
             d = e["daten"]
-            if typ == "duplikat":
+            if typ in ("duplikat", "album"):
                 out.update(d.get("alle_medien", []))
             elif typ == "ort":
                 out.update(ch["asset_id"] for ch in d.get("aenderungen", []))

@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from . import __version__
+from .albums import STATUS as ALBUM_STATUS, AlbumError, TripIgnoreList, execute_plan, overlaps, plan_title, plan_trip, suggest
 from .client import ImmichClient, ImmichError
 from .config import Settings
 from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, IgnoreList, PlannedStep,
@@ -516,9 +517,11 @@ class Pflege:
                     elif e["typ"] == "ort":
                         res = execute_location_changes(lib, self.clients, [
                             LocationChange.from_dict(ch) for ch in e["daten"]["aenderungen"]])
+                    elif e["typ"] == "album":
+                        res = execute_plan(lib, self.clients, e["daten"])
                     else:
                         res = self.tags_apply([e["daten"]["regel"]])
-                except (ImmichError, ActionError, RuleError) as exc:
+                except (ImmichError, ActionError, RuleError, AlbumError) as exc:
                     self.staging.set_error(e["id"], str(exc))
                     results.append({"id": e["id"], "titel": e["titel"], "fehler": str(exc)})
                     continue
@@ -541,6 +544,111 @@ class Pflege:
             out.append({"name": p.get("name"), "region": region,
                         "breite": p.get("latitude"), "laenge": p.get("longitude")})
         return out
+
+    # ---------------------------------------------------------------- Alben
+    def album_ignore_list(self) -> TripIgnoreList:
+        return TripIgnoreList(self.settings.data_dir / "alben_ignoriert.json")
+
+    def _trips(self):
+        """Reisen ohne vorgemerkte; ``ignored`` = als „kein Album“ markiert."""
+        lib = self.library()
+        homes, trips = suggest(lib, self.settings.album_min_km, self.settings.album_min_media)
+        staged = self.staging.id_sets("album")
+        ignore = self.album_ignore_list()
+        out = [(t, ignore.contains(t.ids)) for t in trips if not overlaps(t.ids, staged)]
+        return lib, homes, out
+
+    def albums_view(self, status: str | None = None, ignored: bool = False, jahr: str | None = None,
+                    offset: int = 0, limit: int = 20) -> dict[str, Any]:
+        """Reisen mit Albumvorschlag. Ohne ``status`` die offenen (neu + ergänzen)."""
+        if status and status not in ALBUM_STATUS:
+            raise ActionError(f"Status muss {', '.join(ALBUM_STATUS)} sein")
+        lib, homes, trips = self._trips()
+        base = [t for t, ign in trips if ign == ignored]
+        counts = {k: sum(1 for t in base if t.status == k) for k in ALBUM_STATUS}
+        chosen = [t for t in base if (t.status == status if status else t.status != "vorhanden")]
+        years: dict[str, int] = {}
+        for t in chosen:
+            years[str(t.start.year)] = years.get(str(t.start.year), 0) + 1
+        if jahr:
+            chosen = [t for t in chosen if str(t.start.year) == jahr]
+        page = chosen[offset: offset + limit] if limit > 0 else chosen[offset:]
+        return {
+            "stand": lib.scanned_at,
+            "zuhause": [h.to_dict() for h in homes],
+            "min_km": self.settings.album_min_km,
+            "min_medien": self.settings.album_min_media,
+            "alben": len(lib.albums),
+            "status": counts,
+            "offen": counts["neu"] + counts["ergaenzen"],
+            "ignoriert": sum(1 for _, ign in trips if ign),
+            "jahre": [{"key": k, "anzahl": v} for k, v in sorted(years.items(), reverse=True)],
+            "filter": {"status": status, "jahr": jahr, "ignoriert": ignored},
+            "gesamt": len(chosen),
+            "offset": offset,
+            "reisen": [t.to_dict(lib) for t in page],
+        }
+
+    def _album_plans(self, selection: list[dict]) -> list[dict[str, Any]]:
+        """selection: [{id, album?: Album-ID oder null = neu, name?}]; ohne album = Vorschlag."""
+        if not selection:
+            raise ActionError("Keine Reisen ausgewählt")
+        lib, _, trips = self._trips()
+        known = {t.id: t for t, _ in trips}
+        plans = []
+        for sel in selection:
+            trip = known.get(sel.get("id", ""))
+            if trip is None:
+                raise ActionError(f"Reise {sel.get('id')!r} nicht gefunden – bitte neu laden")
+            if "album" in sel:
+                album_id = sel["album"]
+            else:
+                album_id = trip.target.album["id"] if trip.status == "ergaenzen" and trip.target else None
+            try:
+                plan = plan_trip(trip, lib, album_id, sel.get("name"))
+            except AlbumError as exc:
+                raise ActionError(str(exc)) from exc
+            if not plan["anzahl"] and not plan["teilen"]:
+                raise ActionError(f"„{plan['name']}“: nichts zu tun – alle Medien liegen schon im Album")
+            plan["beispiele"] = [a.summary() for a in trip.assets[:: max(1, len(trip.assets) // 8)][:8]]
+            plans.append(plan)
+        return plans
+
+    def stage_albums(self, selection: list[dict]) -> dict[str, Any]:
+        with self._lock:
+            plans = self._album_plans(selection)
+            for plan in plans:
+                media = plan.pop("beispiele")
+                self.staging.add("album", plan_title(plan), plan, media, plan["anzahl"], key=plan["reise"])
+            return {"vorgemerkt": len(plans), "hinweise": [h for p in plans for h in p["hinweise"]]}
+
+    def apply_albums(self, selection: list[dict]) -> dict[str, Any]:
+        """Direkt in Immich anlegen bzw. ergänzen (API/CLI). Die Oberfläche merkt erst vor."""
+        with self._lock:
+            plans = self._album_plans(selection)
+            results = []
+            for plan in plans:
+                plan.pop("beispiele")
+                try:
+                    results.append({"name": plan["name"], **execute_plan(self.library(), self.clients, plan),
+                                    "hinweise": plan["hinweise"]})
+                except AlbumError as exc:
+                    results.append({"name": plan["name"], "fehler": str(exc)})
+            self._save()
+            return {"alben": results}
+
+    def ignore_albums(self, trip_ids: list[str], undo: bool = False) -> dict[str, Any]:
+        if not trip_ids:
+            raise ActionError("Keine Reisen angegeben")
+        _, _, trips = self._trips()
+        known = {t.id: t for t, _ in trips}
+        missing = [i for i in trip_ids if i not in known]
+        if missing:
+            raise ActionError(f"Reise(n) {', '.join(missing)} nicht gefunden – bitte neu laden")
+        ignore = self.album_ignore_list()
+        for tid in trip_ids:
+            (ignore.remove if undo else ignore.add)(known[tid].ids)
+        return {"reisen": len(trip_ids), "rueckgaengig": undo}
 
     # ----------------------------------------------------------------- Tags
     def rules(self) -> list[Rule]:

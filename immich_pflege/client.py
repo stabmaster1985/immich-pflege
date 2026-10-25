@@ -133,8 +133,18 @@ class ImmichClient:
             params["assetId"] = asset_id
         return self.request("GET", "/albums", params=params or None) or []
 
-    def create_album(self, name: str) -> dict:
-        return self.request("POST", "/albums", json={"albumName": name})
+    def create_album(self, name: str, users: list[dict] | None = None) -> dict:
+        """``users``: [{"userId": …, "role": "editor"}] – Album gleich mit anderen teilen."""
+        body: dict[str, Any] = {"albumName": name}
+        if users:
+            body["albumUsers"] = users
+        return self.request("POST", "/albums", json=body)
+
+    def share_album(self, album_id: str, users: list[dict]) -> dict:
+        return self.request("PUT", f"/albums/{album_id}/users", json={"albumUsers": users})
+
+    def album_asset_ids(self, album_id: str) -> set[str]:
+        return self.search_ids(albumIds=[album_id])
 
     def add_to_album(self, album_id: str, ids: Iterable[str]) -> list[dict]:
         results: list[dict] = []

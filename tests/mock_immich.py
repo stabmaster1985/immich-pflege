@@ -14,6 +14,7 @@ import copy
 import json
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from itertools import count
 from pathlib import Path
 from typing import Any
@@ -55,7 +56,7 @@ class MockState:
     def add_asset(self, owner: str, file_name: str, local: str | None, *, utc: str | None = None,
                   checksum: str | None = None, library: bool = False, lat: float | None = None,
                   lon: float | None = None, city: str | None = None, country: str | None = None,
-                  favorite: bool = False, width: int = 4032, height: int = 3024,
+                  region: str | None = None, favorite: bool = False, width: int = 4032, height: int = 3024,
                   make: str | None = "Apple", model: str | None = "iPhone 15 Pro",
                   path: str | None = None, type: str = "IMAGE", visibility: str = "timeline",
                   trashed: bool = False, duplicate_id: str | None = None, size: int = 2_000_000,
@@ -83,7 +84,7 @@ class MockState:
         })
         a["exifInfo"].update({
             "latitude": lat, "longitude": lon, "city": city, "country": country,
-            "state": None if lat is None else a["exifInfo"]["state"],
+            "state": None if lat is None else (region or a["exifInfo"]["state"]),
             "make": make, "model": model, "exifImageWidth": width, "exifImageHeight": height,
             "fileSizeInByte": size, "dateTimeOriginal": utc or local,
         })
@@ -94,9 +95,12 @@ class MockState:
         self.assets[aid] = a
         return aid
 
-    def add_album(self, owner: str, name: str, asset_ids: list[str] = ()) -> str:
+    def add_album(self, owner: str, name: str, asset_ids: list[str] = (),
+                  shared: dict[str, str] | None = None) -> str:
+        """``shared``: {benutzer: rolle} – Album mit anderen Benutzern teilen."""
         alid = new_id()
-        self.albums[alid] = {"id": alid, "albumName": name, "ownerId": self.user_id(owner)}
+        self.albums[alid] = {"id": alid, "albumName": name, "ownerId": self.user_id(owner),
+                             "members": {self.user_id(u): r for u, r in (shared or {}).items()}}
         for aid in asset_ids:
             self.assets[aid]["_albums"].add(alid)
         return alid
@@ -127,6 +131,25 @@ class MockState:
 
     def asset_ids_in_album(self, album_id: str) -> set[str]:
         return {aid for aid, a in self.assets.items() if album_id in a["_albums"]}
+
+    def user_by_id(self, uid: str) -> dict[str, Any]:
+        return next(u for u in self.users.values() if u["id"] == uid)
+
+    def album_role(self, album: dict[str, Any], uid: str) -> str | None:
+        if album["ownerId"] == uid:
+            return "owner"
+        return album.get("members", {}).get(uid)
+
+    def album_dto(self, al: dict[str, Any]) -> dict[str, Any]:
+        members = self.asset_ids_in_album(al["id"])
+        dates = sorted(self.assets[a]["localDateTime"] for a in members if self.assets[a]["localDateTime"])
+        users = [{"user": self.user_by_id(al["ownerId"]), "role": "owner"}]
+        users += [{"user": self.user_by_id(uid), "role": r} for uid, r in al.get("members", {}).items()]
+        return {"id": al["id"], "albumName": al["albumName"], "assetCount": len(members),
+                "shared": bool(al.get("members")), "albumUsers": users, "hasSharedLink": False,
+                "description": "", "albumThumbnailAssetId": None, "isActivityEnabled": True,
+                "startDate": dates[0] if dates else None, "endDate": dates[-1] if dates else None,
+                "createdAt": "2024-01-01T00:00:00.000Z", "updatedAt": "2024-01-01T00:00:00.000Z"}
 
 
 def render_thumbnail(key: str, width: int = 4032) -> bytes:
@@ -275,15 +298,12 @@ def create_app(state: MockState) -> FastAPI:
         user = auth(request)
         out = []
         for al in state.albums.values():
-            if al["ownerId"] != user["id"]:
+            role = state.album_role(al, user["id"])
+            if role is None or (isOwned is True and role != "owner") or (isOwned is False and role == "owner"):
                 continue
             if assetId and al["id"] not in state.assets.get(assetId, {}).get("_albums", set()):
                 continue
-            out.append({**al, "assetCount": len(state.asset_ids_in_album(al["id"])),
-                        "shared": False, "albumUsers": [], "hasSharedLink": False,
-                        "description": "", "albumThumbnailAssetId": None,
-                        "isActivityEnabled": True, "createdAt": "2024-01-01T00:00:00.000Z",
-                        "updatedAt": "2024-01-01T00:00:00.000Z"})
+            out.append(state.album_dto(al))
         return out
 
     @app.post("/api/albums", status_code=201)
@@ -291,8 +311,22 @@ def create_app(state: MockState) -> FastAPI:
         user = auth(request)
         body = await record(request, user)
         alid = new_id()
-        state.albums[alid] = {"id": alid, "albumName": body["albumName"], "ownerId": user["id"]}
-        return {**state.albums[alid], "assetCount": 0}
+        state.albums[alid] = {"id": alid, "albumName": body["albumName"], "ownerId": user["id"],
+                              "members": {u["userId"]: u["role"] for u in body.get("albumUsers") or []}}
+        return state.album_dto(state.albums[alid])
+
+    @app.put("/api/albums/{album_id}/users")
+    async def share_album(album_id: str, request: Request):
+        user = auth(request)
+        body = await record(request, user)
+        album = state.albums.get(album_id)
+        if not album or album["ownerId"] != user["id"]:
+            raise HTTPException(400, "Not found or no album.share access")
+        for u in body["albumUsers"]:
+            if u["userId"] in album["members"] or u["userId"] == album["ownerId"]:
+                raise HTTPException(400, "User already added")
+            album["members"][u["userId"]] = u["role"]
+        return state.album_dto(album)
 
     @app.put("/api/albums/{album_id}/assets")
     async def add_album_assets(album_id: str, request: Request):
@@ -301,7 +335,7 @@ def create_app(state: MockState) -> FastAPI:
         if len(body["ids"]) > 500:
             return JSONResponse({"message": "Mock: mehr als 500 IDs"}, 400)
         album = state.albums.get(album_id)
-        if not album or album["ownerId"] != user["id"]:
+        if not album or state.album_role(album, user["id"]) not in ("owner", "editor"):
             raise HTTPException(400, "Not found or no album.addAsset access")
         out = []
         for aid in body["ids"]:
@@ -445,4 +479,50 @@ def demo_state() -> MockState:
     return s
 
 
+# ------------------------------------------------- Demo: Reisen und Alben
+HAMBURG = (53.55, 9.99)
+FLORENZ = (43.77, 11.25)
+SIENA = (43.32, 11.33)
+KOPENHAGEN = (55.68, 12.57)
+WIEN = (48.21, 16.37)
+
+
+def shots(s, owner, start, n, step_h, place=None, city=None, country=None, region=None, prefix="IMG", **kw):
+    ids = []
+    t = datetime.fromisoformat(start)
+    for i in range(n):
+        local = (t + timedelta(hours=step_h * i)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        geo = dict(lat=place[0], lon=place[1], city=city, country=country, region=region) if place else {}
+        ids.append(s.add_asset(owner, f"{prefix}_{len(s.assets):05d}.JPG", local, **geo, **kw))
+    return ids
+
+
+def album_state() -> MockState:
+    """Zuhause Hamburg, Reisen in die Toskana, nach Kopenhagen und Wien, ein Tagesausflug."""
+    s = MockState()
+    s.add_user("frank", "key-frank")
+    s.add_user("julia", "key-julia")
+    for user in ("frank", "julia"):  # Zuhause: Hamburg, ein Foto pro Tag über ein halbes Jahr
+        shots(s, user, "2024-01-01T18:00:00", 120, 36, HAMBURG, "Hamburg", "Deutschland", "Hamburg")
+    # Toskana, beide unterwegs, dazu Franks Kamera ohne GPS
+    toskana = shots(s, "frank", "2024-07-14T10:00:00", 8, 6, FLORENZ, "Florenz", "Italien", "Toskana")
+    toskana += shots(s, "frank", "2024-07-16T10:00:00", 7, 6, SIENA, "Siena", "Italien", "Toskana")
+    julia_t = shots(s, "julia", "2024-07-14T11:00:00", 5, 6, FLORENZ, "Florenz", "Italien", "Toskana")
+    julia_t += shots(s, "julia", "2024-07-16T11:00:00", 5, 6, SIENA, "Siena", "Italien", "Toskana")
+    sony = shots(s, "frank", "2024-07-15T12:00:00", 6, 4, prefix="DSC", make="SONY", model="ILCE-7M4", library=True)
+    s.add_album("julia", "Toskana 2024", julia_t[:5])  # nur ein Teil, nicht mit Frank geteilt
+    # Kopenhagen: nur Frank (Julia bleibt zu Hause und fotografiert dort weiter)
+    shots(s, "frank", "2024-09-05T09:00:00", 25, 2, KOPENHAGEN, "Kopenhagen", "Dänemark", "Hovedstaden")
+    shots(s, "julia", "2024-09-05T12:00:00", 3, 12, HAMBURG, "Hamburg", "Deutschland", "Hamburg")
+    # Wien: komplett in Franks Album, das mit Julia geteilt ist
+    wien = shots(s, "julia", "2024-05-10T09:00:00", 22, 2, WIEN, "Wien", "Österreich", "Wien")
+    s.add_album("frank", "Wien", wien, shared={"julia": "editor"})
+    # Tagesausflug mit wenigen Fotos: kein Vorschlag
+    shots(s, "frank", "2024-08-10T10:00:00", 5, 1, (53.87, 10.69), "Lübeck", "Deutschland", "Schleswig-Holstein")
+    s.toskana = toskana + julia_t + sony
+    return s
+
+
+
 demo_app = create_app(demo_state())
+album_demo_app = create_app(album_state())

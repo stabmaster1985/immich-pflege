@@ -1,6 +1,6 @@
 # Vorgemerkt
 
-In der Oberfläche geht keine Änderung sofort an Immich. Was du in den Tabs **Duplikate**, **Ohne Ort** oder **Tags** bestätigst, wird erst **vorgemerkt**. Gesammelt wird es im Tab **✓**.
+In der Oberfläche geht keine Änderung sofort an Immich. Was du in den Tabs **Duplikate**, **Ohne Ort**, **Alben** oder **Tags** bestätigst, wird erst **vorgemerkt**. Gesammelt wird es im Tab **✓**.
 
 ## Ablauf
 
@@ -8,6 +8,7 @@ In der Oberfläche geht keine Änderung sofort an Immich. Was du in den Tabs **D
 2. **Prüfen:** Unter **✓** steht jeder Eintrag mit Vorschaubildern:
    - Duplikate: grün umrandet ist das Bild, das bleibt. Darunter steht, wohin die Kopien gehen (Prüf-Album oder Papierkorb).
    - Orte: unter jedem Bild steht der neue Ort.
+   - Alben: neues Album oder welches ergänzt wird, mit wem es geteilt wird, Beispielbilder.
    - Tags: Regel, Tags und Beispielbilder.
 3. **Zurücknehmen** legt einen Eintrag wieder in die Übersicht zurück. Er wird dort neu bewertet.
 4. **Übertragen** führt einen einzelnen Eintrag in Immich aus, **Alle übertragen** in der Aktionsleiste alle auf einmal. Geht etwas in den Papierkorb, musst du das vorher ausdrücklich bestätigen.

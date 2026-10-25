@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from immich_pflege import duplicates, imagehash, location
+from immich_pflege import albums, duplicates, imagehash, location
 from immich_pflege.web.app import HELP, HELP_TOPICS, create_app
 
 
@@ -26,6 +26,13 @@ def test_help_matches_code():
     assert f"höchstens {imagehash.MAX_DISTANCE} der 64 Bits" in dup
     for _, label, weight in duplicates.WEIGHTS:
         assert f"| {weight} |" in dup, label
+    alb = (HELP / "alben.md").read_text()
+    assert albums.TRIP_GAP_S == 36 * 3600 and "**36 Stunden**" in alb
+    assert albums.EDGE_S == 3 * 3600 and "3 Stunden" in alb
+    assert albums.COMPLETE == 0.95 and "95 %" in alb
+    assert albums.MATCH == 0.2 and "ab 20 %" in alb
+    assert albums.NAME_SHARE == 0.6 and "60 %" in alb
+    assert albums.MIN_GPS == 3 and "3 Fotos mit GPS" in alb
 
 
 def test_readme_links_help():

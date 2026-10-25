@@ -35,7 +35,7 @@ from .auth import COOKIE, RENEW_BELOW_S, Sessions, basic_credentials
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
 HELP = Path(__file__).parent.parent / "hilfe"
-HELP_TOPICS = ("duplikate", "ohne-ort", "tags", "vorgemerkt", "einstellungen")
+HELP_TOPICS = ("duplikate", "ohne-ort", "alben", "tags", "vorgemerkt", "einstellungen")
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 OPEN_PATHS = {"/healthz", "/login", "/api/login", "/api/logout", "/favicon.ico"}
 OPEN_PREFIXES = ("/static/",)
@@ -99,6 +99,21 @@ class NoLocationApply(BaseModel):
 
 class TagsApply(BaseModel):
     rules: Optional[list[str]] = None
+
+
+class TripSelection(BaseModel):
+    id: str
+    album: Optional[str] = None  # weglassen = Vorschlag, null = neues Album, sonst Album-ID
+    name: Optional[str] = Field(None, max_length=200)
+
+
+class AlbumsApply(BaseModel):
+    trips: list[TripSelection]
+
+
+class AlbumsIgnore(BaseModel):
+    trips: list[str]
+    undo: bool = False
 
 
 class UpdaterApply(BaseModel):
@@ -480,6 +495,25 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         return svc().tags_apply(body.rules if body else None)
 
     # ------------------------------------------------------------- Vormerken
+    # ---------------------------------------------------------------- Alben
+    @app.get("/api/album-suggestions")
+    def album_suggestions(status: Optional[Literal["neu", "ergaenzen", "vorhanden"]] = None,
+                          ignoriert: bool = False, jahr: Optional[str] = None,
+                          offset: int = Query(0, ge=0), limit: int = Query(20, ge=0, le=5000)):
+        return svc().albums_view(status, ignoriert, jahr, offset, limit)
+
+    @app.post("/api/album-suggestions/apply")
+    def album_suggestions_apply(body: AlbumsApply):
+        return svc().apply_albums([t.model_dump(exclude_unset=True) for t in body.trips])
+
+    @app.post("/api/album-suggestions/ignore")
+    def album_suggestions_ignore(body: AlbumsIgnore):
+        return svc().ignore_albums(body.trips, body.undo)
+
+    @app.post("/api/staged/albums")
+    def stage_albums(body: AlbumsApply):
+        return svc().stage_albums([t.model_dump(exclude_unset=True) for t in body.trips])
+
     @app.get("/api/staged")
     def staged():
         return svc().staged_view()

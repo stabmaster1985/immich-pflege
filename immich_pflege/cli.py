@@ -411,6 +411,69 @@ def ohne_ort(
 
 
 # --------------------------------------------------------------------- Tags
+@app.command("alben")
+def alben(
+    alle: bool = typer.Option(False, "--alle", help="Auch Reisen zeigen, die schon in Alben liegen"),
+    anlegen: Optional[list[str]] = typer.Option(None, "--anlegen", "-a",
+                                                help="Für diese Reise(n) (ID) das vorgeschlagene Album anlegen bzw. ergänzen"),
+    name: Optional[str] = typer.Option(None, "--name", help="Eigener Name für ein neues Album (nur mit einer Reise)"),
+    neu: bool = NeuOpt, json_: bool = JsonOpt, csv_: bool = CsvOpt,
+):
+    """Albumvorschläge: Reisen erkennen und mit vorhandenen Alben beider Benutzer abgleichen."""
+    svc = _service()
+    if neu:
+        with err.status("Lese Bibliothek ein …"):
+            _run(svc.scan)
+    if anlegen:
+        sel = [{"id": i} for i in anlegen]
+        if name:
+            if len(sel) != 1:
+                err.print("[red]--name nur zusammen mit genau einer Reise[/red]")
+                raise typer.Exit(2)
+            sel[0].update(album=None, name=name)
+        res = _run(lambda: svc.apply_albums(sel))
+        if json_:
+            _emit_json(res)
+            return
+        for r in res["alben"]:
+            if "fehler" in r:
+                out.print(f"[red]{r['name']}: {r['fehler']}[/red]")
+            else:
+                out.print(f"[green]{r['name']}: {r['hinzugefuegt']} Medien hinzugefügt[/green]")
+            for h in r.get("hinweise", []):
+                out.print(f"[yellow]Hinweis:[/yellow] {h}")
+        return
+
+    views = [_run(lambda: svc.albums_view(limit=0))]
+    if alle:
+        views.append(_run(lambda: svc.albums_view(status="vorhanden", limit=0)))
+    trips = [t for v in views for t in v["reisen"]]
+    if json_:
+        _emit_json({**views[0], "reisen": trips})
+        return
+    if csv_:
+        _emit_csv([{"id": t["id"], "name": t["name"], "start": t["start"], "ende": t["ende"], "medien": t["anzahl"],
+                    "status": t["status"], "album": t["album"]["name"] if t["album"] else "", "fehlend": t["fehlend"]}
+                   for t in trips])
+        return
+    _stand(svc)
+    home = ", ".join(z["name"] for z in views[0]["zuhause"]) or "unbekannt (keine Fotos mit GPS)"
+    out.print(f"Zuhause: {home} · {views[0]['alben']} Alben abgeglichen")
+    t = Table(title="Reisen", title_justify="left")
+    for col in ("ID", "Reise", "Zeitraum", "Medien", "Vorschlag"):
+        t.add_column(col, overflow="fold")
+    for r in trips:
+        if r["status"] == "neu":
+            what = "neues Album"
+        elif r["status"] == "ergaenzen":
+            what = f"„{r['album']['name']}“ ergänzen (+{r['fehlend']})"
+        else:
+            what = f"[dim]schon in „{r['album']['name']}“[/dim]" if r["album"] else "[dim]schon in Alben[/dim]"
+        t.add_row(r["id"], r["name"], f"{r['start'][:10]} – {r['ende'][:10]}", str(r["anzahl"]), what)
+    out.print(t)
+    out.print("\nAnlegen mit --anlegen ID (mehrfach möglich)")
+
+
 @app.command()
 def tags(
     anwenden: bool = typer.Option(False, "--anwenden", help="Fehlende Tags tatsächlich setzen"),

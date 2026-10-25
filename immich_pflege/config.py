@@ -111,6 +111,8 @@ class Settings:
     location_skip_screenshots: bool = True
     dup_image_hash: bool = True
     dup_edit_keep: str = "bearbeitung"  # bearbeitung | original
+    album_min_km: int = 50  # Reise = so weit weg von zu Hause
+    album_min_media: int = 20  # Reisen mit weniger Medien werden nicht vorgeschlagen
     web_user: str | None = None
     web_password: str | None = None  # nur aus .env (Klartext)
     web_password_hash: str | None = None  # aus der Oberfläche
@@ -233,6 +235,8 @@ class Settings:
             review_album=pick("REVIEW_ALBUM", "review_album", "Duplikat-Prüfung", lambda v: str(v).strip()),
             location_max_hours=pick("LOCATION_MAX_HOURS", "location_max_hours", 2.0, parse_hours),
             dup_edit_keep=pick("DUP_EDIT_KEEP", "dup_edit_keep", "bearbeitung", parse_edit_keep),
+            album_min_km=pick("ALBUM_MIN_KM", "album_min_km", 50, parse_min_km),
+            album_min_media=pick("ALBUM_MIN_MEDIA", "album_min_media", 20, parse_min_media),
             dup_image_hash=pick("DUP_IMAGE_HASH", "dup_image_hash", True, lambda v: _bool(v, True)),
             location_skip_screenshots=pick("LOCATION_SKIP_SCREENSHOTS", "location_skip_screenshots", True,
                                            lambda v: _bool(v, True)),
@@ -261,6 +265,8 @@ class Settings:
             "location_skip_screenshots": self.location_skip_screenshots,
             "dup_image_hash": self.dup_image_hash,
             "dup_edit_keep": self.dup_edit_keep,
+            "album_min_km": self.album_min_km,
+            "album_min_media": self.album_min_media,
             "web_user": self.web_user or "",
             "login_aktiv": self.auth_enabled,
             "gesperrt": sorted(self.locked),
@@ -321,6 +327,8 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
     attempt("location_skip_screenshots", lambda v: _bool(v, True))
     attempt("dup_image_hash", lambda v: _bool(v, True))
     attempt("dup_edit_keep", parse_edit_keep)
+    attempt("album_min_km", parse_min_km)
+    attempt("album_min_media", parse_min_media)
 
     attempt("auto_scan", parse_auto_scan)
     attempt("auto_scan_time", parse_time)
@@ -398,6 +406,24 @@ def parse_edit_keep(value: Any) -> str:
     if v not in ("bearbeitung", "original"):
         raise ConfigError(f"Bei Bearbeitungen behalten: 'bearbeitung' oder 'original' (ist: {value!r})")
     return v
+
+
+def _int_range(value: Any, low: int, high: int, label: str) -> int:
+    try:
+        n = int(float(str(value).replace(",", ".")))
+    except ValueError as exc:
+        raise ConfigError(f"{label} muss eine ganze Zahl sein") from exc
+    if not low <= n <= high:
+        raise ConfigError(f"{label} muss zwischen {low} und {high} liegen")
+    return n
+
+
+def parse_min_km(value: Any) -> int:
+    return _int_range(value, 5, 2000, "Entfernung für Reisen (km)")
+
+
+def parse_min_media(value: Any) -> int:
+    return _int_range(value, 3, 1000, "Mindestzahl Medien für Albumvorschläge")
 
 
 def parse_auto_scan(value: Any) -> str:

@@ -15,7 +15,7 @@ from .models import Asset
 
 log = logging.getLogger(__name__)
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2  # 2: mit Alben
 IGNORED_VISIBILITY = {"hidden", "locked"}  # Live-Photo-Videos bzw. gesperrter Ordner
 
 
@@ -36,6 +36,7 @@ class Library:
     assets: dict[str, Asset]
     immich_duplicates: list[ImmichDuplicate] = field(default_factory=list)
     review_albums: dict[str, str | None] = field(default_factory=dict)  # name -> album id
+    albums: dict[str, dict[str, Any]] = field(default_factory=dict)  # alle anderen Alben, siehe read_albums
     warnings: list[str] = field(default_factory=list)
     immich_url: str = ""
 
@@ -61,6 +62,7 @@ class Library:
             "assets": [a.to_dict() for a in self.assets.values()],
             "immich_duplicates": [d.__dict__ for d in self.immich_duplicates],
             "review_albums": self.review_albums,
+            "albums": self.albums,
             "warnings": self.warnings,
             "immich_url": self.immich_url,
         }
@@ -77,6 +79,7 @@ class Library:
             assets={a["id"]: Asset.from_dict(a) for a in data["assets"]},
             immich_duplicates=[ImmichDuplicate(**d) for d in data.get("immich_duplicates", [])],
             review_albums=data.get("review_albums", {}),
+            albums=data.get("albums", {}),
             warnings=data.get("warnings", []),
             immich_url=data.get("immich_url", ""),
         )
@@ -110,6 +113,41 @@ def find_review_album(client: ImmichClient, name: str) -> str | None:
         if album.get("albumName") == name:
             return album["id"]
     return None
+
+
+def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any]],
+                skip: set[str]) -> dict[str, dict[str, Any]]:
+    """Alle Alben, die einer der Benutzer sieht (eigene und geteilte), mit Besitzer, Rollen
+    und Mitgliedern. ``skip``: Prüf-Alben."""
+    names = {u["id"]: n for n, u in users.items()}
+    albums: dict[str, dict[str, Any]] = {}
+    for name, client in clients.items():
+        for al in client.albums():
+            if al["id"] in skip:
+                continue
+            entry = albums.get(al["id"])
+            if entry is None:
+                roles: dict[str, str] = {}
+                owner_id = al.get("ownerId")
+                for au in al.get("albumUsers") or []:
+                    uid = (au.get("user") or {}).get("id")
+                    if au.get("role") == "owner":
+                        owner_id = uid
+                    elif uid in names:
+                        roles[names[uid]] = au.get("role") or "viewer"
+                owner = names.get(owner_id)
+                if owner:
+                    roles[owner] = "owner"
+                entry = albums[al["id"]] = {
+                    "id": al["id"], "name": al.get("albumName") or "", "besitzer": owner,
+                    "rollen": roles, "anzahl": al.get("assetCount") or 0,
+                    "start": al.get("startDate"), "ende": al.get("endDate"), "medien": set(),
+                }
+            # Jeder Benutzer liefert zumindest seine eigenen Medien im Album
+            entry["medien"] |= client.album_asset_ids(al["id"])
+    for entry in albums.values():
+        entry["medien"] = sorted(entry["medien"])
+    return albums
 
 
 def scan_library(clients: dict[str, ImmichClient], review_album: str) -> Library:
@@ -177,6 +215,9 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str) -> Library
         log.info("%s: %d Medien (%d ignoriert: Papierkorb/versteckt)", name, len(own), skipped)
         assets.update(own)
 
+    albums = read_albums(clients, users, {a for a in review_albums.values() if a})
+    log.info("%d Alben gelesen", len(albums))
+
     duration = round(time.monotonic() - started, 2)
     log.info("Einlesen fertig: %d Medien in %.1f s", len(assets), duration)
     return Library(
@@ -187,5 +228,6 @@ def scan_library(clients: dict[str, ImmichClient], review_album: str) -> Library
         assets=assets,
         immich_duplicates=duplicates,
         review_albums=review_albums,
+        albums=albums,
         warnings=warnings,
     )

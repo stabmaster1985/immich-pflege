@@ -6,6 +6,7 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 |---|---|
 | **Duplikate** | Findet doppelte Medien über beide Benutzer und über Uploads und externe Bibliotheken hinweg: per Prüfsumme, Dateiname + Aufnahmezeit, Bild-Fingerabdruck (z. B. WhatsApp-Kopien) und Immichs eigener Erkennung. Jede Gruppe hat eine Art (identisch, sehr wahrscheinlich, ähnlich) und einen Behalten-Vorschlag. Nicht behaltene Kopien kommen ins Album „Duplikat-Prüfung“ oder in den Papierkorb. |
 | **Ohne Ort** | Medien ohne GPS bekommen einen Ortsvorschlag mit Sicherheit (sicher, wahrscheinlich, unsicher) aus den GPS-Fotos beider Benutzer, zusammengefasst nach Ort und Serie. Für den Rest gibt es die Ortssuche von Immich. Screenshots werden ausgeblendet. |
+| **Alben** | Erkennt Reisen (weg von zu Hause, beide Benutzer zusammen) und schlägt Alben vor. Vorher wird gegen alle vorhandenen Alben beider Benutzer abgeglichen: schon vorhanden, ergänzen oder neu. Neue Alben werden mit dem anderen Benutzer geteilt. |
 | **Tags** | Massen-Tagging nach Regeln, die du in der Oberfläche anlegst. Tags werden nur ergänzt, nie entfernt. |
 
 Alles startet als **Vorschau**. In der Oberfläche wird Bestätigtes zuerst nur **vorgemerkt** und verschwindet aus der Übersicht. Unter **✓ Vorgemerkt** prüfst du alles noch einmal und überträgst es dann per Klick an Immich.
@@ -105,7 +106,7 @@ Alternativ startest du den Workflow per **Test workflow** oder, wenn aktiviert, 
 
 ## Oberfläche und Hilfe
 
-Fünf Tabs (**Duplikate**, **Ohne Ort**, **Tags**, **✓ Vorgemerkt**, **⚙ Einstellungen**), unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
+Sechs Tabs (**Duplikate**, **Ohne Ort**, **Alben**, **Tags**, **✓ Vorgemerkt**, **⚙ Einstellungen**), unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
 
 **Jeder Tab hat oben ein „?“** mit einer ausführlichen Erklärung: wie Treffer und Vorschläge entstehen, nach welchen Kriterien bewertet wird und wo die Grenzen liegen. Dieselben Texte liegen im Repository:
 
@@ -113,6 +114,7 @@ Fünf Tabs (**Duplikate**, **Ohne Ort**, **Tags**, **✓ Vorgemerkt**, **⚙ Ein
 |---|---|
 | Duplikate: Quellen, Arten, Behalten-Vorschlag, Schutzregeln, Bild-Fingerabdruck | [`immich_pflege/hilfe/duplikate.md`](immich_pflege/hilfe/duplikate.md) |
 | Fotos ohne Ort: Kriterien und Sicherheit, Serien, Ortssuche, Fehlerquellen | [`immich_pflege/hilfe/ohne-ort.md`](immich_pflege/hilfe/ohne-ort.md) |
+| Albumvorschläge: Reise-Erkennung, Abgleich mit vorhandenen Alben, Teilen | [`immich_pflege/hilfe/alben.md`](immich_pflege/hilfe/alben.md) |
 | Massen-Tagging: Regelfelder, Vorschau, YAML | [`immich_pflege/hilfe/tags.md`](immich_pflege/hilfe/tags.md) |
 | Vorgemerkt: erst sammeln, prüfen, dann übertragen | [`immich_pflege/hilfe/vorgemerkt.md`](immich_pflege/hilfe/vorgemerkt.md) |
 | Einstellungen: Immich, automatisch einlesen, Zugang, Updates | [`immich_pflege/hilfe/einstellungen.md`](immich_pflege/hilfe/einstellungen.md) |
@@ -153,6 +155,8 @@ docker exec -it immich-pflege pflege ohne-ort --datum 2024-07-16 --ort-uebernehm
 docker exec -it immich-pflege pflege ohne-ort --id <medien-id> --ort-uebernehmen
 
 # Tags
+docker exec -it immich-pflege pflege alben --alle                 # Albumvorschläge (mit erledigten)
+docker exec -it immich-pflege pflege alben --anlegen r1a2b3c4d5e6  # Album anlegen bzw. ergänzen
 docker exec -it immich-pflege pflege tags                         # Vorschau
 docker exec -it immich-pflege pflege tags --regel "Italien-Urlaub 2024" --anwenden
 ```
@@ -177,8 +181,11 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/api/no-location` | Medien ohne Ort als Serien mit Mengen je Ort (`orte`) und Monat (`monate`). Parameter: `ort`, `monat`, `overview=true` (nur die Mengen), `max_hours`, `offset`, `limit`, `only_suggestions`, `min_confidence` |
 | POST | `/api/no-location/apply` | Ort übernehmen: `ids`, `series`, `ort`/`monat` (alle Serien eines Ortes oder Monats), `min_confidence` (`hoch`/`mittel`/`niedrig`), optional `place` `{breite, laenge, name}` |
 | GET | `/api/places?q=Siena` | Ortssuche über Immich |
+| GET | `/api/album-suggestions` | Reisen mit Albumvorschlag. Parameter: `status` (`neu`, `ergaenzen`, `vorhanden`; ohne = offene), `jahr`, `ignoriert`, `offset`, `limit` |
+| POST | `/api/album-suggestions/apply` | Direkt anlegen/ergänzen: `{"trips": [{"id": "…"}]}`, optional je Reise `album` (Album-ID, `null` = neues Album) und `name` |
+| POST | `/api/album-suggestions/ignore` | „Kein Album“: `{"trips": [...]}`, mit `"undo": true` wieder aufnehmen |
 | GET | `/api/tags` | Regel-Vorschau (`rules=Name`, mehrfach möglich) |
-| GET | `/api/help/{thema}` | Hilfetext als Markdown (`duplikate`, `ohne-ort`, `tags`, `vorgemerkt`, `einstellungen`) |
+| GET | `/api/help/{thema}` | Hilfetext als Markdown (`duplikate`, `ohne-ort`, `alben`, `tags`, `vorgemerkt`, `einstellungen`) |
 | GET/PUT | `/api/rules` | Regeln lesen/speichern (`{"regeln": [...]}` oder `{"yaml": "..."}`) |
 | GET/PUT | `/api/settings` | Einstellungen (Keys nur maskiert) |
 | GET | `/api/version` | laufende Version und ob es auf GitHub Neues gibt |
@@ -191,6 +198,7 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/api/staged` | Vormerkliste mit Einträgen und Summen |
 | POST | `/api/staged/duplicates` | Duplikat-Aktion vormerken (Felder wie `/api/duplicates/apply`) |
 | POST | `/api/staged/no-location` | Orte vormerken (Felder wie `/api/no-location/apply`, dazu `label`) |
+| POST | `/api/staged/albums` | Alben vormerken (Felder wie `/api/album-suggestions/apply`) |
 | POST | `/api/staged/tags` | Regeln vormerken: `{"rules": [...]}` |
 | DELETE | `/api/staged/{id}` | Eintrag zurücknehmen |
 | POST | `/api/staged/apply` | Vorgemerktes übertragen: `ids` (ohne = alle), bei Papierkorb `confirm: "PAPIERKORB"` |

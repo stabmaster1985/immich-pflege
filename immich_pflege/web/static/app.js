@@ -7,6 +7,7 @@ const S = {
   status: null,
   dup: { groups: [], total: 0, open: 0, keep: {}, sel: new Set(), includeDone: false, art: null, monat: null, crossUser: false, ignored: false, loaded: false, info: null },
   loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, loaded: false, info: null },
+  alb: { trips: [], total: 0, status: null, jahr: null, ignored: false, sel: new Set(), choice: {}, loaded: false, info: null },
   tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [], items: [], fileErrors: [], users: [], yaml: "" },
   set: { data: null, loaded: false },
   stage: { entries: [], info: null, loaded: false },
@@ -180,7 +181,7 @@ async function rescan() {
   try {
     const r = await api("api/scan", { method: "POST", body: { wait: true } });
     toast(`${r.gesamt} Medien in ${r.dauer_s.toFixed(1).replace(".", ",")} s eingelesen`);
-    S.dup.loaded = S.loc.loaded = S.tags.loaded = false;
+    S.dup.loaded = S.loc.loaded = S.alb.loaded = S.tags.loaded = false;
     await loadStatus(false);
     await loadTab(S.tab, true);
     loadOtherCounts();
@@ -956,6 +957,8 @@ async function loadSettings() {
   $("#set-shots").checked = d.location_skip_screenshots; lock("#set-shots", "location_skip_screenshots");
   $("#set-fp").checked = d.dup_image_hash; lock("#set-fp", "dup_image_hash");
   $("#set-edit").value = d.dup_edit_keep; lock("#set-edit", "dup_edit_keep");
+  $("#set-alb-km").value = d.album_min_km; lock("#set-alb-km", "album_min_km");
+  $("#set-alb-min").value = d.album_min_media; lock("#set-alb-min", "album_min_media");
   $("#set-web-user").value = d.web_user; lock("#set-web-user", "web_user");
   $("#set-web-pw").value = ""; lock("#set-web-pw", "web_password");
   $("#set-logout").hidden = !d.login_aktiv;
@@ -1028,6 +1031,8 @@ function readSettingsForm() {
   put("location_skip_screenshots", $("#set-shots").checked);
   put("dup_image_hash", $("#set-fp").checked);
   put("dup_edit_keep", $("#set-edit").value);
+  put("album_min_km", $("#set-alb-km").value);
+  put("album_min_media", $("#set-alb-min").value);
   if (!d.gesperrt.includes("users")) body.benutzer = readUsers();
   put("auto_scan", $("#set-auto").value);
   put("auto_scan_time", $("#set-auto-time").value);
@@ -1080,7 +1085,7 @@ async function saveSettings(btn) {
     await loadStatus(true);
     await loadSettings();
     loadVersion();
-    S.dup.loaded = S.loc.loaded = S.tags.loaded = false;
+    S.dup.loaded = S.loc.loaded = S.alb.loaded = S.tags.loaded = false;
     if (accessChanged && r.eingerichtet) toast("Gespeichert – Bibliothek wird beim nächsten Öffnen neu eingelesen");
   } catch (e) {
     toast(e.details.length ? e.details.join(" · ") : e.message, true);
@@ -1304,8 +1309,176 @@ async function openHelp(topic) {
 }
 
 
+
+/* -------------------------------------------------------------- Alben */
+const PAGE_ALB = 20;
+const ALB_STATUS = { neu: "Neues Album", ergaenzen: "Album ergänzen", vorhanden: "Schon in Alben" };
+
+async function loadAlbums(reset) {
+  const a = S.alb;
+  if (reset) { a.trips = []; a.sel.clear(); a.choice = {}; $("#alb-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
+  const params = new URLSearchParams({ offset: a.trips.length, limit: PAGE_ALB, ignoriert: a.ignored });
+  if (a.status) params.set("status", a.status);
+  if (a.jahr) params.set("jahr", a.jahr);
+  const r = await api("api/album-suggestions?" + params);
+  if (a.jahr && !r.jahre.some((j) => j.key === a.jahr)) { a.jahr = null; return loadAlbums(true); }
+  if (reset) $("#alb-list").replaceChildren();
+  a.total = r.gesamt; a.info = r; a.loaded = true;
+  renderAlbumFilters(r);
+  for (const t of r.reisen) {
+    a.trips.push(t);
+    $("#alb-list").append(renderTrip(t));
+  }
+  if (!a.trips.length) {
+    $("#alb-list").replaceChildren(h("p", { class: "empty" },
+      !r.zuhause.length ? "Noch keine Fotos mit GPS – ohne Zuhause lassen sich keine Reisen erkennen."
+        : a.ignored ? "Keine ausgeblendeten Reisen." : a.status === "vorhanden" ? "Noch keine Reise liegt vollständig in Alben."
+          : a.jahr || a.status ? "Nichts mit diesem Filter." : "Alle Reisen liegen schon in Alben 🎉"));
+  }
+  const home = r.zuhause.map((z) => z.name).join(", ");
+  $("#alb-summary").textContent = home
+    ? `Zuhause: ${home} · Reise ab ${r.min_km} km und ${r.min_medien} Medien · ${n(r.alben, "Album", "Alben")} beider Benutzer abgeglichen`
+    : "";
+  if (!a.status && !a.jahr && !a.ignored) $("#count-alb").textContent = r.offen ? `(${r.offen})` : "";
+  $("#alb-more").hidden = a.trips.length >= a.total;
+  updateActionbar();
+}
+
+function renderAlbumFilters(r) {
+  const a = S.alb;
+  const statusSel = h("select", { onchange: (e) => { a.status = e.target.value || null; loadTab("alb", true); } },
+    h("option", { value: "" }, `offen (${r.offen})`),
+    ...Object.entries(ALB_STATUS).map(([k, v]) => h("option", { value: k }, `${v} (${r.status[k]})`)));
+  statusSel.value = a.status || "";
+  const yearSel = h("select", { onchange: (e) => { a.jahr = e.target.value || null; loadTab("alb", true); } },
+    h("option", { value: "" }, "alle Jahre"),
+    ...r.jahre.map((j) => h("option", { value: j.key }, `${j.key} (${j.anzahl})`)));
+  yearSel.value = a.jahr || "";
+  $("#alb-filters").replaceChildren(
+    h("label", { class: "field grow" }, "Zeigen", statusSel),
+    h("label", { class: "field grow" }, "Jahr", yearSel),
+    h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: a.ignored,
+      onchange: (e) => { a.ignored = e.target.checked; loadTab("alb", true); } }), `ausgeblendete (${r.ignoriert})`));
+}
+
+function fmtTripRange(t) {
+  const f = (s) => s.slice(8, 10) + "." + s.slice(5, 7) + ".";
+  const y = t.ende.slice(0, 4);
+  return t.tage === 1 ? `${f(t.start)}${y}` : `${f(t.start)}${t.start.slice(0, 4) !== y ? t.start.slice(0, 4) : ""} – ${f(t.ende)}${y}`;
+}
+
+function albumLabel(al) {
+  const shared = al.geteilt_mit.length ? `, geteilt mit ${al.geteilt_mit.join(", ")}` : "";
+  return `„${al.name}“ (${al.besitzer}${shared})`;
+}
+
+// Gewähltes Ziel einer Reise: Album-ID oder null (= neues Album)
+function tripChoice(t) {
+  const c = S.alb.choice[t.id];
+  if (c && "album" in c) return c;
+  return { album: t.status === "ergaenzen" && t.album ? t.album.id : null, name: t.name };
+}
+
+function renderTrip(t) {
+  const a = S.alb;
+  const card = h("article", { class: "card" + (a.sel.has(t.id) ? " selected" : "") });
+  const users = Object.entries(t.benutzer).map(([u, c]) => `${u} ${c}`).join(" · ");
+  const status = t.status === "vorhanden" ? "conf-hoch" : t.status === "ergaenzen" ? "conf-mittel" : "conf-niedrig";
+  const head = h("div", { class: "card-head" },
+    t.status !== "vorhanden" && !a.ignored ? h("input", { type: "checkbox", checked: a.sel.has(t.id), "aria-label": "Reise auswählen",
+      onchange: (e) => { e.target.checked ? a.sel.add(t.id) : a.sel.delete(t.id); card.classList.toggle("selected", e.target.checked); updateActionbar(); } }) : null,
+    h("div", { class: "grow" }, h("h2", {}, "🧳 " + t.name),
+      h("span", { class: "muted" }, `${fmtTripRange(t)} · ${n(t.tage, "Tag", "Tage")} · ${n(t.anzahl, "Medium", "Medien")}`)),
+    h("span", { class: "chip " + status }, t.status_text));
+  card.append(head,
+    h("div", { class: "muted small" }, users + (t.orte.length ? " · " + t.orte.join(", ") : "")));
+
+  // Was es schon gibt
+  const found = h("div", { class: "alb-found" });
+  if (t.status === "vorhanden") {
+    found.append(t.album ? `Liegt schon in ${albumLabel(t.album)}.` : "Liegt schon verteilt in Alben:");
+    if (t.fehlend && t.album) found.append(` ${n(t.fehlend, "Medium fehlt", "Medien fehlen")} noch.`);
+  } else if (t.status === "ergaenzen") {
+    found.append(`Passendes Album gefunden: ${albumLabel(t.album)} – enthält ${t.album.in_reise} von ${t.anzahl}, ${t.fehlend} fehlen.`);
+  } else {
+    found.append(`Kein passendes Album – geprüft: ${n(S.alb.info.alben, "Album", "Alben")} beider Benutzer.`);
+  }
+  const others = t.kandidaten.filter((k) => !t.album || k.id !== t.album.id);
+  if (others.length) found.append(h("div", { class: "muted small" }, (t.status === "vorhanden" && !t.album ? "" : "Auch Fotos in: ")
+    + others.map((k) => `„${k.name}“ (${k.in_reise})`).join(", ")));
+  card.append(found);
+
+  if (t.beispiele.length) card.append(h("div", { class: "strip" }, t.beispiele.map((m) => thumb(m))));
+
+  if (a.ignored) {
+    card.append(h("div", { class: "row-gap" }, h("button", { type: "button", class: "btn small", onclick: () => ignoreTrip(t, true) }, "Wieder aufnehmen")));
+    return card;
+  }
+  if (t.status === "vorhanden" && !t.fehlend) return card;
+
+  // Ziel wählen: vorhandenes Album ergänzen oder neues anlegen
+  const choice = tripChoice(t);
+  const nameIn = h("input", { type: "text", value: choice.name || t.name, "aria-label": "Name des neuen Albums",
+    oninput: (e) => { a.choice[t.id] = { ...tripChoice(t), name: e.target.value }; } });
+  const nameRow = h("label", { class: "f alb-name" }, "Name des neuen Albums", nameIn);
+  nameRow.hidden = choice.album !== null;
+  const targets = t.kandidaten.filter((k) => k.besitzer !== "anderer Benutzer");
+  const sel = h("select", { onchange: (e) => {
+    const album = e.target.value || null;
+    a.choice[t.id] = { album, name: nameIn.value };
+    nameRow.hidden = album !== null;
+  } },
+    ...targets.map((k) => h("option", { value: k.id }, `„${k.name}“ ergänzen`)),
+    h("option", { value: "" }, "Neues Album anlegen"));
+  sel.value = choice.album || "";
+  card.append(h("label", { class: "f" }, "Ziel", sel), nameRow,
+    h("div", { class: "row-gap" },
+      h("button", { type: "button", class: "btn small primary", onclick: (e) => stageTrips([t], e.currentTarget) }, "Vormerken"),
+      h("button", { type: "button", class: "btn small", onclick: () => ignoreTrip(t, false) }, "Kein Album")));
+  return card;
+}
+
+async function stageTrips(trips, btn) {
+  const body = { trips: trips.map((t) => {
+    const c = tripChoice(t);
+    return c.album ? { id: t.id, album: c.album } : { id: t.id, album: null, name: (c.name || t.name).trim() };
+  }) };
+  if (trips.length > 1) {
+    const ok = await confirmDialog({
+      title: "Alben vormerken?",
+      body: [h("ul", {}, trips.map((t) => {
+        const c = tripChoice(t);
+        const al = t.kandidaten.find((k) => k.id === c.album);
+        return h("li", {}, al ? `${t.name}: „${al.name}“ ergänzen` : `${t.name}: neues Album „${(c.name || t.name).trim()}“`);
+      })), h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter ✓ Vorgemerkt.")],
+      okLabel: "Vormerken",
+    });
+    if (!ok) return;
+  }
+  busy(btn, true);
+  try {
+    const r = await api("api/staged/albums", { method: "POST", body });
+    toast(`${n(r.vorgemerkt, "Album", "Alben")} vorgemerkt` + (r.hinweise.length ? " – mit Hinweisen, siehe ✓" : ""));
+    await afterStage("alb");
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function ignoreTrip(t, undo) {
+  try {
+    await api("api/album-suggestions/ignore", { method: "POST", body: { trips: [t.id], undo } });
+    toast(undo ? "Reise wieder aufgenommen" : "Ausgeblendet – kein Album für diese Reise");
+    await loadTab("alb", true);
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
 /* -------------------------------------------------------- Vorgemerkt */
-const STAGE_TYPES = [["duplikat", "Duplikate"], ["ort", "Orte"], ["tag", "Tags"]];
+const STAGE_TYPES = [["duplikat", "Duplikate"], ["ort", "Orte"], ["album", "Alben"], ["tag", "Tags"]];
 const STAGE_ACTION = { papierkorb: "Papierkorb", album: "Prüf-Album", keine: "–" };
 
 // Nach dem Vormerken: Quelle neu laden (Vorgemerktes ist dort weg) und Zähler aktualisieren
@@ -1359,6 +1532,7 @@ function renderStaged() {
             h("span", { class: "muted" }, `${n(e.anzahl, "Medium", "Medien")} · vorgemerkt ${fmtDateTime(e.erstellt)}`)),
           trash ? h("span", { class: "chip" }, `🗑 ${trash}`) : null),
         e.fehler ? h("div", { class: "banner err" }, "Letzte Übertragung fehlgeschlagen: " + e.fehler) : null,
+        typ === "album" && e.daten.hinweise.length ? h("div", { class: "banner warn" }, e.daten.hinweise.join(" · ")) : null,
         e.medien.length ? stageMedia(e) : null,
         h("div", { class: "row-gap stage-actions" },
           h("button", { type: "button", class: "btn small", onclick: (ev) => unstage(e, ev.currentTarget) }, "Zurücknehmen"),
@@ -1368,7 +1542,7 @@ function renderStaged() {
   updateActionbar();
 }
 
-const STAGE_SOURCE = { duplikat: "dup", ort: "loc", tag: "tags" };
+const STAGE_SOURCE = { duplikat: "dup", ort: "loc", album: "alb", tag: "tags" };
 
 async function unstage(e, btn) {
   busy(btn, true);
@@ -1450,6 +1624,20 @@ function updateActionbar() {
     } else {
       buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !sure, onclick: (e) => applyAllSure(e.currentTarget) }, `Alle sicheren (${sure})`));
     }
+  } else if (S.tab === "alb") {
+    const a = S.alb;
+    const open = a.trips.filter((t) => t.status !== "vorhanden");
+    const chosen = open.filter((t) => a.sel.has(t.id));
+    if (a.ignored) {
+      info.textContent = "Ausgeblendete Reisen";
+    } else if (chosen.length) {
+      info.textContent = `${n(chosen.length, "Reise", "Reisen")} gewählt`;
+      buttons.push(h("button", { class: "btn small primary", type: "button", onclick: (e) => stageTrips(chosen, e.currentTarget) }, "Vormerken"));
+    } else {
+      info.textContent = open.length ? "Reisen anhaken oder einzeln vormerken" : "Nichts offen";
+      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !open.length,
+        onclick: (e) => stageTrips(open, e.currentTarget) }, `Alle angezeigten (${open.length})`));
+    }
   } else if (S.tab === "stage") {
     const st = S.stage.info;
     const cnt = st ? st.anzahl : 0;
@@ -1479,12 +1667,13 @@ function loadTab(tab, force = false) {
   return p;
 }
 
-const TAB_TARGET = { dup: "#dup-list", loc: "#loc-list", tags: "#tags-list", stage: "#stage-list", set: "#set-welcome" };
+const TAB_TARGET = { dup: "#dup-list", loc: "#loc-list", alb: "#alb-list", tags: "#tags-list", stage: "#stage-list", set: "#set-welcome" };
 
 async function doLoadTab(tab, force) {
   try {
     if (tab === "dup" && (force || !S.dup.loaded)) await loadDuplicates(true);
     if (tab === "loc" && (force || !S.loc.loaded)) await loadLocation(true);
+    if (tab === "alb" && (force || !S.alb.loaded)) await loadAlbums(true);
     if (tab === "tags" && (force || !S.tags.loaded)) await loadTags();
     if (tab === "stage" && (force || !S.stage.loaded)) await loadStaged();
     if (tab === "set" && (force || !S.set.loaded)) { await loadSettings(); loadVersion(); }
@@ -1510,7 +1699,7 @@ function showTab(tab) {
 
 function loadOtherCounts() {
   if (S.status && !S.status.eingerichtet) return;
-  for (const t of ["dup", "loc", "tags", "stage"]) if (t !== S.tab) loadTab(t).then(updateActionbar);
+  for (const t of ["dup", "loc", "alb", "tags", "stage"]) if (t !== S.tab) loadTab(t).then(updateActionbar);
 }
 
 /* ------------------------------------------------------------- Start */
@@ -1526,6 +1715,7 @@ $("#loc-hours").addEventListener("change", (e) => {
   const v = parseFloat(String(e.target.value).replace(",", "."));
   if (v > 0 && v <= 48) { S.loc.hours = v; loadTab("loc", true); } else { e.target.value = S.loc.hours; }
 });
+$("#alb-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadAlbums(false).finally(() => busy(e.currentTarget, false)); });
 $("#tags-reload").addEventListener("click", () => loadTab("tags", true));
 document.querySelectorAll(".help-btn").forEach((b) => b.addEventListener("click", () => openHelp(b.dataset.help)));
 $("#rule-new").addEventListener("click", () => openRule(null));
@@ -1555,7 +1745,7 @@ $("#version-update").addEventListener("click", (e) => startUpdate(e.currentTarge
     await showTab("set");
     return;
   }
-  await showTab(["dup", "loc", "tags", "stage", "set"].includes(tab) ? tab : "dup");
+  await showTab(["dup", "loc", "alb", "tags", "stage", "set"].includes(tab) ? tab : "dup");
   // Nach dem ersten Laden (ggf. Einlesen) Status aktualisieren und Zähler der anderen Tabs holen
   loadStatus(false);
   loadOtherCounts();
