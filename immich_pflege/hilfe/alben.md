@@ -25,6 +25,8 @@ Beim Einlesen liest das Tool **alle Alben beider Benutzer** mit ihrem Inhalt, ei
 
 Unter **Ziel** kannst du statt des Vorschlags ein anderes passendes Album wählen oder doch ein neues anlegen.
 
+Neben jedem gefundenen Album stehen **App ↗** und **Web ↗**: Sie öffnen das Album in der Immich-App (`immich://album?id=…`) bzw. in der Weboberfläche, um vorher hineinzuschauen. Die App öffnet nur Alben, die das dort angemeldete Konto sehen darf (eigene und geteilte).
+
 ## Wem das Album gehört
 
 - **Neues Album:** Es gehört dem Benutzer mit den meisten Medien der Reise und wird mit dem anderen geteilt (als Bearbeiter), wenn auch von ihm Fotos dabei sind. Jeder fügt seine eigenen Fotos hinzu, so liegen am Ende die Fotos von euch beiden darin.

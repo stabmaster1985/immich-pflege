@@ -122,6 +122,15 @@ function openLinks(m) {
     web ? h("a", { href: `${web}/photos/${encodeURIComponent(m.id)}`, target: "_blank", rel: "noopener", title: "In Immich im Browser öffnen" }, "Web ↗") : null);
 }
 
+// Album öffnen: Immich-App (immich://album?id=…) oder Weboberfläche (/albums/<id>)
+function albumLinks(al) {
+  const web = S.status && S.status.link_url;
+  return h("span", { class: "open-links inline" },
+    h("a", { href: "immich://album?id=" + encodeURIComponent(al.id), title: `„${al.name}“ in der Immich-App öffnen` }, "App ↗"),
+    web ? h("a", { href: `${web}/albums/${encodeURIComponent(al.id)}`, target: "_blank", rel: "noopener",
+      title: `„${al.name}“ in Immich im Browser öffnen` }, "Web ↗") : null);
+}
+
 function busy(btn, on) {
   btn.disabled = on;
   btn.classList.toggle("busy", on);
@@ -2009,16 +2018,17 @@ function renderTrip(t) {
   // Was es schon gibt
   const found = h("div", { class: "alb-found" });
   if (t.status === "vorhanden") {
-    found.append(t.album ? `Liegt schon in ${albumLabel(t.album)}.` : "Liegt schon verteilt in Alben:");
-    if (t.fehlend && t.album) found.append(` ${n(t.fehlend, "Medium fehlt", "Medien fehlen")} noch.`);
+    found.append(t.album ? `Liegt schon in ${albumLabel(t.album)}. ` : "Liegt schon verteilt in Alben:");
+    if (t.fehlend && t.album) found.append(`${n(t.fehlend, "Medium fehlt", "Medien fehlen")} noch. `);
+    if (t.album) found.append(albumLinks(t.album));
   } else if (t.status === "ergaenzen") {
-    found.append(`Passendes Album gefunden: ${albumLabel(t.album)} – enthält ${t.album.in_reise} von ${t.anzahl}, ${t.fehlend} fehlen.`);
+    found.append(`Passendes Album gefunden: ${albumLabel(t.album)} – enthält ${t.album.in_reise} von ${t.anzahl}, ${t.fehlend} fehlen. `, albumLinks(t.album));
   } else {
     found.append(`Kein passendes Album – geprüft: ${n(S.alb.info.alben, "Album", "Alben")} beider Benutzer.`);
   }
   const others = t.kandidaten.filter((k) => !t.album || k.id !== t.album.id);
-  if (others.length) found.append(h("div", { class: "muted small" }, (t.status === "vorhanden" && !t.album ? "" : "Auch Fotos in: ")
-    + others.map((k) => `„${k.name}“ (${k.in_reise})`).join(", ")));
+  if (others.length) found.append(h("div", { class: "muted small" }, (t.status === "vorhanden" && !t.album ? "" : "Auch Fotos in: "),
+    ...others.map((k, i) => h("span", { class: "alb-other" }, (i ? " · " : "") + `„${k.name}“ (${k.in_reise}) `, albumLinks(k)))));
   card.append(found);
 
   if (t.beispiele.length) card.append(h("div", { class: "strip" }, t.beispiele.map((m) => thumb(m))));
@@ -2236,6 +2246,7 @@ function renderStaged() {
           trash ? h("span", { class: "chip" }, `🗑 ${trash}`) : null),
         e.fehler ? h("div", { class: "banner err" }, "Letzte Übertragung fehlgeschlagen: " + e.fehler) : null,
         typ === "album" && e.daten.hinweise.length ? h("div", { class: "banner warn" }, e.daten.hinweise.join(" · ")) : null,
+        typ === "album" && e.daten.album_id ? h("div", { class: "small" }, "Album ansehen: ", albumLinks({ id: e.daten.album_id, name: e.daten.name })) : null,
         e.medien.length ? stageMedia(e) : null,
         h("div", { class: "row-gap stage-actions" },
           h("button", { type: "button", class: "btn small", onclick: (ev) => unstage(e, ev.currentTarget) }, "Zurücknehmen"),
