@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any
 
 import httpx
@@ -76,6 +77,9 @@ class Pflege:
         self._pairs_cache: tuple[tuple, list[tuple[str, str]]] | None = None
         self._staging: StagingStore | None = None
         self._trips_cache: tuple[tuple, Any] | None = None
+        self._groups_cache: tuple[tuple, list[DuplicateGroup]] | None = None
+        self._analysis_cache: tuple[tuple, Any] | None = None
+        self._calc_lock = threading.RLock()  # gleiche Berechnung nicht doppelt (Vorberechnung + Anfrage)
 
     # ------------------------------------------------------------ Bibliothek
     def cached_library(self) -> Library | None:
@@ -115,14 +119,33 @@ class Pflege:
             lib.save(self.settings.cache_file)
         if self.settings.dup_image_hash:
             self.start_hashing()
+        self.warm_up_background()
         return lib
 
     def _save(self) -> None:
         if self._lib is not None:
+            self._lib.rev += 1  # Zwischenergebnisse (Gruppen, Serien, Reisen) neu berechnen
             self._lib.save(self.settings.cache_file)
 
+    def warm_up(self) -> None:
+        """Duplikate, Orte und Reisen vorab berechnen, damit die Tabs sofort da sind."""
+        if not self.clients or self.cached_library() is None:
+            return
+        started = time.monotonic()
+        try:
+            self.all_groups()
+            self._analysis()
+            self._trips()
+        except Exception as exc:  # nur Vorarbeit – Fehler zeigen sich beim echten Aufruf
+            log.warning("Vorberechnung fehlgeschlagen: %s", exc)
+            return
+        log.info("Vorberechnung fertig in %.1f s", time.monotonic() - started)
+
+    def warm_up_background(self) -> None:
+        threading.Thread(target=self.warm_up, name="vorberechnen", daemon=True).start()
+
     def status(self, check_server: bool = True) -> dict[str, Any]:
-        lib = self._lib or Library.load(self.settings.cache_file)
+        lib = self.cached_library()  # einmal laden und behalten statt bei jedem Status neu
         out: dict[str, Any] = {
             "version": __version__,
             "immich_url": self.settings.immich_url,
@@ -192,10 +215,20 @@ class Pflege:
     def ignore_list(self) -> IgnoreList:
         return IgnoreList(self.settings.data_dir / "duplikate_ignoriert.json")
 
+    def all_groups(self) -> list[DuplicateGroup]:
+        """Alle Gruppen, zwischengespeichert bis sich Bibliothek oder Fingerabdrücke ändern."""
+        lib = self.library()
+        pairs = self.image_pairs()
+        key = (id(lib), lib.rev, self._pairs_cache[0] if self._pairs_cache else None, self.settings.dup_edit_keep)
+        with self._calc_lock:
+            cache = self._groups_cache
+            if not cache or cache[0] != key:
+                cache = self._groups_cache = (key, find_groups(lib, pairs, self.settings.dup_edit_keep))
+        return cache[1]
+
     def duplicate_groups(self, include_ignored: bool = False) -> list[DuplicateGroup]:
         staged = self.staging.asset_ids("duplikat")
-        groups = [g for g in find_groups(self.library(), self.image_pairs(), self.settings.dup_edit_keep)
-                  if not (g.asset_ids & staged)]
+        groups = [g for g in self.all_groups() if not (g.asset_ids & staged)]
         if include_ignored:
             return groups
         ignored = self.ignore_list()
@@ -222,8 +255,7 @@ class Pflege:
         """Gruppen mit Filtern. ``ignored=True`` zeigt nur die als „kein Duplikat“ markierten."""
         lib = self.library()
         staged = self.staging.asset_ids("duplikat")
-        all_groups = [g for g in find_groups(lib, self.image_pairs(), self.settings.dup_edit_keep)
-                      if not (g.asset_ids & staged)]
+        all_groups = [g for g in self.all_groups() if not (g.asset_ids & staged)]
         ignore = self.ignore_list()
         n_ignored = sum(1 for g in all_groups if ignore.contains(g))
         base = [g for g in all_groups if ignore.contains(g) == ignored]
@@ -284,7 +316,7 @@ class Pflege:
             raise ActionError("Keine Gruppen angegeben")
         with self._lock:
             lib = self.library()
-            groups = {g.id: g for g in find_groups(lib, self.image_pairs(), self.settings.dup_edit_keep)}
+            groups = {g.id: g for g in self.all_groups()}
             missing = [i for i in group_ids if i not in groups]
             if missing:
                 raise ActionError(f"Gruppe(n) {', '.join(missing)} nicht gefunden – bitte neu laden")
@@ -326,8 +358,16 @@ class Pflege:
     # ------------------------------------------------------------- Ohne Ort
     def _analysis(self, max_hours: float | None = None):
         hours = max_hours or self.settings.location_max_hours
-        return hours, analyze(self.library(), hours, self.settings.location_include_external,
-                              self.settings.location_skip_screenshots, self.staging.asset_ids("ort"))
+        lib = self.library()
+        staged = frozenset(self.staging.asset_ids("ort"))
+        key = (id(lib), lib.rev, hours, self.settings.location_include_external,
+               self.settings.location_skip_screenshots, staged)
+        with self._calc_lock:
+            cache = self._analysis_cache
+            if not cache or cache[0] != key:
+                cache = self._analysis_cache = (key, analyze(lib, hours, self.settings.location_include_external,
+                                                             self.settings.location_skip_screenshots, staged))
+        return hours, cache[1]
 
     @staticmethod
     def _filter_series(series, only_suggestions=False, min_confidence=None, ort=None, monat=None):
@@ -554,11 +594,11 @@ class Pflege:
         """Reisen ohne vorgemerkte; ``ignored`` = als „kein Album“ markiert."""
         lib = self.library()
         # Berechnung nur neu, wenn sich Bibliothek, Alben oder Einstellungen geändert haben
-        key = (id(lib), lib.scanned_at, len(lib.assets), sum(len(a["medien"]) for a in lib.albums.values()),
-               len(lib.albums), self.settings.album_min_km, self.settings.album_min_media)
-        if not self._trips_cache or self._trips_cache[0] != key:
-            self._trips_cache = (key, suggest(lib, self.settings.album_min_km, self.settings.album_min_media))
-        homes, trips = self._trips_cache[1]
+        key = (id(lib), lib.rev, self.settings.album_min_km, self.settings.album_min_media)
+        with self._calc_lock:
+            if not self._trips_cache or self._trips_cache[0] != key:
+                self._trips_cache = (key, suggest(lib, self.settings.album_min_km, self.settings.album_min_media))
+            homes, trips = self._trips_cache[1]
         staged = self.staging.id_sets("album")
         ignore = self.album_ignore_list()
         out = [(t, ignore.contains(t.ids)) for t in trips if not overlaps(t.ids, staged)]

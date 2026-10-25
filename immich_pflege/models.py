@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import date, datetime, timezone
 from functools import cached_property
 from typing import Any
@@ -81,7 +81,8 @@ class Asset:
         return ", ".join(parts) or None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        # schneller als dataclasses.asdict (kopiert nicht rekursiv); ohne zwischengespeicherte Werte
+        return {f: getattr(self, f) for f in _FIELDS}
 
     def summary(self) -> dict[str, Any]:
         """Kompakte Darstellung für API und Oberfläche."""
@@ -136,3 +137,6 @@ class Asset:
             model=exif.get("model"),
             file_size=exif.get("fileSizeInByte"),
         )
+
+
+_FIELDS = tuple(f.name for f in fields(Asset))

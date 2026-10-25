@@ -40,6 +40,7 @@ class Library:
     albums: dict[str, dict[str, Any]] = field(default_factory=dict)  # alle anderen Alben, siehe read_albums
     warnings: list[str] = field(default_factory=list)
     immich_url: str = ""
+    rev: int = 0  # Änderungszähler (nicht gespeichert): ungültig machen von Zwischenergebnissen
 
     def assets_of(self, user: str) -> list[Asset]:
         return [a for a in self.assets.values() if a.owner == user]

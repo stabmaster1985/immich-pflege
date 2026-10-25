@@ -36,6 +36,7 @@ log = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
 HELP = Path(__file__).parent.parent / "hilfe"
 HELP_TOPICS = ("duplikate", "ohne-ort", "alben", "tags", "vorgemerkt", "einstellungen")
+SLOW_REQUEST_S = 2.0  # langsamere API-Aufrufe landen im Log
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 OPEN_PATHS = {"/healthz", "/login", "/api/login", "/api/logout", "/favicon.ico"}
 OPEN_PREFIXES = ("/static/",)
@@ -143,6 +144,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     async def lifespan(_app: FastAPI):
         if auto_scan_enabled:
             app.state.auto_scan.start()
+        app.state.service.warm_up_background()  # Zwischenspeicher laden und Tabs vorab berechnen
         yield
         app.state.auto_scan.stop()
 
@@ -182,6 +184,15 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
 
     def client_id(request: Request) -> str:
         return request.client.host if request.client else "?"
+
+    @app.middleware("http")
+    async def log_slow(request: Request, call_next):
+        started = time.monotonic()
+        response = await call_next(request)
+        took = time.monotonic() - started
+        if took > SLOW_REQUEST_S and request.url.path.startswith("/api/"):
+            log.info("Langsam: %s %s – %.1f s", request.method, request.url.path, took)
+        return response
 
     @app.middleware("http")
     async def require_login(request: Request, call_next):
