@@ -15,6 +15,7 @@ from .client import ImmichClient, ImmichError
 from .config import Settings
 from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, IgnoreList, PlannedStep,
                          clear_immich_duplicates, execute_steps, find_groups, plan_group)
+from .history import HistoryStore, undo_ops
 from .imagehash import HashProgress, HashStore, compute_missing, similar_pairs
 from .library import Library, apply_album_membership, read_albums, scan_library
 from .location import (LEVELS, LocationChange, analyze, execute_location_changes, level_at_least,
@@ -76,6 +77,7 @@ class Pflege:
         self._hash_thread: threading.Thread | None = None
         self._pairs_cache: tuple[tuple, list[tuple[str, str]]] | None = None
         self._staging: StagingStore | None = None
+        self.history = HistoryStore(settings.data_dir / "verlauf.json")
         self._trips_cache: tuple[tuple, Any] | None = None
         self._groups_cache: tuple[tuple, list[DuplicateGroup]] | None = None
         self._analysis_cache: tuple[tuple, Any] | None = None
@@ -385,6 +387,8 @@ class Pflege:
                 raise ActionError(f'Papierkorb nur mit Bestätigung: confirm="{CONFIRM_TRASH}"')
             result = execute_steps(self.library(), self.clients, steps, self.settings.review_album)
             self._save()
+            self._record("duplikat", f"Duplikate: {summary['gruppen']} Gruppen ({'Papierkorb' if action == 'papierkorb' else 'Prüf-Album'})",
+                         result["album"] + result["papierkorb"], result, "api")
             return {"vorschau": False, **summary, "ergebnis": result}
 
     # ------------------------------------------------------------- Ohne Ort
@@ -497,6 +501,9 @@ class Pflege:
             changes, skipped = self._select_locations(ids, max_hours, min_confidence, series, place, ort, monat)
             res = execute_location_changes(self.library(), self.clients, changes)
             self._save()
+            places = sorted({ch.place or "Koordinaten" for ch in changes})
+            self._record("ort", "📍 " + (places[0] if len(places) == 1 else f"{len(places)} Orte"),
+                         res["aktualisiert"], res, "api")
             return {"aktualisiert": res["aktualisiert"], "uebersprungen": skipped + res["uebersprungen"]}
 
     # -------------------------------------------------------------- Vormerken
@@ -593,12 +600,15 @@ class Pflege:
                     elif e["typ"] == "album":
                         res = execute_plan(lib, self.clients, e["daten"])
                     else:
-                        res = self.tags_apply([e["daten"]["regel"]])
+                        res = self.tags_apply([e["daten"]["regel"]], record=False)
                 except (ImmichError, ActionError, RuleError, AlbumError) as exc:
                     self.staging.set_error(e["id"], str(exc))
                     results.append({"id": e["id"], "titel": e["titel"], "fehler": str(exc)})
                     continue
                 done.append(e["id"])
+                count = {"duplikat": lambda r: r["album"] + r["papierkorb"], "ort": lambda r: r["aktualisiert"],
+                         "album": lambda r: r["hinzugefuegt"], "tag": lambda r: r["getaggt"]}[e["typ"]](res)
+                self._record(e["typ"], e["titel"], count, res, "oberflaeche")
                 results.append({"id": e["id"], "titel": e["titel"], "ergebnis": res})
             self.staging.remove(done)
             self._save()
@@ -712,8 +722,9 @@ class Pflege:
             for plan in plans:
                 plan.pop("beispiele")
                 try:
-                    results.append({"name": plan["name"], **execute_plan(self.library(), self.clients, plan),
-                                    "hinweise": plan["hinweise"]})
+                    res = execute_plan(self.library(), self.clients, plan)
+                    self._record("album", plan_title(plan), res["hinzugefuegt"], res, "api")
+                    results.append({"name": plan["name"], **res, "hinweise": plan["hinweise"]})
                 except AlbumError as exc:
                     results.append({"name": plan["name"], "fehler": str(exc)})
             self._save()
@@ -755,13 +766,42 @@ class Pflege:
         return {"stand": lib.scanned_at, "regeldatei": str(self.settings.rules_file),
                 "regeln": regeln, "warnungen": resolver.warnings}
 
-    def tags_apply(self, names: list[str] | None = None) -> dict[str, Any]:
+    def tags_apply(self, names: list[str] | None = None, record: bool = True) -> dict[str, Any]:
         with self._lock:
             rules = self._select_rules(names)
             resolver = Resolver(self.clients)
             res = apply_rules(rules, self.library(), resolver)
-            return {"regeln": res, "warnungen": resolver.warnings,
-                    "getaggt": sum(r.get("getaggt", 0) for r in res)}
+            out = {"regeln": res, "warnungen": resolver.warnings,
+                   "getaggt": sum(r.get("getaggt", 0) for r in res),
+                   "rueck": [op for r in res for op in r.pop("rueck", [])]}
+            if record:  # sonst trägt der Aufrufer (Vormerkliste) in den Verlauf ein
+                self._record("tag", "🏷 " + ", ".join(r["name"] for r in res), out["getaggt"], out, "api")
+            return out
+
+    # ------------------------------------------------------------ Verlauf
+    def _record(self, typ: str, title: str, count: int, res: dict[str, Any], source: str) -> None:
+        """Übertragung in den Verlauf schreiben; die Rückgängig-Schritte bleiben dort, nicht in der Antwort."""
+        undo = res.pop("rueck", []) or []
+        if count or undo:
+            self.history.add(typ, title, count, undo, source)
+
+    def history_view(self, limit: int = 50) -> dict[str, Any]:
+        return {"eintraege": self.history.recent(limit)}
+
+    def undo(self, entry_id: str) -> dict[str, Any]:
+        with self._lock:
+            entry = self.history.get(entry_id)
+            if entry is None:
+                raise ActionError("Eintrag nicht im Verlauf")
+            if entry["rueckgaengig"]:
+                raise ActionError("Schon rückgängig gemacht")
+            if not entry["rueck"]:
+                raise ActionError(entry.get("nicht_rueckgaengig") or "Lässt sich nicht rückgängig machen")
+            errors = undo_ops(self.cached_library(), self.clients, entry["rueck"])
+            self.history.mark_undone(entry_id, errors)
+            self._save()
+            log.info("Rückgängig: %s%s", entry["titel"], f" ({len(errors)} Fehler)" if errors else "")
+            return {"rueckgaengig": True, "titel": entry["titel"], "fehler": errors}
 
     # ------------------------------------------------------------- Vorschau
     def thumbnail(self, asset_id: str, size: str = "thumbnail") -> tuple[bytes, str]:

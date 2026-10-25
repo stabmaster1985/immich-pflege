@@ -1508,11 +1508,55 @@ async function afterStage(tab) {
 }
 
 async function loadStaged() {
-  const r = await api("api/staged");
+  const [r, hist] = await Promise.all([api("api/staged"), api("api/history?limit=40")]);
   S.stage.entries = r.eintraege;
   S.stage.info = r;
   S.stage.loaded = true;
   renderStaged();
+  renderHistory(hist.eintraege);
+}
+
+const HIST_SOURCE = { oberflaeche: "Oberfläche", api: "API/Kommandozeile" };
+
+function renderHistory(entries) {
+  const list = $("#history-list");
+  if (!entries.length) { list.replaceChildren(h("p", { class: "muted" }, "Noch nichts übertragen.")); return; }
+  list.replaceChildren(...entries.map((e) => {
+    let status;
+    if (e.rueckgaengig) status = h("span", { class: "chip" }, "↩ rückgängig gemacht " + fmtDateTime(e.rueckgaengig));
+    else if (e.rueckgaengig_moeglich) status = h("button", { type: "button", class: "btn small", onclick: (ev) => undoHistory(e, ev.currentTarget) }, "Rückgängig");
+    else status = h("span", { class: "muted small" }, e.nicht_rueckgaengig || "");
+    return h("div", { class: "hist-row" + (e.rueckgaengig ? " undone" : "") },
+      h("div", { class: "grow" }, h("div", {}, e.titel),
+        h("div", { class: "muted small" }, `${fmtDateTime(e.zeit)} · ${n(e.anzahl, "Medium", "Medien")} · ${HIST_SOURCE[e.quelle] || e.quelle}`),
+        e.rueck_fehler && e.rueck_fehler.length ? h("div", { class: "banner err" }, e.rueck_fehler.join(" · ")) : null),
+      status);
+  }));
+}
+
+async function undoHistory(e, btn) {
+  const ok = await confirmDialog({
+    title: "Rückgängig machen?",
+    body: [h("p", {}, e.titel), h("p", { class: "muted" }, {
+      duplikat: "Kopien kommen aus dem Papierkorb zurück bzw. wieder aus dem Prüf-Album heraus.",
+      album: "Neu angelegte Alben werden gelöscht (die Fotos bleiben), ergänzte Fotos wieder herausgenommen, Freigaben zurückgenommen.",
+      tag: "Die gesetzten Tags werden wieder entfernt.",
+      zeit: "Die Aufnahmezeit wird wieder zurückverschoben.",
+      aufraeumen: "Medien kommen aus dem Papierkorb zurück bzw. wieder aus dem Prüf-Album heraus.",
+    }[e.typ] || "")],
+    okLabel: "Rückgängig",
+  });
+  if (!ok) return;
+  busy(btn, true);
+  try {
+    const r = await api(`api/history/${e.id}/undo`, { method: "POST" });
+    toast(r.fehler.length ? `Rückgängig mit ${r.fehler.length} Fehlern` : "Rückgängig gemacht", !!r.fehler.length);
+    S.dup.loaded = S.loc.loaded = S.alb.loaded = S.tags.loaded = false;
+    await loadTab("stage", true);
+  } catch (err) {
+    toast(err.message, true);
+    busy(btn, false);
+  }
 }
 
 function stageMedia(e) {

@@ -388,12 +388,14 @@ def execute_plan(lib: Library, clients: dict[str, ImmichClient], plan: dict[str,
         raise AlbumError(f"Kein API-Key für den Besitzer {owner!r}")
     editors = [{"userId": lib.users[u]["id"], "role": "editor"} for u in plan["teilen"] if u in lib.users]
     album_id = plan["album_id"]
+    undo: list[dict[str, Any]] = []
     if plan["aktion"] == "neu":
         created = clients[owner].create_album(plan["name"], editors)
         album_id = created["id"]
         lib.albums[album_id] = {"id": album_id, "name": plan["name"], "besitzer": owner,
                                 "rollen": {owner: "owner", **{u: "editor" for u in plan["teilen"]}},
                                 "anzahl": 0, "start": None, "ende": None, "medien": []}
+        undo.append({"op": "album_loeschen", "user": owner, "album": album_id})
         log.info("Album „%s“ angelegt (%s)", plan["name"], owner)
     else:
         if album_id not in lib.albums:
@@ -402,6 +404,8 @@ def execute_plan(lib: Library, clients: dict[str, ImmichClient], plan: dict[str,
             clients[owner].share_album(album_id, editors)
             for u in plan["teilen"]:
                 lib.albums[album_id]["rollen"][u] = "editor"
+            undo += [{"op": "teilen_aufheben", "user": owner, "album": album_id, "nutzer": e["userId"]}
+                     for e in editors]
     album = lib.albums[album_id]
     members = set(album["medien"])
     added, skipped, errors = 0, 0, []
@@ -414,6 +418,9 @@ def execute_plan(lib: Library, clients: dict[str, ImmichClient], plan: dict[str,
         except ImmichError as exc:
             errors.append(f"{user}: {exc}")
             continue
+        new = [r["id"] for r in results if r.get("success")]
+        if new and plan["aktion"] != "neu":  # ein neues Album wird beim Rückgängig ganz gelöscht
+            undo.append({"op": "album_entfernen", "user": user, "album": album_id, "ids": new})
         for r in results:
             if r.get("success") or r.get("error") == "duplicate":
                 members.add(r["id"])
@@ -425,7 +432,8 @@ def execute_plan(lib: Library, clients: dict[str, ImmichClient], plan: dict[str,
     album["anzahl"] = len(members)
     if errors:
         raise AlbumError("; ".join(errors))
-    return {"album_id": album_id, "name": album["name"], "hinzugefuegt": added, "uebersprungen": skipped}
+    return {"album_id": album_id, "name": album["name"], "hinzugefuegt": added, "uebersprungen": skipped,
+            "rueck": undo}
 
 
 # ------------------------------------------------------- „Kein Album“

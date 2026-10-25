@@ -267,3 +267,8 @@ div.tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 .alb-found { margin: 4px 0 6px; font-size: .9rem; }
 .alb-name { margin-top: 8px; }
 .card-head .grow { flex: 1; min-width: 0; }
+
+/* Verlauf */
+.hist-row { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line, rgba(128,128,128,.25)); }
+.hist-row.undone { opacity: .6; }
+.hist-row .grow { flex: 1; min-width: 0; }

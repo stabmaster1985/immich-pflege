@@ -476,6 +476,7 @@ def apply(rules: list[Rule], lib: Library, resolver: Resolver) -> list[dict[str,
             continue
         tagged_total = 0
         per_user = {}
+        undo: list[dict[str, Any]] = []
         for m in evaluate_rule(rule, lib, resolver):
             if not m.new_ids:
                 per_user[m.user] = 0
@@ -490,11 +491,12 @@ def apply(rules: list[Rule], lib: Library, resolver: Resolver) -> list[dict[str,
                     raise RuntimeError(f"Tag „{tag}“ konnte bei {m.user} nicht angelegt werden")
                 if asset_ids:
                     client.tag_assets([tid], asset_ids)
+                    undo.append({"op": "tag_entfernen", "user": m.user, "tag": tid, "ids": sorted(asset_ids)})
             per_user[m.user] = len(m.new_ids)
             tagged_total += len(m.new_ids)
             log.info("Regel „%s“: %d Medien von %s getaggt (%s)", rule.name, len(m.new_ids), m.user,
                      ", ".join(rule.tags))
             resolver.forget_tags(m.user)
         result.append({"name": rule.name, "tags": rule.tags, "getaggt": tagged_total,
-                       "benutzer": per_user})
+                       "benutzer": per_user, "rueck": undo})
     return result

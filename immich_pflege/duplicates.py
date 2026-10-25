@@ -333,22 +333,30 @@ def execute_steps(lib: Library, clients: dict[str, ImmichClient], steps: list[Pl
         elif s.action == "album":
             album.setdefault(s.asset.owner, []).append(s.asset.id)
 
-    result: dict[str, Any] = {"papierkorb": 0, "album": 0, "fehler": []}
+    # "rueck": Schritte für „Rückgängig“ im Verlauf (siehe history.py)
+    result: dict[str, Any] = {"papierkorb": 0, "album": 0, "fehler": [], "rueck": []}
     for user, ids in album.items():
         client = clients[user]
         album_id = ensure_review_album(lib, client, review_album)
+        added = []
         for r in client.add_to_album(album_id, ids):
             if r.get("success") or r.get("error") == "duplicate":
                 result["album"] += 1
+                if r.get("success"):
+                    added.append(r["id"])
                 if r["id"] in lib.assets:
                     lib.assets[r["id"]].in_review_album = True
             else:
                 result["fehler"].append({"id": r.get("id"), "fehler": r.get("error")})
+        if added:
+            result["rueck"].append({"op": "album_entfernen", "user": user, "album": album_id, "ids": added})
         log.info("%d Medien von %s ins Album '%s' gelegt", len(ids), user, review_album)
     for user, ids in trash.items():
         # Doppelte Absicherung: externe Medien niemals in den Papierkorb
         ids = [i for i in ids if i in lib.assets and not lib.assets[i].is_external]
         result["papierkorb"] += clients[user].trash(ids)
+        result["rueck"].append({"op": "wiederherstellen", "user": user, "ids": ids,
+                                "medien": [lib.assets[i].to_dict() for i in ids]})
         for i in ids:
             lib.assets.pop(i, None)
         log.info("%d Medien von %s in den Papierkorb verschoben", len(ids), user)

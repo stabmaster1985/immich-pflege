@@ -152,7 +152,44 @@ class ImmichClient:
             results.extend(self.request("PUT", f"/albums/{album_id}/assets", json={"ids": batch}) or [])
         return results
 
+    def remove_from_album(self, album_id: str, ids: Iterable[str]) -> int:
+        n = 0
+        for batch in chunked(ids):
+            res = self.request("DELETE", f"/albums/{album_id}/assets", json={"ids": batch}) or []
+            n += sum(1 for r in res if r.get("success"))
+        return n
+
+    def delete_album(self, album_id: str) -> None:
+        self.request("DELETE", f"/albums/{album_id}")
+
+    def unshare_album(self, album_id: str, user_id: str) -> None:
+        self.request("DELETE", f"/albums/{album_id}/user/{user_id}")
+
     # ---------------------------------------------------------------- Assets
+    def restore_trash(self, ids: Iterable[str]) -> int:
+        n = 0
+        for batch in chunked(ids):
+            res = self.request("POST", "/trash/restore/assets", json={"ids": batch}) or {}
+            n += res.get("count", len(batch))
+        return n
+
+    def trashed(self) -> Iterator[dict]:
+        """Medien im Papierkorb (veraltete, in v3.2 noch unterstützte Suchfelder)."""
+        for raw in self.search_metadata(withDeleted=True, trashedAfter="1970-01-01T00:00:00.000Z", withExif=True):
+            if raw.get("isTrashed"):
+                yield raw
+
+    def server_config(self) -> dict:
+        return self.request("GET", "/server/config") or {}
+
+    def shift_time(self, ids: Iterable[str], minutes: int) -> int:
+        """Aufnahmezeit um ``minutes`` verschieben (PUT /assets, dateTimeRelative)."""
+        n = 0
+        for batch in chunked(ids):
+            self.request("PUT", "/assets", json={"ids": batch, "dateTimeRelative": minutes})
+            n += len(batch)
+        return n
+
     def trash(self, ids: Iterable[str]) -> int:
         n = 0
         for batch in chunked(ids):
@@ -194,6 +231,13 @@ class ImmichClient:
 
     def upsert_tags(self, names: list[str]) -> list[dict]:
         return self.request("PUT", "/tags", json={"tags": names}) or []
+
+    def untag_assets(self, tag_id: str, asset_ids: Iterable[str]) -> int:
+        n = 0
+        for batch in chunked(asset_ids):
+            res = self.request("DELETE", f"/tags/{tag_id}/assets", json={"ids": batch}) or []
+            n += sum(1 for r in res if r.get("success"))
+        return n
 
     def tag_assets(self, tag_ids: list[str], asset_ids: Iterable[str]) -> int:
         n = 0

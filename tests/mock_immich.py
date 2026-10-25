@@ -380,6 +380,67 @@ def create_app(state: MockState) -> FastAPI:
                 a["exifInfo"]["longitude"] = body["longitude"]
             if "duplicateId" in body:
                 a["duplicateId"] = body["duplicateId"]
+            if body.get("dateTimeRelative"):
+                for key in ("localDateTime", "fileCreatedAt"):
+                    if a[key]:
+                        t = datetime.fromisoformat(a[key].replace("Z", "+00:00"))
+                        a[key] = (t + timedelta(minutes=body["dateTimeRelative"])).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        return Response(status_code=204)
+
+    @app.post("/api/trash/restore/assets")
+    async def restore(request: Request):
+        user = auth(request)
+        body = await record(request, user)
+        n = 0
+        for aid in body["ids"]:
+            a = state.assets.get(aid)
+            if a and a["ownerId"] == user["id"] and a["isTrashed"]:
+                a["isTrashed"] = False
+                n += 1
+        return {"count": n}
+
+    @app.get("/api/server/config")
+    async def server_config(request: Request):
+        auth(request)
+        return {"trashDays": 30, "isInitialized": True}
+
+    @app.delete("/api/albums/{album_id}/assets")
+    async def remove_album_assets(album_id: str, request: Request):
+        user = auth(request)
+        body = await record(request, user)
+        album = state.albums.get(album_id)
+        if not album or state.album_role(album, user["id"]) not in ("owner", "editor"):
+            raise HTTPException(400, "Not found or no album.removeAsset access")
+        out = []
+        for aid in body["ids"]:
+            a = state.assets.get(aid)
+            ok = a is not None and album_id in a["_albums"] and (
+                album["ownerId"] == user["id"] or a["ownerId"] == user["id"])
+            if ok:
+                a["_albums"].discard(album_id)
+            out.append({"id": aid, "success": ok})
+        return out
+
+    @app.delete("/api/albums/{album_id}", status_code=204)
+    async def delete_album(album_id: str, request: Request):
+        user = auth(request)
+        await record(request, user)
+        album = state.albums.get(album_id)
+        if not album or album["ownerId"] != user["id"]:
+            raise HTTPException(400, "Not found or no album.delete access")
+        del state.albums[album_id]
+        for a in state.assets.values():
+            a["_albums"].discard(album_id)
+        return Response(status_code=204)
+
+    @app.delete("/api/albums/{album_id}/user/{user_id}", status_code=204)
+    async def unshare_album(album_id: str, user_id: str, request: Request):
+        user = auth(request)
+        await record(request, user)
+        album = state.albums.get(album_id)
+        if not album or album["ownerId"] != user["id"]:
+            raise HTTPException(400, "Not found or no album.share access")
+        album["members"].pop(user_id, None)
         return Response(status_code=204)
 
     @app.get("/api/assets/{asset_id}/thumbnail")
@@ -406,6 +467,19 @@ def create_app(state: MockState) -> FastAPI:
         user = auth(request)
         body = await record(request, user)
         return [state.upsert_tag(user["id"], name) for name in body["tags"]]
+
+    @app.delete("/api/tags/{tag_id}/assets")
+    async def untag(tag_id: str, request: Request):
+        user = auth(request)
+        body = await record(request, user)
+        out = []
+        for aid in body["ids"]:
+            a = state.assets.get(aid)
+            ok = a is not None and a["ownerId"] == user["id"] and tag_id in a["_tags"]
+            if ok:
+                a["_tags"].discard(tag_id)
+            out.append({"id": aid, "success": ok})
+        return out
 
     @app.put("/api/tags/assets")
     async def tag_assets(request: Request):

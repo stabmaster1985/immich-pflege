@@ -534,6 +534,15 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     def stage_albums(body: AlbumsApply):
         return svc().stage_albums([t.model_dump(exclude_unset=True) for t in body.trips])
 
+    # -------------------------------------------------------------- Verlauf
+    @app.get("/api/history")
+    def history(limit: int = Query(50, ge=1, le=500)):
+        return svc().history_view(limit)
+
+    @app.post("/api/history/{entry_id}/undo")
+    def history_undo(entry_id: str):
+        return svc().undo(entry_id)
+
     @app.get("/api/staged")
     def staged():
         return svc().staged_view()
