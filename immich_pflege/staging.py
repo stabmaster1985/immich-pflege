@@ -15,7 +15,7 @@ from typing import Any, Iterable
 
 log = logging.getLogger(__name__)
 
-TYPES = ("duplikat", "ort", "album", "tag")
+TYPES = ("duplikat", "aufraeumen", "zeit", "ort", "album", "tag")
 SAMPLES = 8
 
 
@@ -88,7 +88,7 @@ class StagingStore:
         out: set[str] = set()
         for e in self.of_type(typ):
             d = e["daten"]
-            if typ in ("duplikat", "album"):
+            if typ in ("duplikat", "album", "aufraeumen", "zeit"):
                 out.update(d.get("alle_medien", []))
             elif typ == "ort":
                 out.update(ch["asset_id"] for ch in d.get("aenderungen", []))
@@ -100,5 +100,5 @@ class StagingStore:
             "nach_typ": {t: sum(1 for e in self.entries if e["typ"] == t) for t in TYPES},
             "medien": sum(e["anzahl"] for e in self.entries),
             "papierkorb": sum(sum(1 for s in e["daten"].get("schritte", []) if s["aktion"] == "papierkorb")
-                              for e in self.of_type("duplikat")),
+                              for e in self.entries if e["typ"] in ("duplikat", "aufraeumen")),
         }

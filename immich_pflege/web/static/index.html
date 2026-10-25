@@ -21,6 +21,7 @@
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="dup" aria-selected="true">Duplikate <span class="count" id="count-dup"></span></button>
       <button role="tab" data-tab="loc" aria-selected="false">Ohne Ort <span class="count" id="count-loc"></span></button>
+      <button role="tab" data-tab="cln" aria-selected="false">Aufräumen <span class="count" id="count-cln"></span></button>
       <button role="tab" data-tab="alb" aria-selected="false">Alben <span class="count" id="count-alb"></span></button>
       <button role="tab" data-tab="tags" aria-selected="false">Tags <span class="count" id="count-tags"></span></button>
       <button role="tab" data-tab="stage" aria-selected="false" title="Vorgemerkt">✓ <span class="count" id="count-stage"></span></button>
@@ -61,6 +62,16 @@
       <p id="loc-summary" class="muted"></p>
       <div id="loc-list"></div>
       <button id="loc-more" class="btn more" type="button" hidden>Weitere anzeigen</button>
+    </section>
+
+    <section id="tab-cln" class="tab" role="tabpanel" hidden>
+      <div class="toolbar">
+        <span id="cln-summary" class="muted"></span>
+        <button type="button" class="btn small help-btn" data-help="aufraeumen" aria-label="Hilfe zum Aufräumen">?</button>
+      </div>
+      <div id="cln-filters" class="toolbar"></div>
+      <div id="cln-list"></div>
+      <button id="cln-more" class="btn more" type="button" hidden>Weitere anzeigen</button>
     </section>
 
     <section id="tab-alb" class="tab" role="tabpanel" hidden>

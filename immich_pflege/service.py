@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import replace
 import time
 from typing import Any
 
@@ -15,6 +16,7 @@ from .client import ImmichClient, ImmichError
 from .config import Settings
 from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, IgnoreList, PlannedStep,
                          clear_immich_duplicates, execute_steps, find_groups, plan_group)
+from .cleanup import ARTEN as CLEANUP_ARTEN, KATEGORIEN as CLEANUP_KATEGORIEN, KeepList, find_items
 from .history import HistoryStore, undo_ops
 from .imagehash import HashProgress, HashStore, compute_missing, similar_pairs
 from .library import Library, apply_album_membership, read_albums, scan_library
@@ -81,6 +83,7 @@ class Pflege:
         self._trips_cache: tuple[tuple, Any] | None = None
         self._groups_cache: tuple[tuple, list[DuplicateGroup]] | None = None
         self._analysis_cache: tuple[tuple, Any] | None = None
+        self._cleanup_cache: tuple[tuple, Any] | None = None
         self._calc_lock = threading.RLock()  # gleiche Berechnung nicht doppelt (Vorberechnung + Anfrage)
         self.background_albums = False  # Web: Album-Inhalte nach dem Einlesen im Hintergrund lesen
         self._albums_thread: threading.Thread | None = None
@@ -164,6 +167,7 @@ class Pflege:
         try:
             self.all_groups()
             self._analysis()
+            self.cleanup_items()
             if not self.albums_pending():
                 self._trips()
         except Exception as exc:  # nur Vorarbeit – Fehler zeigen sich beim echten Aufruf
@@ -577,14 +581,14 @@ class Pflege:
             entries = [e for e in self.staging.entries if entry_ids is None or e["id"] in entry_ids]
             if not entries:
                 raise ActionError("Nichts zu übertragen")
-            trash = sum(1 for e in entries if e["typ"] == "duplikat"
+            trash = sum(1 for e in entries if e["typ"] in ("duplikat", "aufraeumen")
                         for s in e["daten"]["schritte"] if s["aktion"] == "papierkorb")
             if trash and confirm != CONFIRM_TRASH:
                 raise ActionError(f'{trash} Medien gehen in den Papierkorb – nur mit confirm="{CONFIRM_TRASH}"')
             done, results = [], []
             for e in entries:
                 try:
-                    if e["typ"] == "duplikat":
+                    if e["typ"] in ("duplikat", "aufraeumen"):
                         steps, skipped = [], []
                         for st in e["daten"]["schritte"]:
                             a = lib.assets.get(st["id"])
@@ -606,7 +610,8 @@ class Pflege:
                     results.append({"id": e["id"], "titel": e["titel"], "fehler": str(exc)})
                     continue
                 done.append(e["id"])
-                count = {"duplikat": lambda r: r["album"] + r["papierkorb"], "ort": lambda r: r["aktualisiert"],
+                count = {"duplikat": lambda r: r["album"] + r["papierkorb"],
+                         "aufraeumen": lambda r: r["album"] + r["papierkorb"], "ort": lambda r: r["aktualisiert"],
                          "album": lambda r: r["hinzugefuegt"], "tag": lambda r: r["getaggt"]}[e["typ"]](res)
                 self._record(e["typ"], e["titel"], count, res, "oberflaeche")
                 results.append({"id": e["id"], "titel": e["titel"], "ergebnis": res})
@@ -627,6 +632,104 @@ class Pflege:
             out.append({"name": p.get("name"), "region": region,
                         "breite": p.get("latitude"), "laenge": p.get("longitude")})
         return out
+
+    # ------------------------------------------------------------- Aufräumen
+    def _hash_key(self) -> int:
+        """Stand der Fingerabdrücke – während der Berechnung eingefroren (stabile Listen)."""
+        hashing = self._hash_thread is not None and self._hash_thread.is_alive()
+        if hashing and self._cleanup_cache:
+            return self._cleanup_cache[0][2]
+        return len(self.hash_store.data)
+
+    def cleanup_items(self):
+        lib = self.library()
+        key = (id(lib), lib.rev, self._hash_key())
+        with self._calc_lock:
+            if not self._cleanup_cache or self._cleanup_cache[0] != key:
+                self._cleanup_cache = (key, find_items(lib, self.hash_store))
+            items = self._cleanup_cache[1]
+        staged = self.staging.asset_ids("aufraeumen") | self.staging.asset_ids("duplikat")
+        return lib, [i for i in items if not (i.drop & staged)]
+
+    def keep_list(self) -> KeepList:
+        return KeepList(self.settings.data_dir / "aufraeumen_behalten.json")
+
+    def cleanup_view(self, art: str | None = None, kategorie: str | None = None, ignored: bool = False,
+                     offset: int = 0, limit: int = 30) -> dict[str, Any]:
+        if art and art not in CLEANUP_ARTEN:
+            raise ActionError(f"Art muss {', '.join(CLEANUP_ARTEN)} sein")
+        if kategorie and kategorie not in CLEANUP_KATEGORIEN:
+            raise ActionError(f"Kategorie muss {', '.join(CLEANUP_KATEGORIEN)} sein")
+        lib, items = self.cleanup_items()
+        keep = self.keep_list().ids
+        base = [i for i in items if (i.id in keep) == ignored]
+        cats = {k: {"art": a, "name": label, "anzahl": sum(1 for i in base if i.kategorie == k),
+                    "groesse": sum(i.size for i in base if i.kategorie == k)}
+                for k, (a, label) in CLEANUP_KATEGORIEN.items()}
+        chosen = [i for i in base if (not art or CLEANUP_KATEGORIEN[i.kategorie][0] == art)
+                  and (not kategorie or i.kategorie == kategorie)]
+        page = chosen[offset: offset + limit] if limit > 0 else chosen[offset:]
+        hs = self.hash_status()
+        return {
+            "stand": lib.scanned_at,
+            "arten": {k: {"name": v, "anzahl": sum(c["anzahl"] for c in cats.values() if c["art"] == k),
+                          "groesse": sum(c["groesse"] for c in cats.values() if c["art"] == k)}
+                      for k, v in CLEANUP_ARTEN.items()},
+            "kategorien": cats,
+            "filter": {"art": art, "kategorie": kategorie, "ignoriert": ignored},
+            "ausgeblendet": sum(1 for i in items if i.id in keep),
+            "gesamt": len(chosen),
+            "groesse": sum(i.size for i in chosen),
+            "fingerabdruck": hs,
+            "offset": offset,
+            "eintraege": [i.to_dict() for i in page],
+        }
+
+    def _cleanup_selection(self, ids: list[str] | None, kategorie: str | None):
+        _, items = self.cleanup_items()
+        keep = self.keep_list().ids
+        known = {i.id: i for i in items if i.id not in keep}
+        if ids:
+            missing = [i for i in ids if i not in known]
+            if missing:
+                raise ActionError(f"Eintrag/Einträge {', '.join(missing)} nicht gefunden – bitte neu laden")
+            return [known[i] for i in ids]
+        if kategorie:
+            return [i for i in known.values() if i.kategorie == kategorie]
+        raise ActionError("Keine Einträge ausgewählt (ids oder kategorie)")
+
+    def stage_cleanup(self, action: str, ids: list[str] | None = None, kategorie: str | None = None,
+                      keep: dict[str, str] | None = None) -> dict[str, Any]:
+        """``keep``: {Eintrag: Medium} – anderes Bild behalten (z. B. bei Serienbildern)."""
+        if action not in ("album", "papierkorb"):
+            raise ActionError("Aktion muss album oder papierkorb sein")
+        with self._lock:
+            chosen = self._cleanup_selection(ids, kategorie)
+            for n, item in enumerate(chosen):
+                if keep and item.id in keep:
+                    if keep[item.id] not in item.ids:
+                        raise ActionError(f"Medium {keep[item.id]!r} gehört nicht zu Eintrag {item.id}")
+                    chosen[n] = replace(item, drop=item.ids - {keep[item.id]})
+            if not chosen:
+                raise ActionError("Nichts vorzumerken")
+            steps = [s for i in chosen for s in i.steps(action)]
+            labels = sorted({CLEANUP_KATEGORIEN[i.kategorie][1] for i in chosen})
+            size = sum(i.size for i in chosen)
+            target = "Papierkorb" if action == "papierkorb" else "Prüf-Album"
+            title = f"🧹 {', '.join(labels)}: {len(steps)} Medien ({size / 1048576:.0f} MB) → {target}"
+            media = [{**s.asset.summary(), "aktion": s.action} for s in steps]
+            self.staging.add("aufraeumen", title, {
+                "aktion": action, "eintraege": [i.id for i in chosen],
+                "alle_medien": sorted({a for i in chosen for a in i.ids}),
+                "schritte": [s.to_dict() for s in steps],
+            }, media, len(steps))
+            return {"vorgemerkt": len(chosen), "medien": len(steps), "groesse": size}
+
+    def keep_cleanup(self, ids: list[str], undo: bool = False) -> dict[str, Any]:
+        if not ids:
+            raise ActionError("Keine Einträge angegeben")
+        self.keep_list().update(ids, remove=undo)
+        return {"eintraege": len(ids), "rueckgaengig": undo}
 
     # ---------------------------------------------------------------- Alben
     def album_ignore_list(self) -> TripIgnoreList:

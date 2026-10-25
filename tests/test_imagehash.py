@@ -33,15 +33,15 @@ def test_similar_pairs_and_store(tmp_path):
     b = asset(owner="julia", make=None, model=None)
     c = asset(owner="julia")
     store = HashStore(tmp_path / "h.json")
-    store.put(a, 0xF0F0F0F0F0F0F0F0)
-    store.put(b, 0xF0F0F0F0F0F0F0F1)  # 1 Bit Unterschied
-    store.put(c, 0x0F0F0F0F0F0F0F0F)
+    store.put(a, 0xF0F0F0F0F0F0F0F0, 12.0, 120.0)
+    store.put(b, 0xF0F0F0F0F0F0F0F1, 12.0, 120.0)  # 1 Bit Unterschied
+    store.put(c, 0x0F0F0F0F0F0F0F0F)  # alter Eintrag ohne Schärfe/Helligkeit -> wird nachberechnet
     store.save()
     again = HashStore(tmp_path / "h.json")
     assert similar_pairs(library(a, b, c), again) == [tuple(sorted((a.id, b.id)))]
     # geänderte Prüfsumme -> Fingerabdruck ungültig
     a.checksum = "neu"
-    assert again.get(a) is None and len(again.missing(library(a, b, c))) == 1
+    assert again.get(a) is None and {x.id for x in again.missing(library(a, b, c))} == {a.id, c.id}
 
 
 def test_whatsapp_copy_found_across_users(settings, http, state):

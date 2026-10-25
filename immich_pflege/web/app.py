@@ -103,6 +103,18 @@ class TagsApply(BaseModel):
     rules: Optional[list[str]] = None
 
 
+class CleanupStage(BaseModel):
+    action: Literal["album", "papierkorb"]
+    ids: Optional[list[str]] = None
+    kategorie: Optional[str] = None
+    keep: Optional[dict[str, str]] = None
+
+
+class CleanupKeep(BaseModel):
+    ids: list[str]
+    undo: bool = False
+
+
 class TripSelection(BaseModel):
     id: str
     album: Optional[str] = None  # weglassen = Vorschlag, null = neues Album, sonst Album-ID
@@ -515,6 +527,20 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         return svc().tags_apply(body.rules if body else None)
 
     # ------------------------------------------------------------- Vormerken
+    # ------------------------------------------------------------ Aufräumen
+    @app.get("/api/cleanup")
+    def cleanup(art: Optional[Literal["speicher", "serien", "qualitaet"]] = None, kategorie: Optional[str] = None,
+                ignoriert: bool = False, offset: int = Query(0, ge=0), limit: int = Query(30, ge=0, le=5000)):
+        return svc().cleanup_view(art, kategorie, ignoriert, offset, limit)
+
+    @app.post("/api/staged/cleanup")
+    def stage_cleanup(body: CleanupStage):
+        return svc().stage_cleanup(body.action, body.ids, body.kategorie, body.keep)
+
+    @app.post("/api/cleanup/keep")
+    def cleanup_keep(body: CleanupKeep):
+        return svc().keep_cleanup(body.ids, body.undo)
+
     # ---------------------------------------------------------------- Alben
     @app.get("/api/album-suggestions")
     def album_suggestions(status: Optional[Literal["neu", "ergaenzen", "vorhanden"]] = None,

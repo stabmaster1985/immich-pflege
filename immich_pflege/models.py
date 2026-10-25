@@ -8,6 +8,20 @@ from functools import cached_property
 from typing import Any
 
 
+def parse_duration(value: Any) -> int | None:
+    """Videolänge in ms – v3 liefert eine Zahl, ältere Versionen „0:00:03.000000“."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    try:
+        h, m, s = str(value).split(":")
+        ms = int((int(h) * 3600 + int(m) * 60 + float(s)) * 1000)
+    except ValueError:
+        return None
+    return ms or None
+
+
 def parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -40,6 +54,7 @@ class Asset:
     make: str | None = None
     model: str | None = None
     file_size: int | None = None
+    duration_ms: int | None = None  # Videos
     in_album: bool = False
     in_review_album: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
@@ -102,6 +117,7 @@ class Asset:
             "breite": self.width,
             "hoehe": self.height,
             "groesse": self.file_size,
+            "dauer_s": round(self.duration_ms / 1000, 1) if self.duration_ms else None,
             "thumb": f"thumb/{self.id}",
         }
 
@@ -136,6 +152,7 @@ class Asset:
             make=exif.get("make"),
             model=exif.get("model"),
             file_size=exif.get("fileSizeInByte"),
+            duration_ms=parse_duration(raw.get("duration")),
         )
 
 

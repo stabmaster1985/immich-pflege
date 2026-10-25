@@ -60,7 +60,8 @@ class MockState:
                   make: str | None = "Apple", model: str | None = "iPhone 15 Pro",
                   path: str | None = None, type: str = "IMAGE", visibility: str = "timeline",
                   trashed: bool = False, duplicate_id: str | None = None, size: int = 2_000_000,
-                  asset_id: str | None = None, image: str | None = None) -> str:
+                  asset_id: str | None = None, image: str | None = None,
+                  duration: int | None = None) -> str:
         a = copy.deepcopy(TEMPLATE)
         aid = asset_id or new_id()
         uid = self.user_id(owner)
@@ -81,6 +82,7 @@ class MockState:
             "height": height,
             "checksum": checksum or base64.b64encode(uuid.uuid4().bytes[:15]).decode(),
             "duplicateId": duplicate_id,
+            "duration": duration,
         })
         a["exifInfo"].update({
             "latitude": lat, "longitude": lon, "city": city, "country": country,
@@ -160,7 +162,14 @@ def render_thumbnail(key: str, width: int = 4032) -> bytes:
 
     from PIL import Image, ImageDraw
 
-    rnd = random.Random(key)
+    from PIL import ImageFilter
+
+    rnd = random.Random(key.split("#")[0])  # Serienbilder teilen das Motiv
+    if key.startswith("dunkel"):  # versehentliches Foto in der Hosentasche
+        img = Image.new("RGB", (250, 188), (6, 5, 7))
+        out = io.BytesIO()
+        img.save(out, "WEBP", quality=85)
+        return out.getvalue()
     img = Image.new("RGB", (250, 188), tuple(rnd.randrange(256) for _ in range(3)))
     draw = ImageDraw.Draw(img)
     for _ in range(12):
@@ -169,6 +178,10 @@ def render_thumbnail(key: str, width: int = 4032) -> bytes:
                        fill=tuple(rnd.randrange(256) for _ in range(3)))
     if width < 2000:  # „verkleinerte Kopie“: einmal runter- und wieder hochskalieren
         img = img.resize((125, 94)).resize((250, 188))
+    if key.startswith("unscharf"):
+        img = img.filter(ImageFilter.GaussianBlur(14))
+    elif "#" in key:  # Serienbild: gleiches Motiv, minimal verwackelt
+        img = img.filter(ImageFilter.GaussianBlur(int(key.split("#")[1])))
     out = io.BytesIO()
     img.save(out, "WEBP", quality=60 if width < 2000 else 85)
     return out.getvalue()

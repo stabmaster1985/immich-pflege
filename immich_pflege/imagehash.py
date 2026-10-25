@@ -4,6 +4,8 @@ Dateien sich unterscheiden (z. B. per WhatsApp verschickt: verkleinert, umbenann
 - dHash mit 64 Bit: Helligkeitsverlauf eines auf 9×8 Pixel verkleinerten Graustufenbilds.
 - Zwischengespeichert in DATA_DIR/bildhash.json (pro Medium, solange sich die Prüfsumme nicht ändert).
 - Vergleich über 4 Abschnitte à 16 Bit (LSH), danach Hamming-Abstand ≤ MAX_DISTANCE.
+- Aus demselben Vorschaubild: Schärfe (Streuung nach Laplace-Filter) und Helligkeit (0–255) für
+  „Aufräumen“ (unscharf, dunkel, Serienbilder).
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from PIL import Image
+from PIL import Image, ImageFilter, ImageStat
 
 from .client import ImmichClient, ImmichError
 from .library import Library
@@ -33,6 +35,31 @@ def dhash(data: bytes) -> int:
     with Image.open(io.BytesIO(data)) as img:
         small = img.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
         px = small.tobytes()  # 72 Graustufenwerte (L-Modus: 1 Byte pro Pixel)
+    value = 0
+    for row in range(8):
+        for col in range(8):
+            left, right = px[row * 9 + col], px[row * 9 + col + 1]
+            value = (value << 1) | (1 if left > right else 0)
+    return value
+
+
+LAPLACE = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1, offset=128)
+
+
+def analyze_image(data: bytes) -> tuple[int, float, float]:
+    """(dHash, Schärfe, Helligkeit) aus einem Vorschaubild."""
+    with Image.open(io.BytesIO(data)) as img:
+        gray = img.convert("L")
+    value = dhash_gray(gray)
+    w, h = gray.size
+    edges = gray.filter(LAPLACE).crop((1, 1, w - 1, h - 1))  # Rand verfälscht den Filter
+    sharpness = ImageStat.Stat(edges).stddev[0]
+    brightness = ImageStat.Stat(gray).mean[0]
+    return value, round(sharpness, 2), round(brightness, 1)
+
+
+def dhash_gray(gray: Image.Image) -> int:
+    px = gray.resize((9, 8), Image.Resampling.LANCZOS).tobytes()
     value = 0
     for row in range(8):
         for col in range(8):
@@ -75,9 +102,19 @@ class HashStore:
             return int(entry["h"], 16)
         return None
 
-    def put(self, a: Asset, value: int) -> None:
+    def put(self, a: Asset, value: int, sharpness: float | None = None, brightness: float | None = None) -> None:
+        entry: dict = {"c": a.checksum, "h": f"{value:016x}"}
+        if sharpness is not None:
+            entry.update(s=sharpness, l=brightness)
         with self._lock:
-            self.data[a.id] = {"c": a.checksum, "h": f"{value:016x}"}
+            self.data[a.id] = entry
+
+    def quality(self, a: Asset) -> tuple[float, float] | None:
+        """(Schärfe, Helligkeit) oder None, falls (noch) nicht berechnet."""
+        entry = self.data.get(a.id)
+        if entry and entry.get("c") == a.checksum and "s" in entry:
+            return entry["s"], entry["l"]
+        return None
 
     def save(self) -> None:
         with self._lock:
@@ -90,7 +127,8 @@ class HashStore:
                 log.warning("Bild-Fingerabdrücke nicht speicherbar: %s", exc)
 
     def missing(self, lib: Library) -> list[Asset]:
-        return [a for a in lib.assets.values() if hashable(a) and self.get(a) is None]
+        """Ohne Fingerabdruck oder (ältere Einträge) ohne Schärfe/Helligkeit."""
+        return [a for a in lib.assets.values() if hashable(a) and self.quality(a) is None]
 
 
 @dataclass
@@ -121,7 +159,7 @@ def compute_missing(lib: Library, clients: dict[str, ImmichClient], store: HashS
                 break
             try:
                 data, _ = clients[a.owner].thumbnail(a.id)
-                store.put(a, dhash(data))
+                store.put(a, *analyze_image(data))
             except (ImmichError, OSError, ValueError) as exc:  # OSError: Bild nicht lesbar
                 progress.errors += 1
                 progress.last_error = f"{a.file_name}: {exc}"
