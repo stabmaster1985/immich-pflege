@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from immich_pflege import albums, duplicates, imagehash, location
+from immich_pflege import albums, cleanup, duplicates, imagehash, location, timefix
 from immich_pflege.web.app import HELP, HELP_TOPICS, create_app
 
 
@@ -33,6 +33,13 @@ def test_help_matches_code():
     assert albums.MATCH == 0.2 and "ab 20 %" in alb
     assert albums.NAME_SHARE == 0.6 and "60 %" in alb
     assert albums.MIN_GPS == 3 and "3 Fotos mit GPS" in alb
+    cln = (HELP / "aufraeumen.md").read_text()
+    assert cleanup.BIG_VIDEO_MB == 300 and "**300 MB**" in cln
+    assert cleanup.LIVE_MAX_S == 3.5 and "3,5 s" in cln and cleanup.LIVE_DELTA_S == 2
+    assert cleanup.BURST_GAP_S == 2 and "**2 Sekunden**" in cln and cleanup.BURST_MAX_DIST == 12
+    assert cleanup.DARK_MAX == 25 and "**25**" in cln and cleanup.BLUR_MAX == 3.0 and "**3**" in cln
+    assert timefix.STEP_MIN == 30 and timefix.MAX_OFFSET_MIN == 12 * 60 and "±12 Stunden" in cln
+    assert timefix.MATCH_MIN == 10 and "10 Minuten" in cln and timefix.MIN_SHARE == 0.5
 
 
 def test_readme_links_help():

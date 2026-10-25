@@ -81,6 +81,8 @@ def shifted(a: Asset, minutes: int | None) -> str | None:
 
 def fmt_offset(minutes: int) -> str:
     sign = "+" if minutes > 0 else "−"
+    if abs(minutes) >= 48 * 60:
+        return f"{sign}{round(abs(minutes) / 1440)} Tage"
     h, m = divmod(abs(minutes), 60)
     return f"{sign}{h} h" + (f" {m} min" if m else "")
 

@@ -18,6 +18,8 @@ Regeln vergeben Tags an viele Fotos auf einmal. **Tags werden nur ergänzt, nie 
 | Für Benutzer | keiner angehakt = alle |
 | aktiv | ausgeschaltete Regeln werden nicht angewendet |
 
+**Land, Region, Ort** prüfen Immichs Ortsdaten (z. B. Land „Italien“, Region „Toskana“, Ort „Siena“). Mehrere mit Komma heißt: eines davon. Nur Fotos mit GPS haben einen Ort, deshalb lohnt es sich, erst unter „Ohne Ort“ zu verorten.
+
 Alle Bedingungen einer Regel müssen zutreffen. Eine Regel ohne Bedingung ist nicht erlaubt, sonst würde die ganze Bibliothek getaggt.
 
 ## Vorschau und Vormerken

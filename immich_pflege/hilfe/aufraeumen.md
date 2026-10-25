@@ -1,0 +1,47 @@
+# Aufräumen
+
+Der Tab sammelt alles, was Platz kostet oder offensichtlich daneben ist. Oben wählst du den **Bereich**. Wie überall gilt: erst **vormerken**, unter **✓ Vorgemerkt** prüfen, dann übertragen. Im Verlauf lässt sich jede Übertragung **rückgängig** machen.
+
+**Behalten** bzw. **Passt so** blendet einen Eintrag dauerhaft aus. Unter „behaltene“ holst du ihn zurück.
+
+## Speicherfresser
+
+| Art | Erkannt an |
+|---|---|
+| **Große Videos** | ab **300 MB**, das größte zuerst |
+| **Bildschirmaufnahmen** | Dateiname wie `ScreenRecording…`, `RPReplay…`, „Bildschirmaufnahme“ |
+| **Live-Photo-Videos doppelt** | ein kurzes Video (bis 3,5 s) mit demselben Namen wie ein Foto, höchstens 2 s daneben aufgenommen. Das Live-Photo enthält das Video schon. Das passiert, wenn Fotos einmal als HEIC und einmal getrennt als MOV hochgeladen wurden. |
+
+Favoriten und Medien im Prüf-Album bleiben außen vor.
+
+## Serienbilder
+
+Fotos **derselben Kamera** desselben Benutzers mit höchstens **2 Sekunden** Abstand, mindestens 3 hintereinander. Ist der Bild-Fingerabdruck schon berechnet, müssen sie sich auch ähneln (höchstens 12 von 64 Bit verschieden), sonst reicht die Zeit.
+
+**Behalten wird:** ein Favorit, sonst ein Foto, das in einem Album liegt, sonst das **schärfste**, sonst das erste. Tippe auf ein anderes Bild, um es stattdessen zu behalten.
+
+## Unscharf & dunkel
+
+Aus demselben kleinen Vorschaubild wie der Fingerabdruck berechnet das Tool zwei Werte:
+
+- **Helligkeit** 0–255. Bis **25** gilt als „sehr dunkel“.
+- **Schärfe** (wie stark sich benachbarte Bildpunkte unterscheiden). Bis **3** gilt als „unscharf“.
+- Beides zusammen ist **versehentlich**, typisch für ein Foto aus der Hosentasche.
+
+Fotos in einer Serie, Favoriten und Screenshots zählen hier nicht. Gewollt dunkle Fotos (Sternenhimmel, Feuerwerk) und bewusst weiche Bilder (Nebel, Porträt mit Unschärfe) erscheinen ebenfalls. Dafür gibt es **Behalten**.
+
+Nach dem Update werden Schärfe und Helligkeit für alle Fotos einmalig im Hintergrund nachberechnet. Das dauert bei großen Bibliotheken ein paar Stunden.
+
+## Falsche Zeit
+
+- **Kamera-Zeitversatz:** Geprüft werden nur Kameras ohne GPS. Pro Monat legt das Tool ihre Fotos neben die Handyfotos von euch beiden und probiert Verschiebungen in 30-Minuten-Schritten bis ±12 Stunden. Passt eine Verschiebung bei mindestens der Hälfte der Fotos (ein anderes Foto höchstens 10 Minuten daneben) und deutlich besser als ohne, gibt es einen Vorschlag. Ein typischer Fall: die Sommerzeit an der Kamera vergessen, also eine Stunde Versatz. Gleiche Verschiebung in aufeinanderfolgenden Monaten wird zusammengefasst. Die Stunden lassen sich vor dem Vormerken anpassen.
+- **Datum laut Dateiname:** `IMG_20190714_123456`, `PXL_…`, `IMG-20240718-WA0003` (WhatsApp, nur Datum) oder `2019-07-14 12.34.56`. Weicht Immichs Aufnahmezeit mehr als einen Tag davon ab, schlägt das Tool den Dateinamen vor.
+- **In der Zukunft** und **Standarddatum** (1970, 1980, 2000-01-01 um Mitternacht, oder vor 1995 von einem Digitalgerät): Hier gibt es keinen Vorschlag. Trage die richtige Zeit selbst ein.
+
+Korrigiert wird mit Immichs relativer Zeitverschiebung. **Rückgängig** verschiebt um denselben Betrag zurück. Orte, Serien und Albumvorschläge rechnen danach mit der richtigen Zeit.
+
+## Papierkorb
+
+Zeigt, was bei euch beiden im Immich-Papierkorb liegt, mit Größe. Bei Medien, die das Tool selbst verschoben hat, steht auch, ab wann Immich sie **endgültig löscht** (Einstellung „Papierkorb“ in Immich, meist 30 Tage). Antippen und **Wiederherstellen**, oder alles auf einmal. Wiederhergestellte Medien erscheinen nach dem nächsten **Neu einlesen** wieder in den Listen.
+
+Den Papierkorb leeren kann das Tool bewusst nicht, das bleibt Immich überlassen.

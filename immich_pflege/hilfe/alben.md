@@ -4,7 +4,7 @@ Das Tool erkennt Reisen in euren Fotos und schlägt dafür Alben vor. Vorher pr�
 
 ## Wie eine Reise erkannt wird
 
-1. **Zuhause:** Das Gebiet (etwa 10 × 10 km) mit den meisten Aufnahmetagen. Habt ihr zwei Wohnorte mit ähnlich vielen Tagen, zählen beide. Oben im Tab steht, was erkannt wurde.
+1. **Zuhause:** Das Gebiet (etwa 10 × 10 km) mit den meisten Aufnahmetagen. Habt ihr zwei Wohnorte mit ähnlich vielen Tagen, zählen beide. Oben im Tab steht, was erkannt wurde. Unter ⚙ Einstellungen → Albumvorschläge kannst du Zuhause auch selbst festlegen (Ortssuche, bis zu 5 Orte, z. B. Wohnort und Ferienhaus).
 2. **Unterwegs:** Fotos mit GPS, die weiter als die eingestellte Entfernung (Standard **50 km**) von zu Hause entfernt sind.
 3. **Eine Reise** ist eine Folge solcher Fotos eines Benutzers. Sie endet, wenn **36 Stunden** lang kein Foto von unterwegs kommt oder ein Foto von zu Hause dazwischen liegt.
 4. **Gemeinsame Reisen:** Überschneiden sich die Reisen von euch beiden zeitlich, werden sie zu einer zusammengelegt.

@@ -37,7 +37,7 @@ from .auth import COOKIE, RENEW_BELOW_S, Sessions, basic_credentials
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
 HELP = Path(__file__).parent.parent / "hilfe"
-HELP_TOPICS = ("duplikate", "ohne-ort", "alben", "tags", "vorgemerkt", "einstellungen")
+HELP_TOPICS = ("duplikate", "ohne-ort", "aufraeumen", "alben", "tags", "vorgemerkt", "einstellungen")
 SLOW_REQUEST_S = 2.0  # langsamere API-Aufrufe landen im Log
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 OPEN_PATHS = {"/healthz", "/login", "/api/login", "/api/logout", "/favicon.ico"}

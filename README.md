@@ -6,10 +6,12 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 |---|---|
 | **Duplikate** | Findet doppelte Medien über beide Benutzer und über Uploads und externe Bibliotheken hinweg: per Prüfsumme, Dateiname + Aufnahmezeit, Bild-Fingerabdruck (z. B. WhatsApp-Kopien) und Immichs eigener Erkennung. Jede Gruppe hat eine Art (identisch, sehr wahrscheinlich, ähnlich) und einen Behalten-Vorschlag. Nicht behaltene Kopien kommen ins Album „Duplikat-Prüfung“ oder in den Papierkorb. |
 | **Ohne Ort** | Medien ohne GPS bekommen einen Ortsvorschlag mit Sicherheit (sicher, wahrscheinlich, unsicher) aus den GPS-Fotos beider Benutzer, zusammengefasst nach Ort und Serie. Für den Rest gibt es die Ortssuche von Immich. Screenshots werden ausgeblendet. |
+| **Aufräumen** | Speicherfresser (große Videos, Bildschirmaufnahmen, doppelte Live-Photo-Videos), Serienbilder (das schärfste bleibt), unscharfe und dunkle Fotos, falsche Aufnahmezeiten samt Kamera-Zeitversatz, Papierkorb-Übersicht. |
 | **Alben** | Erkennt Reisen (weg von zu Hause, beide Benutzer zusammen) und schlägt Alben vor. Vorher wird gegen alle vorhandenen Alben beider Benutzer abgeglichen: schon vorhanden, ergänzen oder neu. Neue Alben werden mit dem anderen Benutzer geteilt. |
-| **Tags** | Massen-Tagging nach Regeln, die du in der Oberfläche anlegst. Tags werden nur ergänzt, nie entfernt. |
+| **Tags** | Massen-Tagging nach Regeln, die du in der Oberfläche anlegst, auch nach Land, Region oder Ort. Tags werden nur ergänzt, nie entfernt. |
+| **Übersicht** | Kennzahlen je Benutzer, offene Aufgaben, Aufnahmen je Jahr, Erledigtes je Monat. Auf Wunsch wöchentlich als Nachricht per ntfy oder Telegram. |
 
-Alles startet als **Vorschau**. In der Oberfläche wird Bestätigtes zuerst nur **vorgemerkt** und verschwindet aus der Übersicht. Unter **✓ Vorgemerkt** prüfst du alles noch einmal und überträgst es dann per Klick an Immich.
+Alles startet als **Vorschau**. In der Oberfläche wird Bestätigtes zuerst nur **vorgemerkt** und verschwindet aus der Übersicht. Unter **✓ Vorgemerkt** prüfst du alles noch einmal und überträgst es dann per Klick an Immich. Jede Übertragung steht im **Verlauf** und lässt sich dort rückgängig machen (außer Orten, siehe Hilfe).
 
 **Alle Einstellungen und Regeln werden in der Oberfläche gemacht.** Dateien musst du nicht bearbeiten.
 
@@ -115,7 +117,7 @@ Alternativ startest du den Workflow per **Test workflow** oder, wenn aktiviert, 
 
 ## Oberfläche und Hilfe
 
-Sechs Tabs (**Duplikate**, **Ohne Ort**, **Alben**, **Tags**, **✓ Vorgemerkt**, **⚙ Einstellungen**), unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
+Tabs **Übersicht**, **Duplikate**, **Ohne Ort**, **Aufräumen**, **Alben**, **Tags**, **✓ Vorgemerkt** (mit Verlauf) und **⚙ Einstellungen**, unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
 
 **Jeder Tab hat oben ein „?“** mit einer ausführlichen Erklärung: wie Treffer und Vorschläge entstehen, nach welchen Kriterien bewertet wird und wo die Grenzen liegen. Dieselben Texte liegen im Repository:
 
@@ -123,9 +125,10 @@ Sechs Tabs (**Duplikate**, **Ohne Ort**, **Alben**, **Tags**, **✓ Vorgemerkt**
 |---|---|
 | Duplikate: Quellen, Arten, Behalten-Vorschlag, Schutzregeln, Bild-Fingerabdruck | [`immich_pflege/hilfe/duplikate.md`](immich_pflege/hilfe/duplikate.md) |
 | Fotos ohne Ort: Kriterien und Sicherheit, Serien, Ortssuche, Fehlerquellen | [`immich_pflege/hilfe/ohne-ort.md`](immich_pflege/hilfe/ohne-ort.md) |
+| Aufräumen: Speicherfresser, Serienbilder, unscharf/dunkel, falsche Zeit, Papierkorb | [`immich_pflege/hilfe/aufraeumen.md`](immich_pflege/hilfe/aufraeumen.md) |
 | Albumvorschläge: Reise-Erkennung, Abgleich mit vorhandenen Alben, Teilen | [`immich_pflege/hilfe/alben.md`](immich_pflege/hilfe/alben.md) |
 | Massen-Tagging: Regelfelder, Vorschau, YAML | [`immich_pflege/hilfe/tags.md`](immich_pflege/hilfe/tags.md) |
-| Vorgemerkt: erst sammeln, prüfen, dann übertragen | [`immich_pflege/hilfe/vorgemerkt.md`](immich_pflege/hilfe/vorgemerkt.md) |
+| Vorgemerkt, Verlauf und Rückgängig | [`immich_pflege/hilfe/vorgemerkt.md`](immich_pflege/hilfe/vorgemerkt.md) |
 | Einstellungen: Immich, automatisch einlesen, Zugang, Updates | [`immich_pflege/hilfe/einstellungen.md`](immich_pflege/hilfe/einstellungen.md) |
 
 Das YAML-Format der Regeln ist in [`immich_pflege/regeln.example.yaml`](immich_pflege/regeln.example.yaml) beschrieben.
@@ -194,7 +197,7 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | POST | `/api/album-suggestions/apply` | Direkt anlegen/ergänzen: `{"trips": [{"id": "…"}]}`, optional je Reise `album` (Album-ID, `null` = neues Album) und `name` |
 | POST | `/api/album-suggestions/ignore` | „Kein Album“: `{"trips": [...]}`, mit `"undo": true` wieder aufnehmen |
 | GET | `/api/tags` | Regel-Vorschau (`rules=Name`, mehrfach möglich) |
-| GET | `/api/help/{thema}` | Hilfetext als Markdown (`duplikate`, `ohne-ort`, `alben`, `tags`, `vorgemerkt`, `einstellungen`) |
+| GET | `/api/help/{thema}` | Hilfetext als Markdown (`duplikate`, `ohne-ort`, `aufraeumen`, `alben`, `tags`, `vorgemerkt`, `einstellungen`) |
 | GET/PUT | `/api/rules` | Regeln lesen/speichern (`{"regeln": [...]}` oder `{"yaml": "..."}`) |
 | GET/PUT | `/api/settings` | Einstellungen (Keys nur maskiert) |
 | GET | `/api/version` | laufende Version und ob es auf GitHub Neues gibt |
@@ -208,6 +211,17 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | POST | `/api/staged/duplicates` | Duplikat-Aktion vormerken (Felder wie `/api/duplicates/apply`) |
 | POST | `/api/staged/no-location` | Orte vormerken (Felder wie `/api/no-location/apply`, dazu `label`) |
 | POST | `/api/staged/albums` | Alben vormerken (Felder wie `/api/album-suggestions/apply`) |
+| GET | `/api/cleanup` | Aufräumen: `art` (`speicher`, `serien`, `qualitaet`), `kategorie`, `ignoriert`, `offset`, `limit` |
+| POST | `/api/staged/cleanup` | Aufräumen vormerken: `action` (`album`/`papierkorb`), `ids` oder `kategorie`, optional `keep` {Eintrag: Medium} |
+| POST | `/api/cleanup/keep` | „Behalten“/„Passt so“: `{"ids": [...]}`, mit `"undo": true` zurück |
+| GET | `/api/timefix` | Falsche Aufnahmezeiten: `art` (`zeitversatz`, `dateiname`, `zukunft`, `standard`) |
+| POST | `/api/staged/timefix` | Zeitkorrektur vormerken: `{"eintraege": [{"id", "minuten"? , "ziel"?}]}` |
+| GET | `/api/trash` | Papierkorb beider Benutzer |
+| POST | `/api/trash/restore` | Wiederherstellen: `{"ids": [...]}`, ohne = alles |
+| GET | `/api/dashboard` | Kennzahlen der Übersicht |
+| GET/POST | `/api/report`, `/api/report/test` | Wochenbericht-Text bzw. Testnachricht |
+| GET | `/api/history` | Verlauf der Übertragungen |
+| POST | `/api/history/{id}/undo` | Übertragung rückgängig machen |
 | POST | `/api/staged/tags` | Regeln vormerken: `{"rules": [...]}` |
 | DELETE | `/api/staged/{id}` | Eintrag zurücknehmen |
 | POST | `/api/staged/apply` | Vorgemerktes übertragen: `ids` (ohne = alle), bei Papierkorb `confirm: "PAPIERKORB"` |
@@ -251,6 +265,8 @@ curl $AUTH -X POST $B/api/tags/apply -H 'Content-Type: application/json' -d '{"r
 ### Automatisch ohne n8n
 
 Was früher ein nächtlicher n8n-Workflow erledigt hat, kann das Tool selbst: Unter **⚙ Einstellungen → Automatisch einlesen** täglich einlesen lassen und **„Danach sichere Ortsvorschläge vormerken“** anhaken. Morgens liegen die sicheren Orte unter **✓ Vorgemerkt** und warten auf deinen Blick.
+
+Auch der **Wochenbericht** braucht kein n8n: unter ⚙ Einstellungen → Wochenbericht ntfy oder Telegram eintragen.
 
 ### Optional: n8n-Workflow (Idee: jede Nacht)
 

@@ -613,3 +613,32 @@ def album_state() -> MockState:
 
 demo_app = create_app(demo_state())
 album_demo_app = create_app(album_state())
+
+
+def full_state() -> MockState:
+    """Alles für den Browsertest: Reisen, Speicherfresser, Serie, dunkle Fotos, Kamera mit falscher Uhr."""
+    s = album_state()
+    mb = 1024 * 1024
+    s.add_asset("frank", "IMG_9001.MOV", "2024-06-01T10:00:00.000Z", type="VIDEO", size=1200 * mb, duration=900_000)
+    s.add_asset("julia", "RPReplay_Final1717.MP4", "2024-06-02T10:00:00.000Z", type="VIDEO", size=90 * mb,
+                make=None, model=None)
+    s.add_asset("julia", "IMG_9100.HEIC", "2024-06-03T10:00:00.000Z")
+    s.add_asset("julia", "IMG_9100.MOV", "2024-06-03T10:00:01.000Z", type="VIDEO", size=4 * mb, duration=2800)
+    for i, b in enumerate((3, 0, 2, 4)):
+        s.add_asset("frank", f"IMG_92{i:02d}.HEIC", f"2024-06-04T10:00:0{i}.000Z", image=f"serie#{b}")
+    s.add_asset("julia", "IMG_9300.HEIC", "2024-06-05T23:10:00.000Z", image="dunkel1")
+    s.add_asset("julia", "IMG_9301.HEIC", "2024-06-05T12:00:00.000Z", image="unscharf1")
+    t = datetime(2024, 3, 1, 10, 0)
+    for day in range(16):  # Sony-Uhr geht 1 h vor
+        for k in range(2):
+            real = t + timedelta(days=day, hours=3 * k)
+            s.add_asset("julia", f"IMG_8{day:02d}{k}.HEIC", real.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                        lat=51.64, lon=7.25, city="Oer-Erkenschwick", country="Deutschland", region="Nordrhein-Westfalen")
+            s.add_asset("frank", f"DSC8{day:02d}{k}.JPG", (real + timedelta(minutes=62)).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                        make="SONY", model="ILCE-7M4", library=True)
+    s.add_asset("julia", "IMG-20230815-WA0007.jpg", "2024-01-03T18:00:00.000Z", make=None, model=None)
+    s.add_asset("frank", "alt.jpg", "2020-01-01T00:00:00.000Z", trashed=True, size=3 * mb)
+    return s
+
+
+full_demo_app = create_app(full_state())

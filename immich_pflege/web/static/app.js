@@ -1441,26 +1441,30 @@ function renderCleanupFilters(r, time) {
   const timeCount = Object.values(time.arten).reduce((s, x) => s + x, 0);
   const area = h("select", { onchange: (e) => { c.bereich = e.target.value; c.kategorie = null; loadTab("cln", true); } },
     ...Object.entries(CLN_BEREICHE).map(([k, v]) => h("option", { value: k }, k === "zeit" ? `${v} (${timeCount})`
-      : `${v} (${r.arten[k].anzahl}${r.arten[k].groesse ? ", " + fmtBig(r.arten[k].groesse) : ""})`)));
+      : !r.arten[k] ? v  // Papierkorb: Zahlen erst beim Öffnen (fragt Immich)
+        : `${v} (${r.arten[k].anzahl}${r.arten[k].groesse ? ", " + fmtBig(r.arten[k].groesse) : ""})`)));
   area.value = c.bereich;
-  const cats = c.bereich === "zeit"
+  const cats = c.bereich === "papierkorb" ? [] : c.bereich === "zeit"
     ? Object.entries(time.arten).map(([k, v]) => [k, { name: time.namen[k], anzahl: v }])
     : Object.entries(r.kategorien).filter(([, v]) => v.art === c.bereich);
   const cat = h("select", { onchange: (e) => { c.kategorie = e.target.value || null; loadTab("cln", true); } },
     h("option", { value: "" }, "alle"),
     ...cats.map(([k, v]) => h("option", { value: k }, `${v.name} (${v.anzahl})`)));
   cat.value = c.kategorie || "";
-  $("#cln-filters").replaceChildren(
+  $("#cln-filters").replaceChildren(...[
     h("label", { class: "field grow" }, "Bereich", area),
     cats.length > 1 ? h("label", { class: "field grow" }, "Art", cat) : null,
     h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: c.ignored,
       onchange: (e) => { c.ignored = e.target.checked; loadTab("cln", true); } }),
-      `behaltene (${c.bereich === "zeit" ? time.ausgeblendet : r.ausgeblendet})`));
+      `behaltene (${c.bereich === "zeit" ? time.ausgeblendet : r.ausgeblendet})`),
+  ].filter(Boolean));
 }
 
 function fmtOffset(min) {
+  const sign = min > 0 ? "+" : "−";
+  if (Math.abs(min) >= 48 * 60) return sign + Math.round(Math.abs(min) / 1440) + " Tage";
   const h0 = Math.floor(Math.abs(min) / 60), m = Math.abs(min) % 60;
-  return (min > 0 ? "+" : "−") + h0 + " h" + (m ? ` ${m} min` : "");
+  return sign + h0 + " h" + (m ? ` ${m} min` : "");
 }
 
 // Gewählte Korrektur: Vorschlag, eigene Verschiebung (Minuten) oder Zielzeit (nur Einzelmedium)
@@ -1490,7 +1494,7 @@ function renderTimeFix(it) {
       const cur = it.medien[0].aufnahme ? it.medien[0].aufnahme.replace(" ", "T").slice(0, 16) : "";
       const sug = it.medien[0].neue_zeit ? it.medien[0].neue_zeit.replace(" ", "T").slice(0, 16) : cur;
       row.append(h("label", { class: "field" }, "Richtige Zeit",
-        h("input", { type: "datetime-local", value: sug, onchange: (e) => { c.edit[it.id] = { ziel: e.target.value }; c.sel.add(it.id); updateActionbar(); } })));
+        h("input", { type: "datetime-local", value: sug, style: "min-width:14em", onchange: (e) => { c.edit[it.id] = { ziel: e.target.value }; c.sel.add(it.id); updateActionbar(); } })));
     } else {
       row.append(h("label", { class: "field" }, "Verschieben um Stunden",
         h("input", { type: "number", step: "0.5", value: it.minuten / 60, style: "width:6em",
@@ -1652,7 +1656,7 @@ async function loadOverview() {
     h("button", { type: "button", class: "open-item", onclick: () => { if (bereich) { S.cln.bereich = bereich; S.cln.loaded = false; } showTab(tab); } },
       h("b", {}, d.offen[k].toLocaleString("de-DE")), " " + label + (k === "aufraeumen" ? ` (${fmtBig(d.offen.aufraeumen_groesse)})` : ""), h("span", { class: "muted" }, " ›"))));
   const rep = d.bericht;
-  box.replaceChildren(
+  box.replaceChildren(...[
     tiles,
     h("h2", { class: "stage-head" }, "Offen"),
     open.childElementCount ? open : h("p", { class: "muted" }, "Alles aufgeräumt 🎉"),
@@ -1661,7 +1665,8 @@ async function loadOverview() {
     d.erledigt.length ? h("h2", { class: "stage-head" }, "Erledigt je Monat") : null,
     d.erledigt.length ? doneTable(d.erledigt) : null,
     h("p", { class: "muted small" }, rep.kanal === "aus" ? "Wochenbericht: aus (⚙ Einstellungen)"
-      : `Wochenbericht per ${rep.kanal}: ${rep.tag}s ${rep.uhrzeit}` + (rep.letzter ? ` · zuletzt ${fmtDateTime(rep.letzter)}` : "") + (rep.fehler ? ` · Fehler: ${rep.fehler}` : "")));
+      : `Wochenbericht per ${rep.kanal}: ${rep.tag}s ${rep.uhrzeit}` + (rep.letzter ? ` · zuletzt ${fmtDateTime(rep.letzter)}` : "") + (rep.fehler ? ` · Fehler: ${rep.fehler}` : "")),
+  ].filter(Boolean));
 }
 
 // Einfarbiges Säulendiagramm (eine Reihe): Höhe = Anzahl, Tooltip mit Anzahl und Speicher

@@ -19,6 +19,17 @@ Neue Fotos erscheinen im Tool erst nach dem Einlesen. Das geht **täglich** zu e
 
 - **Reise ab km von zu Hause:** Ab dieser Entfernung zählen Fotos als „unterwegs“ (Standard 50 km).
 - **Mindestens Medien:** Kleinere Ausflüge werden nicht vorgeschlagen (Standard 20).
+- **Zuhause:** leer = automatisch erkennen. Sonst per Ortssuche festlegen, z. B. nach einem Umzug oder für einen zweiten Wohnort.
+
+## Wochenbericht
+
+Einmal pro Woche eine kurze Nachricht aufs Handy: offene Duplikate, verortbare Fotos (davon sicher), Reisen ohne Album, was zum Aufräumen ansteht, falsche Zeiten und was vorgemerkt ist. Dafür braucht es kein n8n.
+
+- **ntfy:** In der ntfy-App ein Thema abonnieren (z. B. `https://ntfy.sh/ein-langer-zufaelliger-name`) und genau diese Adresse eintragen. Mit eigenem ntfy-Server oder geschütztem Thema zusätzlich ein Zugangstoken.
+- **Telegram:** Bei @BotFather einen Bot anlegen, dessen Token eintragen, dem Bot einmal schreiben und die eigene Chat-ID eintragen (z. B. über @userinfobot).
+- **Testnachricht senden** speichert die Einstellungen und schickt sofort eine Nachricht.
+
+Verpasst der Container den Termin, holt er ihn beim nächsten Start nach, solange es dieselbe Woche ist.
 
 ## Duplikate
 

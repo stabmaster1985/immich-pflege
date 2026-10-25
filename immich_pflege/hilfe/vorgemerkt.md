@@ -1,6 +1,6 @@
 # Vorgemerkt
 
-In der Oberfläche geht keine Änderung sofort an Immich. Was du in den Tabs **Duplikate**, **Ohne Ort**, **Alben** oder **Tags** bestätigst, wird erst **vorgemerkt**. Gesammelt wird es im Tab **✓**.
+In der Oberfläche geht keine Änderung sofort an Immich. Was du in den Tabs **Duplikate**, **Ohne Ort**, **Aufräumen**, **Alben** oder **Tags** bestätigst, wird erst **vorgemerkt**. Gesammelt wird es im Tab **✓**.
 
 ## Ablauf
 
@@ -23,3 +23,21 @@ Erfolgreich Übertragenes verschwindet aus der Liste. Schlägt ein Eintrag fehl,
 - Ein Tag-Eintrag merkt sich die **Regel**, nicht die einzelnen Medien. Beim Übertragen gilt der dann aktuelle Stand der Regel.
 - Gruppen, die erneut vorgemerkt werden, ersetzen den älteren Eintrag derselben Gruppe bzw. Regel.
 - **Kommandozeile und API für n8n** führen weiterhin **direkt** aus (z. B. `/api/no-location/apply`). Zum Vormerken per API gibt es `/api/staged/…`.
+
+## Verlauf und Rückgängig
+
+Unter der Vormerkliste steht der **Verlauf**: jede Übertragung mit Zeitpunkt und Anzahl, auch die per API oder Kommandozeile. Gespeichert werden die letzten 500 in `data/verlauf.json`.
+
+**Rückgängig** macht eine Übertragung wieder rückgängig:
+
+| Was übertragen wurde | Rückgängig |
+|---|---|
+| Papierkorb (Duplikate, Aufräumen) | aus dem Papierkorb zurückholen – solange Immich ihn noch nicht geleert hat |
+| Prüf-Album | wieder aus dem Prüf-Album nehmen |
+| Neues Album | Album löschen (die Fotos bleiben erhalten) |
+| Album ergänzt / geteilt | ergänzte Fotos wieder herausnehmen, Freigabe zurücknehmen |
+| Tags | die gesetzten Tags wieder entfernen |
+| Aufnahmezeit | um denselben Betrag zurückverschieben |
+| **Orte** | **nicht möglich:** Immich kann Koordinaten nur ändern, nicht entfernen. Bei einem falschen Ort einfach einen anderen setzen. |
+
+Jede Übertragung lässt sich einmal zurücknehmen. Danach steht „rückgängig gemacht“ am Eintrag.
