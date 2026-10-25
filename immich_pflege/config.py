@@ -108,6 +108,7 @@ class Settings:
     location_max_hours: float = 2.0
     location_include_external: bool = False
     location_skip_screenshots: bool = True
+    dup_image_hash: bool = True
     web_user: str | None = None
     web_password: str | None = None  # nur aus .env (Klartext)
     web_password_hash: str | None = None  # aus der Oberfläche
@@ -223,6 +224,7 @@ class Settings:
             users=dict(sorted(users.items())),
             review_album=pick("REVIEW_ALBUM", "review_album", "Duplikat-Prüfung", lambda v: str(v).strip()),
             location_max_hours=pick("LOCATION_MAX_HOURS", "location_max_hours", 2.0, parse_hours),
+            dup_image_hash=pick("DUP_IMAGE_HASH", "dup_image_hash", True, lambda v: _bool(v, True)),
             location_skip_screenshots=pick("LOCATION_SKIP_SCREENSHOTS", "location_skip_screenshots", True,
                                            lambda v: _bool(v, True)),
             location_include_external=pick("LOCATION_INCLUDE_EXTERNAL", "location_include_external",
@@ -247,6 +249,7 @@ class Settings:
             "location_max_hours": self.location_max_hours,
             "location_include_external": self.location_include_external,
             "location_skip_screenshots": self.location_skip_screenshots,
+            "dup_image_hash": self.dup_image_hash,
             "web_user": self.web_user or "",
             "login_aktiv": self.auth_enabled,
             "gesperrt": sorted(self.locked),
@@ -304,6 +307,7 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
     attempt("location_max_hours", parse_hours)
     attempt("location_include_external", lambda v: _bool(v, False))
     attempt("location_skip_screenshots", lambda v: _bool(v, True))
+    attempt("dup_image_hash", lambda v: _bool(v, True))
 
     attempt("auto_scan", parse_auto_scan)
     attempt("auto_scan_time", parse_time)

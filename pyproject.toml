@@ -15,6 +15,7 @@ dependencies = [
     "rich>=13",
     "PyYAML>=6",
     "tzdata",  # Zeitzonen auch im schlanken Docker-Image
+    "Pillow>=10",  # Bild-Fingerabdruck für ähnliche Duplikate
 ]
 
 [project.optional-dependencies]

@@ -59,7 +59,7 @@ class MockState:
                   make: str | None = "Apple", model: str | None = "iPhone 15 Pro",
                   path: str | None = None, type: str = "IMAGE", visibility: str = "timeline",
                   trashed: bool = False, duplicate_id: str | None = None, size: int = 2_000_000,
-                  asset_id: str | None = None) -> str:
+                  asset_id: str | None = None, image: str | None = None) -> str:
         a = copy.deepcopy(TEMPLATE)
         aid = asset_id or new_id()
         uid = self.user_id(owner)
@@ -90,6 +90,7 @@ class MockState:
         a["_albums"] = set()
         a["_tags"] = set()
         a["_people"] = set()
+        a["_image"] = image or aid  # gleiche Bild-Kennung = gleiches Motiv im Vorschaubild
         self.assets[aid] = a
         return aid
 
@@ -126,6 +127,28 @@ class MockState:
 
     def asset_ids_in_album(self, album_id: str) -> set[str]:
         return {aid for aid, a in self.assets.items() if album_id in a["_albums"]}
+
+
+def render_thumbnail(key: str, width: int = 4032) -> bytes:
+    """Zufälliges, aber pro Bild-Kennung festes Motiv als WebP. Kleine Breite = andere
+    Kompression/Größe, aber dasselbe Motiv (wie eine WhatsApp-Kopie)."""
+    import io
+    import random
+
+    from PIL import Image, ImageDraw
+
+    rnd = random.Random(key)
+    img = Image.new("RGB", (250, 188), tuple(rnd.randrange(256) for _ in range(3)))
+    draw = ImageDraw.Draw(img)
+    for _ in range(12):
+        x, y = rnd.randrange(250), rnd.randrange(188)
+        draw.rectangle([x, y, x + rnd.randrange(20, 120), y + rnd.randrange(20, 90)],
+                       fill=tuple(rnd.randrange(256) for _ in range(3)))
+    if width < 2000:  # „verkleinerte Kopie“: einmal runter- und wieder hochskalieren
+        img = img.resize((125, 94)).resize((250, 188))
+    out = io.BytesIO()
+    img.save(out, "WEBP", quality=60 if width < 2000 else 85)
+    return out.getvalue()
 
 
 def public(asset: dict[str, Any], with_exif: bool = True) -> dict[str, Any]:
@@ -331,12 +354,12 @@ def create_app(state: MockState) -> FastAPI:
         a = state.assets.get(asset_id)
         if a is None or a["ownerId"] != user["id"]:
             raise HTTPException(400, "Not found or no asset.view access")
-        hue = int(asset_id[:2], 16) * 360 // 256
+        if a["type"] == "IMAGE":
+            return Response(render_thumbnail(a["_image"], a["width"]), media_type="image/webp")
         label = a["originalFileName"][:14]
         svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="250" height="250">'
-               f'<rect width="250" height="250" fill="hsl({hue},45%,55%)"/>'
-               f'<text x="125" y="130" font-size="20" text-anchor="middle" fill="#fff" '
-               f'font-family="sans-serif">{label}</text></svg>')
+               f'<rect width="250" height="250" fill="#888"/><text x="125" y="130" font-size="20" '
+               f'text-anchor="middle" fill="#fff" font-family="sans-serif">{label}</text></svg>')
         return Response(svg, media_type="image/svg+xml")
 
     @app.get("/api/tags")

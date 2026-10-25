@@ -57,7 +57,7 @@ def test_password_is_hashed(tmp_path):
 
 @pytest.fixture
 def fresh(tmp_path, http):
-    env = {"DATA_DIR": str(tmp_path / "data")}
+    env = {"DATA_DIR": str(tmp_path / "data"), "DUP_IMAGE_HASH": "false"}
     with TestClient(create_app(env, http=http)) as c:
         yield c
 

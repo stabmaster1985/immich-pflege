@@ -13,6 +13,7 @@ from .client import ImmichClient, ImmichError
 from .config import Settings
 from .duplicates import (AKTIONEN, ARTEN, DuplicateGroup, IgnoreList, clear_immich_duplicates, execute_steps,
                          find_groups, plan_group)
+from .imagehash import HashProgress, HashStore, compute_missing, similar_pairs
 from .library import Library, scan_library
 from .location import (LEVELS, analyze, apply_locations, level_at_least, month_facets, month_key,
                        month_label, place_facets, place_key)
@@ -67,6 +68,10 @@ class Pflege:
         self._lock = threading.RLock()
         self.scanning = False
         self.last_error: str | None = None
+        self.hash_store = HashStore(settings.data_dir / "bildhash.json")
+        self.hash_progress = HashProgress()
+        self._hash_thread: threading.Thread | None = None
+        self._pairs_cache: tuple[tuple, list[tuple[str, str]]] | None = None
 
     # ------------------------------------------------------------ Bibliothek
     def cached_library(self) -> Library | None:
@@ -104,7 +109,9 @@ class Pflege:
             lib.immich_url = self.settings.immich_url
             self._lib = lib
             lib.save(self.settings.cache_file)
-            return lib
+        if self.settings.dup_image_hash:
+            self.start_hashing()
+        return lib
 
     def _save(self) -> None:
         if self._lib is not None:
@@ -140,11 +147,47 @@ class Pflege:
         return check_server(self.clients)
 
     # --------------------------------------------------------------- Duplikate
+    # ------------------------------------------------------ Bild-Fingerabdruck
+    def start_hashing(self) -> bool:
+        """Fehlende Bild-Fingerabdrücke im Hintergrund berechnen (falls nicht schon läuft)."""
+        if self._hash_thread and self._hash_thread.is_alive():
+            return False
+        lib = self.cached_library()
+        if lib is None:
+            return False
+        self.hash_progress = HashProgress()
+        self._hash_thread = threading.Thread(
+            target=compute_missing, args=(lib, self.clients, self.hash_store, self.hash_progress),
+            name="bild-fingerabdruck", daemon=True)
+        self._hash_thread.start()
+        return True
+
+    def compute_hashes(self) -> dict[str, Any]:
+        """Synchron rechnen (CLI und Tests)."""
+        self.hash_progress = HashProgress()
+        compute_missing(self.library(), self.clients, self.hash_store, self.hash_progress)
+        return self.hash_progress.to_dict()
+
+    def image_pairs(self) -> list[tuple[str, str]]:
+        if not self.settings.dup_image_hash:
+            return []
+        lib = self.library()
+        key = (lib.scanned_at, len(lib.assets), len(self.hash_store.data))
+        if not self._pairs_cache or self._pairs_cache[0] != key:
+            self._pairs_cache = (key, similar_pairs(lib, self.hash_store))
+        return self._pairs_cache[1]
+
+    def hash_status(self) -> dict[str, Any]:
+        lib = self._lib
+        missing = len(self.hash_store.missing(lib)) if lib else None
+        return {"aktiv": self.settings.dup_image_hash, **self.hash_progress.to_dict(),
+                "vorhanden": len(self.hash_store.data), "fehlend": missing}
+
     def ignore_list(self) -> IgnoreList:
         return IgnoreList(self.settings.data_dir / "duplikate_ignoriert.json")
 
     def duplicate_groups(self, include_ignored: bool = False) -> list[DuplicateGroup]:
-        groups = find_groups(self.library())
+        groups = find_groups(self.library(), self.image_pairs())
         if include_ignored:
             return groups
         ignored = self.ignore_list()
@@ -167,7 +210,7 @@ class Pflege:
                         ignored: bool = False) -> dict:
         """Gruppen mit Filtern. ``ignored=True`` zeigt nur die als „kein Duplikat“ markierten."""
         lib = self.library()
-        all_groups = find_groups(lib)
+        all_groups = find_groups(lib, self.image_pairs())
         ignore = self.ignore_list()
         n_ignored = sum(1 for g in all_groups if ignore.contains(g))
         base = [g for g in all_groups if ignore.contains(g) == ignored]
@@ -191,6 +234,7 @@ class Pflege:
                       for k, label in ARTEN.items()},
             "monate": [{"key": k, "name": month_label(k), "anzahl": v} for k, v in sorted(months.items(), reverse=True)],
             "filter": {"art": art, "monat": monat, "benutzeruebergreifend": cross_user},
+            "fingerabdruck": self.hash_status(),
             "offset": offset,
             "gruppen": [g.to_dict() for g in page],
         }
@@ -226,7 +270,7 @@ class Pflege:
             raise ActionError("Keine Gruppen angegeben")
         with self._lock:
             lib = self.library()
-            groups = {g.id: g for g in find_groups(lib)}
+            groups = {g.id: g for g in find_groups(lib, self.image_pairs())}
             missing = [i for i in group_ids if i not in groups]
             if missing:
                 raise ActionError(f"Gruppe(n) {', '.join(missing)} nicht gefunden – bitte neu laden")

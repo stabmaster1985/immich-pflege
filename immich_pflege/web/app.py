@@ -377,6 +377,14 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
                    ignoriert: bool = False):
         return svc().duplicates_view(offset, limit, include_done, art, monat, benutzeruebergreifend, ignoriert)
 
+    @app.post("/api/fingerprints/start")
+    def fingerprints_start():
+        service = svc()
+        if not service.settings.dup_image_hash:
+            raise ActionError("Bild-Fingerabdruck ist in den Einstellungen abgeschaltet")
+        started = service.start_hashing()
+        return {"gestartet": started, **service.hash_status()}
+
     @app.post("/api/duplicates/ignore")
     def duplicates_ignore(body: DuplicatesIgnore):
         return svc().ignore_duplicates(body.groups, body.undo)

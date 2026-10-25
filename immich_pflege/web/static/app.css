@@ -229,3 +229,4 @@ textarea { min-height: 55vh; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo
 .strip-btn { border: 0; background: none; padding: 0; cursor: pointer; width: 100%; }
 .place-card .row-gap, .place-head .row-gap { margin: 6px 0; }
 .place-head { border-color: var(--accent); }
+progress { display: block; width: 100%; margin-top: 6px; accent-color: var(--accent); }

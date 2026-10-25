@@ -33,6 +33,7 @@
         <label class="toggle"><input type="checkbox" id="dup-done"> Erledigte zeigen</label>
       </div>
       <div id="dup-filters" class="toolbar"></div>
+      <div id="dup-fp"></div>
       <p class="hint">Tippe auf ein Bild, um es zu behalten. Hake Gruppen an – oder nutze unten „Alle“ für die aktuelle Auswahl.</p>
       <div id="dup-list"></div>
       <button id="dup-more" class="btn more" type="button" hidden>Weitere anzeigen</button>
@@ -127,6 +128,8 @@
             <input type="text" id="set-album">
             <small>Wird pro Benutzer angelegt, falls es fehlt.</small>
           </label>
+          <label class="toggle"><input type="checkbox" id="set-fp"> Ähnliche Kopien per Bild-Fingerabdruck suchen (z. B. per WhatsApp verschickte Fotos)</label>
+          <small>Lädt dafür einmalig von jedem Foto das kleine Vorschaubild. Läuft nach dem Einlesen im Hintergrund.</small>
         </fieldset>
         <fieldset class="card">
           <legend>Fotos ohne Ort</legend>

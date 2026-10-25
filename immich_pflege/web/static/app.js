@@ -197,8 +197,32 @@ async function loadDuplicates(reset) {
     ? `${n(r.gesamt, "ausgeblendete Gruppe", "ausgeblendete Gruppen")} („kein Duplikat“)`
     : `${r.offen} offen · ${n(r.gesamt, "Gruppe", "Gruppen")} · ${r.benutzeruebergreifend} benutzerübergreifend`;
   if (!d.art && !d.monat && !d.crossUser && !d.ignored) $("#count-dup").textContent = r.offen ? `(${r.offen})` : "";
+  renderFingerprint(r.fingerabdruck);
   $("#dup-more").hidden = d.groups.length >= d.total;
   updateActionbar();
+}
+
+let fpTimer = null;
+function renderFingerprint(fp) {
+  const box = $("#dup-fp");
+  clearTimeout(fpTimer);
+  if (!fp || !fp.aktiv) { box.replaceChildren(); return; }
+  if (fp.laeuft) {
+    const pct = fp.gesamt ? Math.round((fp.fertig / fp.gesamt) * 100) : 0;
+    box.replaceChildren(h("div", { class: "banner warn" },
+      `Bild-Fingerabdrücke werden berechnet: ${fp.fertig} von ${fp.gesamt} (${pct} %). Ähnliche Kopien erscheinen danach hier.`,
+      h("progress", { max: fp.gesamt || 1, value: fp.fertig })));
+    // während der Berechnung alle 15 s nachsehen (nur solange der Tab offen ist)
+    fpTimer = setTimeout(() => { if (S.tab === "dup") loadTab("dup", true); }, 15000);
+  } else if (fp.fehlend) {
+    box.replaceChildren(h("div", { class: "muted small" }, `${fp.fehlend} Bilder ohne Fingerabdruck. `,
+      h("button", { type: "button", class: "btn small", onclick: async () => {
+        await api("api/fingerprints/start", { method: "POST" }).catch((e) => toast(e.message, true));
+        loadTab("dup", true);
+      } }, "Jetzt berechnen")));
+  } else {
+    box.replaceChildren(fp.fehler ? h("div", { class: "muted small" }, `Bild-Fingerabdruck: ${fp.fehler} Bilder nicht lesbar`) : "");
+  }
 }
 
 function renderDupFilters(r) {
@@ -905,6 +929,7 @@ async function loadSettings() {
   $("#set-hours").value = d.location_max_hours; lock("#set-hours", "location_max_hours");
   $("#set-ext").checked = d.location_include_external; lock("#set-ext", "location_include_external");
   $("#set-shots").checked = d.location_skip_screenshots; lock("#set-shots", "location_skip_screenshots");
+  $("#set-fp").checked = d.dup_image_hash; lock("#set-fp", "dup_image_hash");
   $("#set-web-user").value = d.web_user; lock("#set-web-user", "web_user");
   $("#set-web-pw").value = ""; lock("#set-web-pw", "web_password");
   $("#set-logout").hidden = !d.login_aktiv;
@@ -974,6 +999,7 @@ function readSettingsForm() {
   put("location_max_hours", $("#set-hours").value);
   put("location_include_external", $("#set-ext").checked);
   put("location_skip_screenshots", $("#set-shots").checked);
+  put("dup_image_hash", $("#set-fp").checked);
   if (!d.gesperrt.includes("users")) body.benutzer = readUsers();
   put("auto_scan", $("#set-auto").value);
   put("auto_scan_time", $("#set-auto-time").value);

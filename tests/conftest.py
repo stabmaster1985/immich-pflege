@@ -31,7 +31,8 @@ def clients(state, http) -> dict[str, ImmichClient]:
 def env(tmp_path) -> dict[str, str]:
     """Umgebung wie per .env konfiguriert."""
     return {"DATA_DIR": str(tmp_path / "data"), "IMMICH_URL": "http://immich-server:2283",
-            "IMMICH_KEY_FRANK": "key-frank", "IMMICH_KEY_JULIA": "key-julia"}
+            "IMMICH_KEY_FRANK": "key-frank", "IMMICH_KEY_JULIA": "key-julia",
+            "DUP_IMAGE_HASH": "false"}  # Fingerabdruck-Tests schalten ihn gezielt ein
 
 
 @pytest.fixture

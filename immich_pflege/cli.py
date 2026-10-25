@@ -127,6 +127,24 @@ def einlesen(json_: bool = JsonOpt):
         out.print(f"[yellow]Warnung:[/yellow] {w}")
 
 
+@app.command()
+def fingerabdruck(json_: bool = JsonOpt):
+    """Fehlende Bild-Fingerabdrücke berechnen (für ähnliche Kopien, z. B. WhatsApp)."""
+    svc = _service()
+    if not svc.settings.dup_image_hash:
+        err.print("[yellow]Bild-Fingerabdruck ist in den Einstellungen abgeschaltet.[/yellow]")
+        raise typer.Exit(1)
+    missing = len(svc.hash_store.missing(_run(svc.library)))
+    with err.status(f"Berechne {missing} Bild-Fingerabdrücke …"):
+        res = _run(svc.compute_hashes)
+    if json_:
+        _emit_json(res)
+        return
+    out.print(f"{res['fertig']} Fingerabdrücke berechnet, {res['fehler']} Fehler")
+    if res["letzter_fehler"]:
+        out.print(f"[yellow]Letzter Fehler: {res['letzter_fehler']}[/yellow]")
+
+
 # ---------------------------------------------------------------- Duplikate
 @app.command()
 def duplikate(

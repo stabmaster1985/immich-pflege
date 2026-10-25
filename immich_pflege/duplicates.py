@@ -164,9 +164,10 @@ def group_id(asset_ids: Iterable[str]) -> str:
     return hashlib.sha1(",".join(sorted(asset_ids)).encode()).hexdigest()[:12]
 
 
-def find_groups(lib: Library) -> list[DuplicateGroup]:
+def find_groups(lib: Library, image_pairs: Iterable[tuple[str, str]] = ()) -> list[DuplicateGroup]:
     uf = UnionFind()
-    pair_sources: list[tuple[list[str], str]] = []
+    pair_sources: list[tuple[list[str], str]] = [
+        ([a, b], "bildhash") for a, b in image_pairs if a in lib.assets and b in lib.assets]
     immich_suggested: set[str] = set()
 
     for d in lib.immich_duplicates:
