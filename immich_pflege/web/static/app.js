@@ -303,6 +303,15 @@ async function applyAllDuplicates(action, btn) {
   }
 }
 
+// Gründe für den Behalten-Vorschlag als Häkchen. Hervorgehoben sind die Gründe, die nicht
+// alle Kopien der Gruppe haben – nur die machen den Unterschied.
+function renderReasons(m, g) {
+  const common = g.medien.reduce((acc, x) => acc.filter((r) => x.gruende.includes(r)), [...g.medien[0].gruende]);
+  if (!m.gruende.length) return h("div", { class: "reasons muted" }, "keine Vorteile");
+  return h("div", { class: "reasons", title: `Wertung: ${m.punkte} Punkte` },
+    ...m.gruende.map((r) => h("span", { class: common.includes(r) ? "reason same" : "reason diff" }, "✓ " + r)));
+}
+
 function renderGroup(g) {
   const d = S.dup;
   const keep = d.keep[g.id] || g.behalten;
@@ -341,7 +350,7 @@ function renderGroup(g) {
       h("div", {}, `${m.benutzer} · ${m.extern ? "extern" : "Upload"}${m.typ === "video" ? " · Video" : ""}`),
       h("div", {}, fmtTaken(m.aufnahme)),
       h("div", {}, [m.breite && m.hoehe ? `${m.breite}×${m.hoehe}` : "", fmtSize(m.groesse)].filter(Boolean).join(" · ")),
-      h("div", { class: "muted" }, `${m.punkte} P.` + (m.gruende.length ? " · " + m.gruende.join(", ") : "")),
+      renderReasons(m, g),
     )));
   }
   card.append(head, grid);

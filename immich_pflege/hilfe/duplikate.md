@@ -41,6 +41,8 @@ Jede Stufe schlägt alle niedrigeren zusammen:
 
 Bei Gleichstand gewinnt die größere Auflösung, dann die größere Datei.
 
+Unter jedem Bild stehen die zutreffenden Gründe als Häkchen. **Grün** sind die Gründe, die nicht alle Kopien der Gruppe haben, nur sie machen den Unterschied. **Grau** sind Gründe, die alle Kopien teilen.
+
 **Bevorzugte Fassung:** Bei Original und Bearbeitung entscheidet die Einstellung, Standard ist die bearbeitete Fassung. Bei unterschiedlichen Formaten gewinnt das Originalformat (HEIC, RAW, DNG) vor der daraus erzeugten JPG- oder PNG-Kopie. **Tippe auf ein Bild**, um selbst zu wählen, welches bleibt.
 
 ## Aktionen
