@@ -68,7 +68,7 @@ class MockState:
                   path: str | None = None, type: str = "IMAGE", visibility: str = "timeline",
                   trashed: bool = False, duplicate_id: str | None = None, size: int = 2_000_000,
                   asset_id: str | None = None, image: str | None = None,
-                  duration: int | None = None, motiv: str = "") -> str:
+                  duration: int | None = None, motiv: str = "", offline: bool = False) -> str:
         a = copy.deepcopy(TEMPLATE)
         aid = asset_id or new_id()
         uid = self.user_id(owner)
@@ -90,6 +90,7 @@ class MockState:
             "checksum": checksum or base64.b64encode(uuid.uuid4().bytes[:15]).decode(),
             "duplicateId": duplicate_id,
             "duration": duration,
+            "isOffline": offline,
             "updatedAt": now_iso(),
         })
         if trashed:

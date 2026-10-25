@@ -32,6 +32,10 @@ Fotos in einer Serie, Favoriten und Screenshots zählen hier nicht. Gewollt dunk
 
 Nach dem Update werden Schärfe und Helligkeit für alle Fotos einmalig im Hintergrund nachberechnet. Das dauert bei großen Bibliotheken ein paar Stunden.
 
+## Verwaiste Dateien
+
+Medien der **externen Bibliothek**, deren Datei auf der Platte fehlt, weil sie verschoben, umbenannt oder gelöscht wurde. Immich nennt sie „offline“. Unter dem Eintrag steht der alte Pfad. Liegt die Datei nur woanders, bringt Immich sie nach dem nächsten Scannen der Bibliothek von selbst wieder in Ordnung. Sonst räumt **Papierkorb** den toten Eintrag weg. Das ist die einzige Ausnahme von der Regel „externe Medien nie in den Papierkorb“, denn die Datei ist ohnehin nicht mehr da.
+
 ## Falsche Zeit
 
 - **Kamera-Zeitversatz:** Geprüft werden nur Kameras ohne GPS. Pro Monat legt das Tool ihre Fotos neben die Handyfotos von euch beiden und probiert Verschiebungen in 30-Minuten-Schritten bis ±12 Stunden. Passt eine Verschiebung bei mindestens der Hälfte der Fotos (ein anderes Foto höchstens 10 Minuten daneben) und deutlich besser als ohne, gibt es einen Vorschlag. Ein typischer Fall: die Sommerzeit an der Kamera vergessen, also eine Stunde Versatz. Gleiche Verschiebung in aufeinanderfolgenden Monaten wird zusammengefasst. Die Stunden lassen sich vor dem Vormerken anpassen.

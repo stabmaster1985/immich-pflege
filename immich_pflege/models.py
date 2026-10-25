@@ -58,6 +58,7 @@ class Asset:
     in_album: bool = False
     in_review_album: bool = False
     stack_id: str | None = None  # Immich-Stapel, in dem das Medium liegt
+    offline: bool = False  # externe Bibliothek: Datei fehlt auf der Platte
     extra: dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------ abgeleitet
@@ -154,6 +155,7 @@ class Asset:
             model=exif.get("model"),
             file_size=exif.get("fileSizeInByte"),
             duration_ms=parse_duration(raw.get("duration")),
+            offline=bool(raw.get("isOffline")),
         )
 
 

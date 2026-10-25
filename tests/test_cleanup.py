@@ -34,6 +34,8 @@ def cleanup_state() -> MockState:
     s.ids["fav_dunkel"] = s.add_asset("julia", "IMG_0702.HEIC", "2024-05-06T23:00:00.000Z", image="dunkel2",
                                       favorite=True)
     s.add_asset("frank", "IMG_0800.HEIC", "2024-05-07T12:00:00.000Z")  # normales Foto
+    s.ids["offline"] = s.add_asset("frank", "DSC0999.JPG", "2023-05-07T12:00:00.000Z", library=True,
+                                   path="/mnt/fotos/alt/DSC0999.JPG", offline=True, make="SONY", model="ILCE-7M4")
     return s
 
 
@@ -60,7 +62,7 @@ def test_categories(web, state):
     r = web.get("/api/cleanup", params={"limit": 0}).json()
     cats = {k: v["anzahl"] for k, v in r["kategorien"].items()}
     assert cats == {"grosse_videos": 2, "bildschirmaufnahmen": 1, "live_videos": 1, "serien": 1,
-                    "versehentlich": 1, "dunkel": 0, "unscharf": 1}
+                    "versehentlich": 1, "dunkel": 0, "unscharf": 1, "offline": 1}
     assert r["arten"]["speicher"]["groesse"] == (900 + 2000 + 80 + 4) * MB
     assert by_cat(r, "grosse_videos")[0]["medien"][0]["id"] == state.ids["gross_extern"]  # größtes zuerst
     big = next(e for e in by_cat(r, "grosse_videos") if e["medien"][0]["id"] == state.ids["gross"])
@@ -116,3 +118,12 @@ def test_choose_other_burst_photo(web, state):
     web.post("/api/staged/cleanup", json={"action": "album", "ids": [item["id"]], "keep": {item["id"]: first}})
     steps = web.get("/api/staged").json()["eintraege"][0]["daten"]["schritte"]
     assert first not in {s["id"] for s in steps} and len(steps) == 3
+
+
+def test_offline_external_may_go_to_trash(web, state):
+    item = web.get("/api/cleanup", params={"art": "verwaist"}).json()["eintraege"][0]
+    assert item["kategorie"] == "offline" and item["grund"] == "/mnt/fotos/alt/DSC0999.JPG"
+    web.post("/api/staged/cleanup", json={"action": "papierkorb", "ids": [item["id"]]})
+    assert web.get("/api/staged").json()["papierkorb"] == 1  # Ausnahme: Datei fehlt ohnehin
+    web.post("/api/staged/apply", json={"confirm": "PAPIERKORB"})
+    assert state.assets[state.ids["offline"]]["isTrashed"]

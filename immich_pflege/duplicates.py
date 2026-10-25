@@ -352,8 +352,9 @@ def execute_steps(lib: Library, clients: dict[str, ImmichClient], steps: list[Pl
             result["rueck"].append({"op": "album_entfernen", "user": user, "album": album_id, "ids": added})
         log.info("%d Medien von %s ins Album '%s' gelegt", len(ids), user, review_album)
     for user, ids in trash.items():
-        # Doppelte Absicherung: externe Medien niemals in den Papierkorb
-        ids = [i for i in ids if i in lib.assets and not lib.assets[i].is_external]
+        # Doppelte Absicherung: externe Medien niemals in den Papierkorb – außer ihre Datei fehlt
+        # ohnehin (offline), dann entfernt der Papierkorb nur den Eintrag in Immich
+        ids = [i for i in ids if i in lib.assets and (not lib.assets[i].is_external or lib.assets[i].offline)]
         result["papierkorb"] += clients[user].trash(ids)
         result["rueck"].append({"op": "wiederherstellen", "user": user, "ids": ids,
                                 "medien": [lib.assets[i].to_dict() for i in ids]})

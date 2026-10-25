@@ -1539,7 +1539,7 @@ async function openHelp(topic) {
 
 /* ---------------------------------------------------------- Aufräumen */
 const PAGE_CLN = 30;
-const CLN_BEREICHE = { speicher: "Speicherfresser", serien: "Serienbilder", qualitaet: "Unscharf & dunkel", zeit: "Falsche Zeit", stapel: "Stapeln aus Alben", alben: "Alben aufräumen", papierkorb: "Papierkorb" };
+const CLN_BEREICHE = { speicher: "Speicherfresser", serien: "Serienbilder", qualitaet: "Unscharf & dunkel", verwaist: "Verwaiste Dateien", zeit: "Falsche Zeit", stapel: "Stapeln aus Alben", alben: "Alben aufräumen", papierkorb: "Papierkorb" };
 
 async function loadCleanup(reset) {
   const c = S.cln;
@@ -1719,7 +1719,9 @@ async function stageCleanup(action, items, btn) {
   const ok = await confirmDialog({
     title: "Vormerken?",
     body: [h("p", {}, `${n(media, "Medium", "Medien")} (${fmtBig(size)}) ${action === "papierkorb" ? "für den Papierkorb" : "fürs Prüf-Album"}.`),
-      action === "papierkorb" ? h("p", { class: "muted" }, "Medien aus externen Bibliotheken kommen nie in den Papierkorb, sondern ins Prüf-Album.") : null,
+      action === "papierkorb" ? h("p", { class: "muted" }, c.bereich === "verwaist"
+        ? "Die Dateien fehlen schon auf der Platte – der Papierkorb entfernt nur den Eintrag in Immich."
+        : "Medien aus externen Bibliotheken kommen nie in den Papierkorb, sondern ins Prüf-Album.") : null,
       h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter ✓ Vorgemerkt.")],
     okLabel: "Vormerken",
   });

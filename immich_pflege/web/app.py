@@ -595,7 +595,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     # ------------------------------------------------------------- Vormerken
     # ------------------------------------------------------------ Aufräumen
     @app.get("/api/cleanup")
-    def cleanup(art: Optional[Literal["speicher", "serien", "qualitaet"]] = None, kategorie: Optional[str] = None,
+    def cleanup(art: Optional[Literal["speicher", "serien", "qualitaet", "verwaist"]] = None, kategorie: Optional[str] = None,
                 ignoriert: bool = False, offset: int = Query(0, ge=0), limit: int = Query(30, ge=0, le=5000)):
         return svc().cleanup_view(art, kategorie, ignoriert, offset, limit)
 

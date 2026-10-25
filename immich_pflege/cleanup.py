@@ -34,7 +34,7 @@ DARK_MAX = 25  # Helligkeit 0–255
 BLUR_MAX = 3.0  # Schärfe (Streuung nach Laplace-Filter, Vorschaubild 250 px)
 SCREEN_RE = re.compile(r"^(screenrecording|rpreplay|bildschirmaufnahme|screen[_ -]?record)", re.I)
 
-ARTEN = {"speicher": "Speicherfresser", "serien": "Serienbilder", "qualitaet": "Unscharf & dunkel"}
+ARTEN = {"speicher": "Speicherfresser", "serien": "Serienbilder", "qualitaet": "Unscharf & dunkel", "verwaist": "Verwaiste Dateien"}
 KATEGORIEN = {
     "grosse_videos": ("speicher", f"Videos ab {BIG_VIDEO_MB} MB"),
     "bildschirmaufnahmen": ("speicher", "Bildschirmaufnahmen"),
@@ -43,6 +43,7 @@ KATEGORIEN = {
     "versehentlich": ("qualitaet", "Versehentlich (dunkel und unscharf)"),
     "dunkel": ("qualitaet", "Sehr dunkel"),
     "unscharf": ("qualitaet", "Unscharf"),
+    "offline": ("verwaist", "Datei fehlt (offline)"),
 }
 
 
@@ -80,8 +81,8 @@ class Item:
             if a.id not in self.drop:
                 continue
             act = action
-            if action == "papierkorb" and a.is_external:
-                act = "album"  # externe Medien nie in den Papierkorb
+            if action == "papierkorb" and a.is_external and not a.offline:
+                act = "album"  # externe Medien nie in den Papierkorb (außer die Datei fehlt ohnehin)
             out.append(PlannedStep(a, act, KATEGORIEN[self.kategorie][1]))
         return out
 
@@ -180,10 +181,17 @@ def poor_quality(lib: Library, store: HashStore, exclude: set[str] | None = None
     return items
 
 
+def orphans(lib: Library) -> list[Item]:
+    """Externe Medien, deren Datei auf der Platte fehlt (verschoben, umbenannt oder gelöscht)."""
+    items = [Item("offline", [a], {a.id}, a.path) for a in lib.assets.values() if a.offline]
+    items.sort(key=lambda i: i.assets[0].path)
+    return items
+
+
 def find_items(lib: Library, store: HashStore) -> list[Item]:
     series = bursts(lib, store)
     in_series = {i for item in series for i in item.ids}
-    return storage_hogs(lib) + series + poor_quality(lib, store, in_series)
+    return storage_hogs(lib) + series + poor_quality(lib, store, in_series) + orphans(lib)
 
 
 # -------------------------------------------------------------- Behalten
