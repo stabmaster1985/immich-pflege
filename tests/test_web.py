@@ -19,7 +19,7 @@ def test_healthz_and_ui(web):
     assert r.status_code == 200 and "Immich-Pflege" in r.text
     assert web.get("/static/app.js").status_code == 200
     # keine externen Ressourcen
-    for f in ("/", "/static/app.js", "/static/app.css"):
+    for f in ("/", "/static/app.js", "/static/app.css", "/sw.js", "/static/manifest.webmanifest"):
         text = web.get(f).text
         assert not re.search(r'(src|href)\s*=\s*["\']https?://', text), f
         assert "url(http" not in text and "@import" not in text

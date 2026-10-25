@@ -40,7 +40,7 @@ HELP = Path(__file__).parent.parent / "hilfe"
 HELP_TOPICS = ("duplikate", "ohne-ort", "aufraeumen", "alben", "tags", "vorgemerkt", "einstellungen")
 SLOW_REQUEST_S = 2.0  # langsamere API-Aufrufe landen im Log
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-OPEN_PATHS = {"/healthz", "/login", "/api/login", "/api/logout", "/favicon.ico"}
+OPEN_PATHS = {"/healthz", "/login", "/api/login", "/api/logout", "/favicon.ico", "/sw.js"}
 OPEN_PREFIXES = ("/static/",)
 
 
@@ -785,6 +785,11 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.get("/", include_in_schema=False)
     def index():
         return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+
+    @app.get("/sw.js", include_in_schema=False)
+    def service_worker():
+        # liegt im Wurzelverzeichnis, damit er die ganze Oberfläche abdeckt (für „Als App installieren“)
+        return FileResponse(STATIC / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

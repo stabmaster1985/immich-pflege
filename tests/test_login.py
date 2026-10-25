@@ -110,3 +110,16 @@ def test_session_key_survives_restart(app_env, http):
     with TestClient(create_app(app_env, http=http)) as b:
         b.cookies.set("pflege_sitzung", cookie)
         assert b.get("/api/status?server=false").status_code == 200
+
+
+def test_app_install_files_open_without_login(web):
+    """„Als App installieren“: Manifest, Symbole und Service Worker lädt der Browser ohne Sitzung."""
+    m = web.get("/static/manifest.webmanifest")
+    assert m.status_code == 200 and m.json()["display"] == "standalone"
+    for icon in m.json()["icons"]:
+        r = web.get("/static/" + icon["src"])
+        assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    sw = web.get("/sw.js")
+    assert sw.status_code == 200 and "javascript" in sw.headers["content-type"]
+    page = web.get("/login").text
+    assert "manifest.webmanifest" in page and "apple-touch-icon" in page

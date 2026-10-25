@@ -54,6 +54,15 @@ Verpasst der Container den Termin, holt er ihn beim nächsten Start nach, solang
 - **Login abschalten:** Benutzername leeren und speichern.
 - **n8n und curl** melden sich per Basic Auth mit denselben Daten an.
 
+## Als App installieren
+
+Die Oberfläche lässt sich wie eine App auf den Startbildschirm legen – mit eigenem Symbol und ohne Adressleiste:
+
+- **iPhone/iPad (Safari):** Teilen-Knopf → **„Zum Home-Bildschirm“**.
+- **Android (Chrome):** Menü ⋮ → **„App installieren“** bzw. **„Zum Startbildschirm hinzufügen“**.
+
+Als richtige App (eigenes Fenster) bietet Chrome das nur über **HTTPS** an, also z. B. hinter einem Reverse Proxy. Über `http://IP:2222` legt Chrome nur eine Verknüpfung an; Safari öffnet die Seite auch dann ohne Adressleiste. Die App speichert nichts zwischen – die Daten kommen immer frisch vom Server.
+
 ## Updates
 
 Die Karte **Version** zeigt den laufenden Stand. Es gibt zwei Wege für Updates:

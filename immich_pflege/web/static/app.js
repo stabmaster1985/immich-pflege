@@ -2687,6 +2687,10 @@ $("#set-logout").addEventListener("click", async () => {
 $("#version-check").addEventListener("click", async (e) => { busy(e.currentTarget, true); await loadVersion(true); busy(e.currentTarget, false); });
 $("#version-update").addEventListener("click", (e) => startUpdate(e.currentTarget));
 
+if ("serviceWorker" in navigator) {
+  try { navigator.serviceWorker.register("sw.js").catch(() => {}); } catch (_) { /* ohne geht es auch */ }
+}
+
 (async function init() {
   let tab = "dup";
   try { tab = localStorage.getItem("pflege-tab") || "dup"; } catch (_) { /* egal */ }

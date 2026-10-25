@@ -117,7 +117,7 @@ Alternativ startest du den Workflow per **Test workflow** oder, wenn aktiviert, 
 
 ## Oberfläche und Hilfe
 
-Tabs **Übersicht**, **Duplikate**, **Ohne Ort**, **Aufräumen**, **Alben**, **Tags**, **✓ Vorgemerkt** (mit Verlauf) und **⚙ Einstellungen**, unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
+Tabs **Übersicht**, **Duplikate**, **Ohne Ort**, **Aufräumen**, **Alben**, **Tags**, **✓ Vorgemerkt** (mit Verlauf) und **⚙ Einstellungen**, unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet. Sie lässt sich **als App auf den Startbildschirm legen** (Safari: „Zum Home-Bildschirm“, Chrome: „App installieren“ – als eigenes Fenster nur über HTTPS).
 
 **Jeder Tab hat oben ein „?“** mit einer ausführlichen Erklärung: wie Treffer und Vorschläge entstehen, nach welchen Kriterien bewertet wird und wo die Grenzen liegen. Dieselben Texte liegen im Repository:
 
@@ -129,7 +129,7 @@ Tabs **Übersicht**, **Duplikate**, **Ohne Ort**, **Aufräumen**, **Alben**, **T
 | Albumvorschläge: Reise-Erkennung, Abgleich mit vorhandenen Alben, Teilen | [`immich_pflege/hilfe/alben.md`](immich_pflege/hilfe/alben.md) |
 | Tags: Vorschläge, KI-Suche, eigene Regeln | [`immich_pflege/hilfe/tags.md`](immich_pflege/hilfe/tags.md) |
 | Vorgemerkt, Verlauf und Rückgängig | [`immich_pflege/hilfe/vorgemerkt.md`](immich_pflege/hilfe/vorgemerkt.md) |
-| Einstellungen: Immich, automatisch einlesen, Zugang, Updates | [`immich_pflege/hilfe/einstellungen.md`](immich_pflege/hilfe/einstellungen.md) |
+| Einstellungen: Immich, automatisch einlesen, Zugang, als App installieren, Updates | [`immich_pflege/hilfe/einstellungen.md`](immich_pflege/hilfe/einstellungen.md) |
 
 Das YAML-Format der Regeln ist in [`immich_pflege/regeln.example.yaml`](immich_pflege/regeln.example.yaml) beschrieben.
 
