@@ -201,7 +201,11 @@ class Pflege:
         if not self.settings.dup_image_hash:
             return []
         lib = self.library()
-        key = (lib.scanned_at, len(lib.assets), len(self.hash_store.data))
+        key = (id(lib), lib.rev, len(self.hash_store.data))
+        hashing = self._hash_thread is not None and self._hash_thread.is_alive()
+        # Während der Berechnung nicht bei jedem neuen Fingerabdruck neu vergleichen – erst danach
+        if hashing and self._pairs_cache and self._pairs_cache[0][:2] == key[:2]:
+            return self._pairs_cache[1]
         if not self._pairs_cache or self._pairs_cache[0] != key:
             self._pairs_cache = (key, similar_pairs(lib, self.hash_store))
         return self._pairs_cache[1]

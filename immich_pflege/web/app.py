@@ -459,6 +459,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
                    ignoriert: bool = False):
         return svc().duplicates_view(offset, limit, include_done, art, monat, benutzeruebergreifend, ignoriert)
 
+    @app.get("/api/fingerprints")
+    def fingerprints():
+        return svc().hash_status()
+
     @app.post("/api/fingerprints/start")
     def fingerprints_start():
         service = svc()

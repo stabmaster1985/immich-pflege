@@ -230,10 +230,17 @@ function renderFingerprint(fp) {
   if (fp.laeuft) {
     const pct = fp.gesamt ? Math.round((fp.fertig / fp.gesamt) * 100) : 0;
     box.replaceChildren(h("div", { class: "banner warn" },
-      `Bild-Fingerabdrücke werden berechnet: ${fp.fertig} von ${fp.gesamt} (${pct} %). Ähnliche Kopien erscheinen danach hier.`,
+      `Bild-Fingerabdrücke werden berechnet: ${fp.fertig} von ${fp.gesamt} (${pct} %). Ähnliche Kopien kommen danach dazu – die Liste bleibt bis dahin, wie sie ist.`,
       h("progress", { max: fp.gesamt || 1, value: fp.fertig })));
-    // während der Berechnung alle 15 s nachsehen (nur solange der Tab offen ist)
-    fpTimer = setTimeout(() => { if (S.tab === "dup") loadTab("dup", true); }, 15000);
+    // nur den Fortschritt nachsehen – die Liste nicht neu laden (Auswahl und Scrollposition bleiben)
+    fpTimer = setTimeout(async () => {
+      if (S.tab !== "dup") { fpTimer = setTimeout(() => renderFingerprint(fp), 15000); return; }
+      const now = await api("api/fingerprints").catch(() => null);
+      if (!now) return;
+      if (now.laeuft) renderFingerprint(now);
+      else box.replaceChildren(h("div", { class: "banner" }, "Bild-Fingerabdrücke fertig. ",
+        h("button", { type: "button", class: "btn small", onclick: () => loadTab("dup", true) }, "Neue Treffer anzeigen")));
+    }, 15000);
   } else if (fp.fehlend) {
     box.replaceChildren(h("div", { class: "muted small" }, `${fp.fehlend} Bilder ohne Fingerabdruck. `,
       h("button", { type: "button", class: "btn small", onclick: async () => {

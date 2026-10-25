@@ -68,3 +68,29 @@ def test_fingerprint_endpoint(env, http):
     with TestClient(create_app(env, http=http)) as c:
         assert c.post("/api/fingerprints/start").status_code == 400  # in env abgeschaltet
         assert c.get("/api/duplicates").json()["fingerabdruck"]["aktiv"] is False
+        assert c.get("/api/fingerprints").json()["aktiv"] is False
+
+
+def test_pairs_frozen_while_hashing(settings, http, state):
+    """Während der Berechnung bleiben die Gruppen stabil (keine springende Liste, IDs gültig)."""
+    import threading
+
+    settings.dup_image_hash = True
+    state.add_asset("frank", "IMG_0400.HEIC", "2024-07-18T10:00:00.000Z", image="pizza")
+    state.add_asset("julia", "IMG-20240718-WA0003.jpg", "2024-07-18T19:30:00.000Z", image="pizza",
+                    make=None, model=None)
+    svc = Pflege(settings, http=http)
+    svc.library()
+    svc._hash_thread and svc._hash_thread.join(10)
+    with_pair = svc.image_pairs()
+    assert with_pair
+    stop = threading.Event()
+    svc._hash_thread = threading.Thread(target=stop.wait)  # „Berechnung läuft“
+    svc._hash_thread.start()
+    try:
+        svc.hash_store.data.clear()  # Fingerabdrücke ändern sich während der Berechnung
+        assert svc.image_pairs() == with_pair
+    finally:
+        stop.set()
+        svc._hash_thread.join()
+    assert svc.image_pairs() == []  # danach gilt der neue Stand
