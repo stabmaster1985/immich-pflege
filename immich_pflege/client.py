@@ -160,7 +160,16 @@ class ImmichClient:
         return self.request("PUT", f"/albums/{album_id}/users", json={"albumUsers": users})
 
     def album_asset_ids(self, album_id: str) -> set[str]:
+        """Nur die eigenen Medien im Album (die Suche liefert jedem Benutzer nur seine)."""
         return self.search_ids(albumIds=[album_id])
+
+    def album_timeline_ids(self, album_id: str) -> set[str]:
+        """Alle Medien im Album, egal wem sie gehören – wie die Albumansicht in Immich (Zeitleiste je Monat)."""
+        ids: set[str] = set()
+        for bucket in self.request("GET", "/timeline/buckets", params={"albumId": album_id}) or []:
+            data = self.request("GET", "/timeline/bucket", params={"albumId": album_id, "timeBucket": bucket["timeBucket"]}) or {}
+            ids.update(data.get("id") or [])
+        return ids
 
     def add_to_album(self, album_id: str, ids: Iterable[str]) -> list[dict]:
         results: list[dict] = []

@@ -35,7 +35,7 @@ def _info(al: dict[str, Any], lib: Library) -> dict[str, Any]:
     step = max(1, len(members) // 6)
     return {"id": al["id"], "name": al["name"], "besitzer": al["besitzer"],
             "geteilt_mit": sorted(u for u, r in al["rollen"].items() if r != "owner"),
-            "anzahl": len(al["medien"]), "beispiele": [a.summary() for a in members[::step][:6]]}
+            "anzahl": max(len(al["medien"]), al.get("anzahl") or 0), "beispiele": [a.summary() for a in members[::step][:6]]}
 
 
 def _item(art: str, albums: list[dict[str, Any]], lib: Library, grund: str) -> dict[str, Any]:
@@ -76,7 +76,9 @@ def find_issues(lib: Library) -> list[dict[str, Any]]:
     for al in albums:
         if al["id"] in seen:
             continue
-        n = len(al["medien"])
+        # Sicherung: Immichs eigene Zählung zählt mit – ein Album gilt nie als leer, nur weil sein Inhalt
+        # (z. B. Medien eines anderen Besitzers) nicht vollständig gelesen werden konnte
+        n = max(len(al["medien"]), al.get("anzahl") or 0)
         if n == 0:
             items.append(_item("leer", [al], lib, "Album ohne Medien"))
         elif n <= MINI_MAX:

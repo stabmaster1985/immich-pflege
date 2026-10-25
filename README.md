@@ -26,7 +26,7 @@ Für **jeden** Benutzer (hier frank und julia) einzeln:
 1. In Immich als dieser Benutzer anmelden
 2. Avatar oben rechts → **Kontoeinstellungen** → **API-Schlüssel** → **Neuer API-Schlüssel**
 3. Name z. B. `immich-pflege`. Berechtigungen: am einfachsten **Alle**. Wer die Rechte einschränken will, braucht mindestens:
-   `asset.read`, `asset.view`, `asset.update`, `asset.delete`, `album.read`, `album.create`, `albumAsset.create`, `duplicate.read`, `person.read`, `tag.read`, `tag.create`, `tag.asset`, `user.read`
+   `asset.read`, `asset.view`, `asset.update`, `asset.delete`, `album.read`, `album.create`, `album.update`, `album.delete`, `albumAsset.create`, `albumAsset.delete`, `albumUser.create`, `albumUser.delete`, `duplicate.read`, `person.read`, `stack.read`, `stack.create`, `stack.delete`, `tag.read`, `tag.create`, `tag.asset`, `user.read`
 4. Den Schlüssel kopieren, er wird nur einmal angezeigt.
 
 > Jeder Benutzer kann nur seine eigenen Medien ändern. Deshalb braucht das Tool je Benutzer einen Schlüssel und verwendet automatisch den des Besitzers.
@@ -331,6 +331,7 @@ DATA_DIR=./data .venv/bin/uvicorn immich_pflege.web.app:create_app --factory --p
 
 - `PUT /api/assets` (Koordinaten setzen) ist in v3 als *deprecated* markiert, ist aber in 3.2.4 und 3.3.1 der einzige Weg dafür. Der Aufruf steckt an einer Stelle in `client.py` (`set_location`).
 - In `POST /api/search/metadata` sind seit 3.2.0 die einfachen Filter (`isNotInAlbum`, `albumIds`, `personIds`, `tagIds`, `page`) *deprecated* zugunsten von `filter` und `cursor`. Sie funktionieren weiter. Das Tool liest `nextCursor` und fällt auf `nextPage` zurück.
+- **Albuminhalte:** `POST /api/search/metadata` mit `albumIds` liefert jedem Benutzer nur seine eigenen Medien, und `GET /api/albums/{id}` enthält seit 3.x keine Medienliste mehr. Findet die Suche weniger, als das Album zählt (`assetCount`), etwa Julias Fotos in Franks nicht geteiltem Album, liest das Tool das Album über `GET /api/timeline/buckets` und `/bucket` mit `albumId` nach. So zeigt auch Immich ein Album an, mit allen Besitzern.
 - Titelbilder setzt das Tool mit `PATCH /api/albums/{id}` (`albumThumbnailAssetId`), immer mit dem Key des Album-Besitzers.
 - Bulk-Aufrufe gehen in Blöcken zu 500 IDs. Ist Immich nicht 3.x, erscheint eine Warnung.
 - Assets mit `visibility` `hidden` (Live-Photo-Videos) oder `locked` sowie Medien im Papierkorb werden ignoriert. Über Partner-Freigaben sichtbare Medien werden nur ihrem Besitzer zugeordnet.

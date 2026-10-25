@@ -77,3 +77,20 @@ def test_delete_empty_and_keep(web, state):
     web.post("/api/staged/apply", json={})
     assert state.ids["leer"] not in state.albums
     assert web.post("/api/staged/album-care", json={"id": items["leer"]["id"], "aktion": "zusammenfuehren"}).status_code == 400
+
+
+
+@pytest.mark.parametrize("timeline_ok", [True, False])
+def test_album_with_partner_photos_is_not_empty(web, state, monkeypatch, timeline_ok):
+    """Franks Album, nicht geteilt, nur mit Julias Fotos (über die Partnerfreigabe hineingelegt):
+    nie „leer“ – auch nicht, wenn sich der Inhalt nicht lesen lässt (Immichs Zählung zählt mit)."""
+    from immich_pflege.client import ImmichClient, ImmichError
+
+    if not timeline_ok:
+        def broken(self, album_id):
+            raise ImmichError("kaputt")
+        monkeypatch.setattr(ImmichClient, "album_timeline_ids", broken)
+    album = state.add_album("frank", "Julias Garten", state.ids["j"][:4])
+    items = web.get("/api/album-care").json()["eintraege"]
+    garten = [it for it in items if any(a["id"] == album for a in it["alben"])]
+    assert all(it["art"] not in ("leer", "mini") for it in garten)

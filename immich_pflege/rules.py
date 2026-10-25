@@ -12,7 +12,7 @@ from typing import Any
 
 import yaml
 
-from .client import ImmichClient
+from .client import ImmichClient, ImmichError
 from .library import Library
 from .models import Asset
 
@@ -375,17 +375,25 @@ class Resolver:
             self.warnings.append(msg)
 
     def album_assets(self, user: str, name: str) -> set[str]:
-        key = ("album", user, name.lower())
+        """Alle Medien in Alben dieses Namens – auch in Alben des anderen Benutzers, die ``user`` nicht
+        sieht, in die seine Fotos aber über die Partnerfreigabe gelegt wurden (Zeitleiste des Albums)."""
+        key = ("album", name.lower())
         if key not in self._cache:
-            client = self.clients[user]
-            if user not in self._albums:
-                self._albums[user] = client.albums()
-            ids = [a["id"] for a in self._albums[user] if a.get("albumName", "").lower() == name.lower()]
-            if not ids:
-                self._warn(f"Album „{name}“ bei {user} nicht gefunden")
             found: set[str] = set()
-            for aid in ids:
-                found |= client.search_ids(albumIds=[aid])
+            done: set[str] = set()
+            for owner, client in self.clients.items():
+                if owner not in self._albums:
+                    self._albums[owner] = client.albums()
+                for al in self._albums[owner]:
+                    if al.get("albumName", "").lower() != name.lower() or al["id"] in done:
+                        continue
+                    done.add(al["id"])
+                    try:
+                        found |= client.album_timeline_ids(al["id"])
+                    except ImmichError:
+                        found |= client.search_ids(albumIds=[al["id"]])
+            if not done:
+                self._warn(f"Album „{name}“ nicht gefunden")
             self._cache[key] = found
         return self._cache[key]
 

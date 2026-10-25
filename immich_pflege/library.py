@@ -129,8 +129,9 @@ ALBUM_WORKERS = 6  # parallele Abfragen der Album-Inhalte
 
 
 def _album_signature(al: dict[str, Any]) -> str:
-    """Ändert sich, sobald Medien hinzukommen oder entfernt werden."""
-    return f"{al.get('assetCount')}|{al.get('updatedAt')}|{al.get('lastModifiedAssetTimestamp')}"
+    """Ändert sich, sobald Medien hinzukommen oder entfernt werden. „v2“: seit Medien anderer Besitzer
+    über die Zeitleiste mitgelesen werden – ältere Zwischenstände werden einmal neu gelesen."""
+    return f"v2|{al.get('assetCount')}|{al.get('updatedAt')}|{al.get('lastModifiedAssetTimestamp')}"
 
 
 def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any]],
@@ -143,10 +144,16 @@ def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any
     started = time.monotonic()
     albums: dict[str, dict[str, Any]] = {}
     jobs: list[tuple[str, str]] = []  # (Album, Benutzer), deren Inhalt abgefragt werden muss
+    viewers: dict[str, list[str]] = {}  # Album -> Benutzer, die es sehen (Besitzer zuerst)
     for name, client in clients.items():
         for al in client.albums():
             if al["id"] in skip:
                 continue
+            seen = viewers.setdefault(al["id"], [])
+            if users.get(name, {}).get("id") == al.get("ownerId"):
+                seen.insert(0, name)
+            else:
+                seen.append(name)
             entry = albums.get(al["id"])
             if entry is None:
                 roles: dict[str, str] = {}
@@ -183,6 +190,24 @@ def read_albums(clients: dict[str, ImmichClient], users: dict[str, dict[str, Any
     with ThreadPoolExecutor(max_workers=ALBUM_WORKERS) as pool:
         for album_id, ids in pool.map(fetch, jobs):
             albums[album_id]["medien"] |= ids
+        # Fehlt noch etwas (z. B. Julias Fotos in Franks nicht geteiltem Album, über die Partnerfreigabe
+        # hineingelegt), über die Zeitleiste des Albums nachlesen – die zeigt alle Medien jedes Besitzers.
+        fetched = {j[0] for j in jobs}
+        gaps = [(aid, viewers[aid][0]) for aid in fetched
+                if len(albums[aid]["medien"]) < albums[aid]["anzahl"] and viewers.get(aid)]
+
+        def fetch_all(job: tuple[str, str]) -> tuple[str, set[str]]:
+            try:
+                return job[0], clients[job[1]].album_timeline_ids(job[0])
+            except ImmichError as exc:
+                log.warning("Album %s: Inhalt anderer Besitzer nicht lesbar (%s)", job[0], exc)
+                return job[0], set()
+
+        for album_id, ids in pool.map(fetch_all, gaps):
+            albums[album_id]["medien"] |= ids
+            if len(albums[album_id]["medien"]) < albums[album_id]["anzahl"]:
+                log.info("Album „%s“: %d von %d Medien gefunden (Rest im Papierkorb oder nicht lesbar)",
+                         albums[album_id]["name"], len(albums[album_id]["medien"]), albums[album_id]["anzahl"])
     log.info("Alben gelesen: %d, davon %d neu abgefragt, in %.1f s", len(albums), len({j[0] for j in jobs}),
              time.monotonic() - started)
     for entry in albums.values():

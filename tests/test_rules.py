@@ -129,7 +129,10 @@ regeln:
     assert prev["Sony extern"]["treffer"] == 2 and prev["Sony extern"]["benutzer"] == {"frank": {"treffer": 2, "neu": 2}}
     assert prev["Album"]["treffer"] == 1
     assert "treffer" not in prev["Aus"]
-    assert any("Album „Italien 2024“ bei julia" in w for w in resolver.warnings)
+    # Franks Album sieht Julia nicht – es wird trotzdem gefunden (über Franks Zugang, alle Besitzer)
+    assert not any("Italien 2024" in w for w in resolver.warnings)
+    r2 = Resolver(clients)
+    assert r2.album_assets("julia", "Gibts nicht") == set() and any("nicht gefunden" in w for w in r2.warnings)
 
     calls_before = len(state.calls)
     res = {r["name"]: r for r in apply(rules, lib, Resolver(clients))}

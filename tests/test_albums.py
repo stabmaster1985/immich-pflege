@@ -208,3 +208,19 @@ def test_new_album_without_some(web, state):
     everything = [m["id"] for m in media]
     assert web.post("/api/album-suggestions/apply",
                     json={"trips": [{"id": kop["id"], "ohne": everything}]}).status_code == 400
+
+
+def test_partner_photos_in_unshared_album_count_as_inside(env, http, state):
+    """Franks Album (nicht mit Julia geteilt) enthält auch Julias Fotos (über die Partnerfreigabe
+    hineingelegt). Die Suche liefert Frank nur seine eigenen – die Zeitleiste des Albums alle."""
+    album = state.add_album("frank", "Toskana komplett", state.toskana)
+    svc = Pflege(Settings.load(env), http=http)
+    lib = svc.library()
+    svc._albums_thread and svc._albums_thread.join(10)
+    assert set(lib.albums[album]["medien"]) == set(state.toskana)
+    _, trips = suggest(lib, 50, 20)
+    toskana = next(t for t in trips if t.name.startswith("Toskana"))
+    assert toskana.status == "vorhanden"  # nichts mehr hinzuzufügen, auch nicht Julias Fotos
+    # die Zeitleiste wird nur gefragt, wenn die Suche weniger findet, als das Album zählt
+    timeline = {c[3] for c in state.calls if c[1] == "/api/timeline"}
+    assert album in timeline and len(timeline) == 1

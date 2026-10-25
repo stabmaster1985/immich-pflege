@@ -348,6 +348,34 @@ def create_app(state: MockState) -> FastAPI:
             out.append(state.album_dto(al))
         return out
 
+    def album_for(request: Request, album_id: str) -> dict[str, Any]:
+        user = auth(request)
+        album = state.albums.get(album_id)
+        if not album or state.album_role(album, user["id"]) is None:
+            raise HTTPException(400, "Not found or no album.read access")
+        state.calls.append(("GET", "/api/timeline", user["name"].lower(), album_id))
+        return album
+
+    def album_assets(album_id: str) -> list[dict[str, Any]]:
+        return [state.assets[i] for i in sorted(state.asset_ids_in_album(album_id)) if not state.assets[i]["isTrashed"]]
+
+    @app.get("/api/timeline/buckets")
+    async def timeline_buckets(request: Request, albumId: str):
+        """Wie Immich: alle Medien im Album, egal wem sie gehören, je Monat gezählt."""
+        album_for(request, albumId)
+        counts: dict[str, int] = {}
+        for a in album_assets(albumId):
+            key = (a["localDateTime"] or "1970-01-01")[:7] + "-01"
+            counts[key] = counts.get(key, 0) + 1
+        return [{"timeBucket": k, "count": v} for k, v in sorted(counts.items(), reverse=True)]
+
+    @app.get("/api/timeline/bucket")
+    async def timeline_bucket(request: Request, albumId: str, timeBucket: str):
+        album_for(request, albumId)
+        items = [a for a in album_assets(albumId) if (a["localDateTime"] or "1970-01-01")[:7] == timeBucket[:7]]
+        return {"id": [a["id"] for a in items], "ownerId": [a["ownerId"] for a in items],
+                "isImage": [a["type"] == "IMAGE" for a in items], "visibility": [a["visibility"] for a in items]}
+
     @app.post("/api/albums", status_code=201)
     async def create_album(request: Request):
         user = auth(request)
