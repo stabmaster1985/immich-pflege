@@ -87,9 +87,10 @@ def test_series_inherit_place():
 
 
 def test_series_split_and_conflicting_places():
-    a = asset(utc="2024-07-16T10:00:00Z")
+    src = gps(utc="2024-07-16T10:00:00Z")
+    a = asset(utc="2024-07-16T10:05:00Z")
     b = asset(utc="2024-07-16T13:00:00Z")  # 3 h später -> neue Serie
-    assert len(analyze(library(a, b), 2, False).series) == 2
+    assert len(analyze(library(src, a, b), 2, False).series) == 2
     # zwei Orte in einer Serie -> keine Vererbung
     s1, s2 = gps(utc="2024-07-16T10:00:00Z"), gps(utc="2024-07-16T11:30:00Z", at=FLORENZ, city="Florenz")
     x = asset(utc="2024-07-16T10:05:00Z")
@@ -146,3 +147,32 @@ def test_manual_place(state, clients):
     assert res["uebersprungen"][0]["grund"].startswith("externe Bibliothek")
     upload = next(lib.assets[i] for i in ids if not lib.assets[i].is_external)
     assert upload.has_gps and upload.city == "San Gimignano"
+
+
+def test_place_and_month_facets():
+    from immich_pflege.location import month_facets, place_facets
+    siena = gps(utc="2024-07-16T10:00:00Z")
+    flo = gps(utc="2024-08-02T10:00:00Z", at=FLORENZ, city="Florenz")
+    a = [asset(utc=f"2024-07-16T10:{m:02d}:00Z") for m in (5, 10, 15)]  # Serie Siena
+    b = [asset(utc="2024-08-02T10:05:00Z")]  # Serie Florenz
+    c = [asset(utc="2024-08-20T10:00:00Z"), asset(utc="2023-01-01T10:00:00Z")]  # ohne Vorschlag
+    an = analyze(library(siena, flo, *a, *b, *c), 2, False)
+    places = place_facets(an.series)
+    assert [(p["name"], p["anzahl"], p["serien"]) for p in places] == [
+        ("Siena, Italien", 3, 1), ("Florenz, Italien", 1, 1), ("Ohne Vorschlag", 2, 2)]
+    assert places[0]["key"] == "siena, italien" and places[0]["nach_sicherheit"]["hoch"] == 3
+    assert places[0]["von"] == places[0]["bis"] == "2024-07-16" and len(places[0]["beispiele"]) == 3
+    months = month_facets(an.series)
+    assert [(m["name"], m["anzahl"]) for m in months] == [
+        ("August 2024", 2), ("Juli 2024", 3), ("Januar 2023", 1)]
+
+
+def test_series_without_suggestion_merged_per_day():
+    scans = [asset(utc=f"2023-03-0{d}T{h:02d}:00:00Z", make="Canon") for d in (1, 2) for h in (8, 12, 18)]
+    an = analyze(library(*scans), 2, False)
+    assert [len(s.members) for s in an.series] == [3, 3]  # ein Eintrag pro Tag statt sechs
+    assert len({c.series_id for c in an.candidates}) == 2
+    # Serien mit Vorschlag werden nicht mit anderen zusammengelegt
+    src = gps(utc="2023-03-01T08:00:00Z")
+    an = analyze(library(src, *scans), 2, False)
+    assert [len(s.members) for s in sorted(an.series, key=lambda s: s.members[0].asset.taken_utc)] == [1, 2, 3]

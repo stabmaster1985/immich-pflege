@@ -96,7 +96,8 @@ Alternativ startest du den Workflow per **Test workflow** oder, wenn aktiviert, 
 Vier Tabs (**Duplikate**, **Ohne Ort**, **Tags**, **⚙ Einstellungen**), unten eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet.
 
 - **Duplikate:** Tippe auf ein Bild, damit es bleibt. Hake Gruppen an und wähle dann **Ins Prüf-Album** oder **Papierkorb**. Der Dialog zeigt vorher genau, was passiert. Für den Papierkorb muss zusätzlich ein Häkchen gesetzt werden.
-- **Ohne Ort:** Medien ohne GPS sind zu **Serien** zusammengefasst, also Aufnahmen mit höchstens 2 Stunden Abstand. Pro Serie gibt es einen Vorschlag, **Übernehmen** setzt ihn für die ganze Serie. **Ort suchen …** nutzt die Ortsdatenbank von Immich (z. B. „Siena“) für Serien ohne GPS-Fotos in der Nähe. Einzelne Bilder lassen sich antippen und mit **Übernehmen** oder **Ort wählen …** bearbeiten. **Alle sicheren** übernimmt alle sicheren Vorschläge auf einmal.
+- **Ohne Ort:** Der Tab startet mit einer **Übersicht nach Ort**: Pro vorgeschlagenem Ort gibt es eine Karte mit Anzahl Medien und Serien, Zeitraum, Sicherheit und Beispielbildern, dazu **Alle übernehmen**. Am Ende stehen „Mehrere Orte“ und „Ohne Vorschlag“. **Ansehen** oder die Auswahl **Ort** zeigt die Serien eines Ortes. Die Auswahl **Monat** (mit Anzahl) grenzt große Gruppen ein, und für „Ohne Vorschlag“ in einem Monat gibt es **Ort für alle suchen …**.
+  Medien ohne GPS sind zu **Serien** zusammengefasst, also Aufnahmen mit höchstens 2 Stunden Abstand. Serien ganz ohne Vorschlag werden zusätzlich pro Tag zusammengefasst. Pro Serie gibt es einen Vorschlag, **Übernehmen** setzt ihn für die ganze Serie. **Ort suchen …** nutzt die Ortsdatenbank von Immich (z. B. „Siena“) für Serien ohne GPS-Fotos in der Nähe. Einzelne Bilder lassen sich antippen und mit **Übernehmen** oder **Ort wählen …** bearbeiten. **Alle sicheren** übernimmt alle sicheren Vorschläge auf einmal.
 
   Woher die Vorschläge kommen:
   | Sicherheit | Wann |
@@ -170,6 +171,9 @@ docker exec -it immich-pflege pflege duplikate -g 3fa2c1d9e0b4 --behalten 3fa2c1
 
 # Fotos ohne Ort
 docker exec -it immich-pflege pflege ohne-ort --stunden 3
+docker exec -it immich-pflege pflege ohne-ort --orte                               # Übersicht nach Ort mit Mengen
+docker exec -it immich-pflege pflege ohne-ort --ort "Siena, Italien" --ort-uebernehmen
+docker exec -it immich-pflege pflege ohne-ort --ort ohne --monat 2023-04
 docker exec -it immich-pflege pflege ohne-ort --sicherheit hoch --ort-uebernehmen   # alle sicheren
 docker exec -it immich-pflege pflege ohne-ort --serie <serien-id> --ort-uebernehmen
 docker exec -it immich-pflege pflege ohne-ort --datum 2024-07-16 --ort-uebernehmen
@@ -195,8 +199,8 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | POST | `/api/scan` | Neu einlesen. `{"wait": false}` startet im Hintergrund (202) |
 | GET | `/api/duplicates` | Gruppen (`offset`, `limit`, `include_done`) |
 | POST | `/api/duplicates/apply` | Aktion auf Gruppen |
-| GET | `/api/no-location` | Medien ohne Ort als Serien (`max_hours`, `offset`, `limit`, `only_suggestions`, `min_confidence`) |
-| POST | `/api/no-location/apply` | Ort übernehmen: `ids`, `series`, `min_confidence` (`hoch`/`mittel`/`niedrig`), optional `place` `{breite, laenge, name}` |
+| GET | `/api/no-location` | Medien ohne Ort als Serien mit Mengen je Ort (`orte`) und Monat (`monate`). Parameter: `ort`, `monat`, `overview=true` (nur die Mengen), `max_hours`, `offset`, `limit`, `only_suggestions`, `min_confidence` |
+| POST | `/api/no-location/apply` | Ort übernehmen: `ids`, `series`, `ort`/`monat` (alle Serien eines Ortes oder Monats), `min_confidence` (`hoch`/`mittel`/`niedrig`), optional `place` `{breite, laenge, name}` |
 | GET | `/api/places?q=Siena` | Ortssuche über Immich |
 | GET | `/api/tags` | Regel-Vorschau (`rules=Name`, mehrfach möglich) |
 | GET/PUT | `/api/rules` | Regeln lesen/speichern (`{"regeln": [...]}` oder `{"yaml": "..."}`) |

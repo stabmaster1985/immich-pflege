@@ -66,6 +66,8 @@ class NoLocationApply(BaseModel):
     series: list[str] = Field(default_factory=list)
     min_confidence: Optional[Literal["niedrig", "mittel", "hoch"]] = None
     place: Optional[Place] = None
+    ort: Optional[str] = None
+    monat: Optional[str] = None
     max_hours: Optional[float] = Field(default=None, gt=0, le=48)
 
 
@@ -374,13 +376,15 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     def no_location(max_hours: Optional[float] = Query(None, gt=0, le=48),
                     offset: int = Query(0, ge=0), limit: int = Query(20, ge=0, le=5000),
                     only_suggestions: bool = False,
-                    min_confidence: Optional[Literal["niedrig", "mittel", "hoch"]] = None):
-        return svc().no_location_view(max_hours, offset, limit, only_suggestions, min_confidence)
+                    min_confidence: Optional[Literal["niedrig", "mittel", "hoch"]] = None,
+                    ort: Optional[str] = None, monat: Optional[str] = None, overview: bool = False):
+        return svc().no_location_view(max_hours, offset, limit, only_suggestions, min_confidence,
+                                      ort, monat, overview)
 
     @app.post("/api/no-location/apply")
     def no_location_apply(body: NoLocationApply):
         return svc().apply_no_location(body.ids, body.max_hours, body.min_confidence, body.series,
-                                       body.place.model_dump() if body.place else None)
+                                       body.place.model_dump() if body.place else None, body.ort, body.monat)
 
     @app.get("/api/places")
     def places(q: str = Query("", max_length=100)):

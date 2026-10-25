@@ -256,6 +256,9 @@ def ohne_ort(
     serie: Optional[list[str]] = typer.Option(None, "--serie", help="Nur diese Serie(n)"),
     medium: Optional[list[str]] = typer.Option(None, "--id", help="Nur diese Medien-ID(s)"),
     datum: Optional[list[str]] = typer.Option(None, "--datum", help="Nur Serien von diesem Tag (JJJJ-MM-TT)"),
+    orte: bool = typer.Option(False, "--orte", help="Übersicht: Orte mit Anzahl Medien/Serien"),
+    ort: Optional[str] = typer.Option(None, "--ort", help="Nur Serien mit diesem vorgeschlagenen Ort (z. B. 'Siena, Italien'; 'ohne' = ohne Vorschlag)"),
+    monat: Optional[str] = typer.Option(None, "--monat", help="Nur Serien aus diesem Monat (JJJJ-MM)"),
     nur_vorschlaege: bool = typer.Option(False, "--nur-vorschlaege", help="Nur Medien mit Vorschlag zeigen"),
     neu: bool = NeuOpt, json_: bool = JsonOpt, csv_: bool = CsvOpt,
 ):
@@ -267,8 +270,30 @@ def ohne_ort(
     if neu:
         with err.status("Lese Bibliothek ein …"):
             _run(svc.scan)
+    ort_key = None
+    if ort:
+        ort_key = {"ohne": "~ohne", "mehrere": "~mehrere"}.get(ort.strip().lower(), ort.strip().lower())
     view = _run(lambda: svc.no_location_view(stunden, limit=0, only_suggestions=nur_vorschlaege,
-                                             min_confidence=sicherheit))
+                                             min_confidence=sicherheit, ort=ort_key, monat=monat,
+                                             overview=orte))
+    if orte:
+        if json_:
+            _emit_json(view)
+            return
+        if csv_:
+            _emit_csv([{k: o[k] for k in ("name", "anzahl", "serien", "mit_vorschlag", "von", "bis")}
+                       for o in view["orte"]])
+            return
+        t = Table(title="Medien ohne Ort nach vorgeschlagenem Ort", title_justify="left")
+        for col in ("Ort", "Medien", "Serien", "sicher", "wahrsch.", "unsicher", "Zeitraum"):
+            t.add_column(col, overflow="fold")
+        for o in view["orte"]:
+            by = o["nach_sicherheit"]
+            t.add_row(o["name"], str(o["anzahl"]), str(o["serien"]), str(by["hoch"]), str(by["mittel"]),
+                      str(by["niedrig"]), f"{o['von'] or ''} – {o['bis'] or ''}")
+        out.print(t)
+        out.print("Details: --ort 'Name' (oder --ort ohne), optional --monat JJJJ-MM")
+        return
     series = [s for s in view["serien"] if (not datum or s["datum"] in datum) and (not serie or s["id"] in serie)]
     order = {"niedrig": 0, "mittel": 1, "hoch": 2}
 

@@ -13,7 +13,8 @@ from .client import ImmichClient, ImmichError
 from .config import Settings
 from .duplicates import AKTIONEN, DuplicateGroup, execute_steps, find_groups, plan_group
 from .library import Library, scan_library
-from .location import LEVELS, analyze, apply_locations, level_at_least
+from .location import (LEVELS, analyze, apply_locations, level_at_least, month_facets, month_key,
+                       place_facets, place_key)
 from .rules import Resolver, Rule, RuleError, apply as apply_rules, load_rules, preview as preview_rules
 
 log = logging.getLogger(__name__)
@@ -205,20 +206,31 @@ class Pflege:
         return hours, analyze(self.library(), hours, self.settings.location_include_external,
                               self.settings.location_skip_screenshots)
 
-    def no_location_view(self, max_hours: float | None = None, offset: int = 0, limit: int = 20,
-                         only_suggestions: bool = False, min_confidence: str | None = None) -> dict[str, Any]:
-        lib = self.library()
-        hours, an = self._analysis(max_hours)
+    @staticmethod
+    def _filter_series(series, only_suggestions=False, min_confidence=None, ort=None, monat=None):
         if min_confidence and min_confidence not in LEVELS:
             raise ActionError(f"Sicherheit muss {', '.join(LEVELS)} sein")
-        series = an.series
         if only_suggestions or min_confidence:
             def keep(c):
                 return c.applicable and (not min_confidence or level_at_least(c.suggestion.confidence, min_confidence))
             series = [s for s in series if any(keep(c) for c in s.members)]
-        page = series[offset: offset + limit] if limit > 0 else series[offset:]
+        if ort:
+            series = [s for s in series if place_key(s) == ort]
+        if monat:
+            series = [s for s in series if month_key(s) == monat]
+        return series
+
+    def no_location_view(self, max_hours: float | None = None, offset: int = 0, limit: int = 20,
+                         only_suggestions: bool = False, min_confidence: str | None = None,
+                         ort: str | None = None, monat: str | None = None,
+                         overview: bool = False) -> dict[str, Any]:
+        """Serien ohne Ort. ``overview`` liefert nur die Orte mit Mengen (ohne Serien)."""
+        lib = self.library()
+        hours, an = self._analysis(max_hours)
+        base = self._filter_series(an.series, only_suggestions, min_confidence)
+        series = self._filter_series(base, ort=ort, monat=monat)
         applicable = [c for c in an.candidates if c.applicable]
-        return {
+        out = {
             "stand": lib.scanned_at,
             "max_stunden": hours,
             "extern_erlaubt": self.settings.location_include_external,
@@ -227,21 +239,36 @@ class Pflege:
             "mit_vorschlag": len(applicable),
             "nach_sicherheit": {lvl: sum(1 for c in applicable if c.suggestion.confidence == lvl)
                                 for lvl in reversed(LEVELS)},
+            # Mengen je Ort (für den aktuellen Monat) und je Monat (für den aktuellen Ort)
+            "orte": place_facets(self._filter_series(base, monat=monat)),
+            "monate": month_facets(self._filter_series(base, ort=ort)),
+            "filter": {"ort": ort, "monat": monat},
             "serien_gesamt": len(series),
+            "medien_gefiltert": sum(len(s.members) for s in series),
             "offset": offset,
-            "serien": [s.to_dict() for s in page],
         }
+        if not overview:
+            page = series[offset: offset + limit] if limit > 0 else series[offset:]
+            out["serien"] = [s.to_dict() for s in page]
+        return out
 
     def apply_no_location(self, ids: list[str] | None = None, max_hours: float | None = None,
                           min_confidence: str | None = None, series: list[str] | None = None,
-                          place: dict | None = None) -> dict[str, Any]:
-        """ids und/oder series (Serien-IDs) übernehmen; place = {breite, laenge, name} setzt
-        einen von Hand gewählten Ort; min_confidence ohne Auswahl = alle ab dieser Sicherheit."""
+                          place: dict | None = None, ort: str | None = None,
+                          monat: str | None = None) -> dict[str, Any]:
+        """ids und/oder series (Serien-IDs) übernehmen; ort/monat wählt alle Serien eines Ortes
+        bzw. Monats; place = {breite, laenge, name} setzt einen von Hand gewählten Ort;
+        min_confidence ohne Auswahl = alle ab dieser Sicherheit."""
         if min_confidence and min_confidence not in LEVELS:
             raise ActionError(f"Sicherheit muss {', '.join(LEVELS)} sein")
         with self._lock:
             hours, an = self._analysis(max_hours)
             selected: list[str] | None = list(ids or [])
+            if ort or monat:
+                chosen = self._filter_series(an.series, ort=ort, monat=monat)
+                if not chosen:
+                    raise ActionError("Keine Serien für diesen Ort/Monat – bitte neu laden")
+                series = list(series or []) + [s.id for s in chosen]
             if series:
                 known = {s.id: s for s in an.series}
                 missing = [sid for sid in series if sid not in known]

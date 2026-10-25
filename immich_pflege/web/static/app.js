@@ -6,7 +6,7 @@ const S = {
   tab: "dup",
   status: null,
   dup: { groups: [], total: 0, open: 0, keep: {}, sel: new Set(), includeDone: false, loaded: false },
-  loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, loaded: false, info: null },
+  loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, loaded: false, info: null },
   tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [], items: [], fileErrors: [], users: [], yaml: "" },
   set: { data: null, loaded: false },
 };
@@ -301,26 +301,121 @@ function fmtRange(s) {
 
 async function loadLocation(reset) {
   const l = S.loc;
+  const overview = l.ort === null;
   if (reset) { l.series = []; l.sel.clear(); l.open = new Set(); $("#loc-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
-  const params = new URLSearchParams({ offset: l.series.length, limit: PAGE_SERIES, only_suggestions: l.only });
+  const params = new URLSearchParams({ offset: l.series.length, limit: PAGE_SERIES, only_suggestions: l.only, overview });
   if (l.hours) params.set("max_hours", l.hours);
   if (l.minConf) params.set("min_confidence", l.minConf);
+  if (l.ort && l.ort !== "*") params.set("ort", l.ort);
+  if (l.monat) params.set("monat", l.monat);
   const r = await api("api/no-location?" + params);
+  l.loaded = true; l.info = r;
+  // gewählter Ort/Monat existiert nicht mehr (z. B. nach Übernehmen) -> zurück zur Übersicht
+  if (l.ort && l.ort !== "*" && !r.orte.some((o) => o.key === l.ort)) { l.ort = null; l.monat = null; return loadLocation(true); }
+  if (l.monat && !r.monate.some((m) => m.key === l.monat)) { l.monat = null; return loadLocation(true); }
+  renderLocFilters(r);
   if (reset) $("#loc-list").replaceChildren();
-  l.total = r.serien_gesamt; l.loaded = true; l.info = r;
-  for (const ser of r.serien) {
-    l.series.push(ser);
-    $("#loc-list").append(renderSeries(ser));
+  if (overview) {
+    l.total = 0;
+    $("#loc-list").append(...r.orte.map(renderPlaceCard));
+  } else {
+    l.total = r.serien_gesamt;
+    if (reset && l.ort !== "*") $("#loc-list").append(renderPlaceHeader(r));
+    for (const ser of r.serien) {
+      l.series.push(ser);
+      $("#loc-list").append(renderSeries(ser));
+    }
   }
-  if (!l.series.length) $("#loc-list").replaceChildren(h("p", { class: "empty" }, r.medien ? "Keine Serien mit diesem Filter." : "Alle Medien haben einen Ort 🎉"));
+  if (!r.orte.length) $("#loc-list").replaceChildren(h("p", { class: "empty" }, r.medien ? "Nichts mit diesem Filter." : "Alle Medien haben einen Ort 🎉"));
   const by = r.nach_sicherheit;
-  $("#loc-summary").textContent = `${n(r.medien, "Medium", "Medien")} ohne Ort in ${n(r.serien_gesamt, "Serie", "Serien")} · ` +
+  $("#loc-summary").textContent = `${n(r.medien, "Medium", "Medien")} ohne Ort · ` +
     `Vorschläge: ${by.hoch} sicher, ${by.mittel} wahrscheinlich, ${by.niedrig} unsicher` +
     (r.screenshots_ausgeblendet ? ` · ${r.screenshots_ausgeblendet} Screenshots ausgeblendet` : "") +
     (r.extern_erlaubt ? "" : " · externe Bibliotheken gesperrt");
   $("#count-loc").textContent = r.mit_vorschlag ? `(${r.mit_vorschlag})` : "";
-  $("#loc-more").hidden = l.series.length >= l.total;
+  $("#loc-more").hidden = overview || l.series.length >= l.total;
   updateActionbar();
+}
+
+function renderLocFilters(r) {
+  const l = S.loc;
+  const total = r.orte.reduce((a, o) => a + o.anzahl, 0);
+  const placeSel = h("select", { id: "loc-ort", onchange: (e) => { l.ort = e.target.value === "" ? null : e.target.value; loadTab("loc", true); } },
+    h("option", { value: "" }, `Übersicht nach Ort (${r.orte.length})`),
+    h("option", { value: "*" }, `Alle Serien (${total})`),
+    ...r.orte.map((o) => h("option", { value: o.key }, `${o.name} (${o.anzahl})`)));
+  placeSel.value = l.ort === null ? "" : l.ort;
+  const monthSel = h("select", { id: "loc-monat", onchange: (e) => { l.monat = e.target.value || null; loadTab("loc", true); } },
+    h("option", { value: "" }, `Alle Monate`),
+    ...r.monate.map((m) => h("option", { value: m.key }, `${m.name} (${m.anzahl})`)));
+  monthSel.value = l.monat || "";
+  $("#loc-filters").replaceChildren(
+    h("label", { class: "field grow" }, "Ort", placeSel),
+    h("label", { class: "field grow" }, "Monat", monthSel));
+}
+
+function confCounts(by) {
+  return ["hoch", "mittel", "niedrig"].filter((k) => by[k]).map((k) => h("span", { class: "chip conf-" + k }, `${by[k]} ${LEVEL_LABEL[k]}`));
+}
+
+function fmtSpan(von, bis) {
+  if (!von) return "";
+  const f = (d) => d.slice(8, 10) + "." + d.slice(5, 7) + "." + d.slice(0, 4);
+  return von === bis ? f(von) : `${f(von)} – ${f(bis)}`;
+}
+
+function renderPlaceCard(o) {
+  const special = o.key.startsWith("~");
+  const open = () => { S.loc.ort = o.key; loadTab("loc", true); window.scrollTo(0, 0); };
+  const card = h("article", { class: "card place-card" });
+  card.append(
+    h("div", { class: "card-head" },
+      h("div", {}, h("h2", {}, (special ? "" : "📍 ") + o.name),
+        h("span", { class: "muted" }, `${n(o.anzahl, "Medium", "Medien")} · ${n(o.serien, "Serie", "Serien")}` + (o.von ? ` · ${fmtSpan(o.von, o.bis)}` : "")))),
+    h("div", { class: "row-gap" }, ...confCounts(o.nach_sicherheit)),
+    h("button", { type: "button", class: "strip strip-btn", onclick: open, "aria-label": o.name + " ansehen" }, o.beispiele.map((m) => thumb(m))),
+    h("div", { class: "row-gap" },
+      h("button", { type: "button", class: "btn small", onclick: open }, "Ansehen"),
+      !special && o.mit_vorschlag ? h("button", { type: "button", class: "btn small primary", onclick: (e) => applyPlace(o, e.currentTarget) },
+        `Alle übernehmen (${o.mit_vorschlag})`) : null));
+  return card;
+}
+
+function renderPlaceHeader(r) {
+  const o = r.orte.find((x) => x.key === S.loc.ort);
+  if (!o) return h("div");
+  const special = o.key.startsWith("~");
+  const month = S.loc.monat ? r.monate.find((m) => m.key === S.loc.monat) : null;
+  const scope = month ? `${o.name} · ${month.name}` : o.name;
+  return h("div", { class: "card place-head" },
+    h("div", { class: "card-head" },
+      h("button", { type: "button", class: "btn small", onclick: () => { S.loc.ort = null; S.loc.monat = null; loadTab("loc", true); } }, "← Alle Orte"),
+      h("div", {}, h("h2", {}, scope), h("span", { class: "muted" }, `${n(r.medien_gefiltert, "Medium", "Medien")} in ${n(r.serien_gesamt, "Serie", "Serien")}`))),
+    special ? h("div", {},
+      h("p", { class: "muted small" }, o.key === "~ohne"
+        ? "Keine GPS-Fotos in der Nähe. Pro Serie „Ort suchen …“ nutzen – oder mit dem Monatsfilter eingrenzen und für alle auf einmal suchen."
+        : "Die Vorschläge innerhalb dieser Serien widersprechen sich. Bitte einzeln prüfen."),
+      o.key === "~ohne" ? h("button", { type: "button", class: "btn small", onclick: () => openPlaceSearch({ ort: o.key, monat: S.loc.monat, count: r.medien_gefiltert, label: scope }) },
+        `Ort für alle ${r.medien_gefiltert} suchen …`) : null)
+      : h("div", { class: "row-gap" }, ...confCounts(o.nach_sicherheit),
+        o.mit_vorschlag ? h("button", { type: "button", class: "btn small primary", onclick: (e) => applyPlace({ ...o, name: scope }, e.currentTarget, S.loc.monat) },
+          `Alle übernehmen`) : null));
+}
+
+async function applyPlace(o, btn, monat = null) {
+  const by = o.nach_sicherheit;
+  const ok = await confirmDialog({
+    title: `Alle für „${o.name}“ übernehmen?`,
+    body: [h("p", {}, `Medien mit Vorschlag in diesem Ort${monat ? " und Monat" : ""} erhalten den vorgeschlagenen Ort.`),
+      h("div", { class: "row-gap" }, ...confCounts(by)),
+      h("p", { class: "muted" }, "Tipp: Oben „nur sichere“ wählen, wenn nur sichere Vorschläge übernommen werden sollen.")],
+    okLabel: "Übernehmen",
+  });
+  if (!ok) return;
+  const body = { ort: o.key };
+  if (monat) body.monat = monat;
+  if (S.loc.minConf) body.min_confidence = S.loc.minConf;
+  await doApplyLocation(body, btn);
 }
 
 function selectable(m) { return m.vorschlag && m.aenderbar; }
@@ -492,7 +587,9 @@ async function choosePlace(p) {
   });
   if (!ok) return;
   const body = { place: { breite: p.breite, laenge: p.laenge, name: p.name } };
-  if (t.series) body.series = t.series; else body.ids = t.ids;
+  if (t.ort) { body.ort = t.ort; if (t.monat) body.monat = t.monat; }
+  else if (t.series) body.series = t.series;
+  else body.ids = t.ids;
   await doApplyLocation(body, $("#ab-buttons button.primary") || document.createElement("button"));
 }
 

@@ -222,3 +222,10 @@ textarea { min-height: 55vh; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo
 .field select { padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
 .place-results { display: flex; flex-direction: column; gap: 6px; min-height: 120px; }
 .place-item { text-align: left; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); cursor: pointer; }
+
+/* Ohne Ort: Übersicht nach Ort */
+.field.grow { flex: 1 1 160px; min-width: 0; }
+.field.grow select { flex: 1; min-width: 0; width: 100%; }
+.strip-btn { border: 0; background: none; padding: 0; cursor: pointer; width: 100%; }
+.place-card .row-gap, .place-head .row-gap { margin: 6px 0; }
+.place-head { border-color: var(--accent); }

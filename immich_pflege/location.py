@@ -8,7 +8,8 @@ Vorschläge (mit Sicherheit):
 - **niedrig**: kein GPS-Foto im Zeitfenster, aber das letzte davor und das erste danach
   (je höchstens 12 h) liegen am selben Ort – oder der Ort stammt aus derselben Serie.
 
-Serien: Medien ohne Ort, zwischen denen höchstens 2 h liegen. Sind sich alle Vorschläge einer
+Serien: Medien ohne Ort, zwischen denen höchstens 2 h liegen (Serien ganz ohne Vorschlag
+werden tageweise zusammengefasst). Sind sich alle Vorschläge einer
 Serie über den Ort einig, bekommen auch die Medien ohne eigenen Vorschlag den Ort der Serie.
 """
 
@@ -238,9 +239,24 @@ def _build_series(cands: list[Candidate]) -> list[Series]:
                                                       f"mit eigenem Vorschlag)")
             else:
                 s.several_places = True
-        for c in members:
-            c.series_id = s.id
         series.append(s)
+
+    # Serien ohne jeden Vorschlag tageweise zusammenfassen (z. B. Scans, alte Kamerafotos):
+    # ohne GPS-Nachbarn gibt es nichts zu vererben, und so bleibt die Liste überschaubar.
+    merged: list[Series] = []
+    for s in series:
+        day = s.members[0].asset.local_day
+        prev = merged[-1] if merged else None
+        if (prev and s.suggestion is None and not s.several_places and prev.suggestion is None
+                and not prev.several_places and day and prev.members[0].asset.local_day == day):
+            prev.members.extend(s.members)
+        else:
+            merged.append(s)
+    series = merged
+    for s in series:
+        s.id = _series_id(c.asset.id for c in s.members)
+        for c in s.members:
+            c.series_id = s.id
     series.sort(key=lambda s: max((c.asset.local_date_time or "") for c in s.members), reverse=True)
     return series
 
@@ -327,3 +343,80 @@ def apply_locations(lib: Library, clients: dict[str, ImmichClient], ids: Iterabl
     if updated:
         log.info("Ort für %d Medien übernommen%s", updated, " (von Hand gewählt)" if manual else "")
     return {"aktualisiert": updated, "uebersprungen": skipped}
+
+
+# ------------------------------------------------------- Gruppierung nach Ort
+NO_SUGGESTION = "~ohne"
+SEVERAL = "~mehrere"
+MONTHS = ("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September",
+          "Oktober", "November", "Dezember")
+
+
+def place_key(s: Series) -> str:
+    if s.suggestion is None:
+        return SEVERAL if s.several_places else NO_SUGGESTION
+    if s.suggestion.place:
+        return s.suggestion.place.strip().lower()
+    return f"{s.suggestion.latitude:.2f},{s.suggestion.longitude:.2f}"
+
+
+def place_label(s: Series) -> str:
+    key = place_key(s)
+    if key == NO_SUGGESTION:
+        return "Ohne Vorschlag"
+    if key == SEVERAL:
+        return "Mehrere Orte"
+    return s.suggestion.place or f"{s.suggestion.latitude:.3f}, {s.suggestion.longitude:.3f}"
+
+
+def month_key(s: Series) -> str:
+    days = [c.asset.local_day for c in s.members if c.asset.local_day]
+    return min(days).strftime("%Y-%m") if days else "ohne-datum"
+
+
+def month_label(key: str) -> str:
+    if key == "ohne-datum":
+        return "Ohne Datum"
+    year, month = key.split("-")
+    return f"{MONTHS[int(month) - 1]} {year}"
+
+
+def place_facets(series: list[Series], samples: int = 4) -> list[dict[str, Any]]:
+    """Orte mit Anzahl Medien/Serien, sortiert nach Menge; „Mehrere Orte“ und „Ohne Vorschlag“ zuletzt."""
+    groups: dict[str, dict[str, Any]] = {}
+    for s in series:
+        key = place_key(s)
+        g = groups.setdefault(key, {"key": key, "name": place_label(s), "anzahl": 0, "serien": 0,
+                                    "mit_vorschlag": 0, "nach_sicherheit": {lvl: 0 for lvl in reversed(LEVELS)},
+                                    "beispiele": [], "zeitraum": [None, None]})
+        g["anzahl"] += len(s.members)
+        g["serien"] += 1
+        for c in s.members:
+            if c.applicable:
+                g["mit_vorschlag"] += 1
+                g["nach_sicherheit"][c.suggestion.confidence] += 1
+            if len(g["beispiele"]) < samples:
+                g["beispiele"].append({"id": c.asset.id, "thumb": f"thumb/{c.asset.id}",
+                                       "dateiname": c.asset.file_name})
+            day = c.asset.local_day
+            if day:
+                lo, hi = g["zeitraum"]
+                g["zeitraum"] = [min(lo, day) if lo else day, max(hi, day) if hi else day]
+    out = []
+    for g in groups.values():
+        lo, hi = g.pop("zeitraum")
+        g["von"], g["bis"] = (lo.isoformat() if lo else None), (hi.isoformat() if hi else None)
+        out.append(g)
+    special = {SEVERAL: 1, NO_SUGGESTION: 2}
+    out.sort(key=lambda g: (special.get(g["key"], 0), -g["anzahl"], g["name"]))
+    return out
+
+
+def month_facets(series: list[Series]) -> list[dict[str, Any]]:
+    months: dict[str, dict[str, Any]] = {}
+    for s in series:
+        key = month_key(s)
+        m = months.setdefault(key, {"key": key, "name": month_label(key), "anzahl": 0, "serien": 0})
+        m["anzahl"] += len(s.members)
+        m["serien"] += 1
+    return sorted(months.values(), key=lambda m: m["key"], reverse=True)

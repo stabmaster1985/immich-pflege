@@ -109,3 +109,13 @@ def test_no_location_only_sure(svc, state):
     assert json.loads(r.stdout)["aktualisiert"] == 2
     r = run("ohne-ort")
     assert "Screenshots ausgeblendet" in r.output and "sicher" not in r.output.split("Vorschläge:")[0]
+
+
+def test_no_location_places_overview(svc):
+    r = run("ohne-ort", "--orte")
+    assert r.exit_code == 0, r.output
+    assert "San Gimignano, Italien" in r.output and "Ohne Vorschlag" in r.output
+    r = run("ohne-ort", "--ort", "San Gimignano, Italien", "--ort-uebernehmen", "--json")
+    assert json.loads(r.stdout)["aktualisiert"] == 2
+    r = run("ohne-ort", "--ort", "ohne", "--json")
+    assert all(not s["vorschlag"] for s in json.loads(r.stdout)["serien"])

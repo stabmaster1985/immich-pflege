@@ -109,6 +109,35 @@ def test_no_location_manual_place_and_search(web, state):
     assert web.post("/api/no-location/apply", json=bad).status_code == 422
 
 
+def test_no_location_by_place(web):
+    over = web.get("/api/no-location?overview=true").json()
+    assert "serien" not in over
+    names = [(o["name"], o["anzahl"]) for o in over["orte"]]
+    assert names[0] == ("San Gimignano, Italien", 2) and names[-1] == ("Ohne Vorschlag", 4)
+    assert [m["name"] for m in over["monate"]] == ["Juli 2024"]
+
+    key = over["orte"][0]["key"]
+    r = web.get("/api/no-location", params={"ort": key}).json()
+    assert r["serien_gesamt"] == 1 and r["medien_gefiltert"] == 2
+    assert r["filter"] == {"ort": key, "monat": None}
+    assert web.get("/api/no-location", params={"ort": "~ohne"}).json()["medien_gefiltert"] == 4
+    assert web.get("/api/no-location", params={"monat": "2024-06"}).json()["serien_gesamt"] == 0
+
+    res = web.post("/api/no-location/apply", json={"ort": key}).json()
+    assert res["aktualisiert"] == 2
+    assert all(o["key"] != key for o in web.get("/api/no-location?overview=true").json()["orte"])
+    assert web.post("/api/no-location/apply", json={"ort": "gibtsnicht"}).status_code == 400
+
+
+def test_manual_place_for_whole_group(web):
+    body = {"ort": "~ohne", "monat": "2024-07", "place": {"breite": 43.3188, "laenge": 11.3308, "name": "Siena"}}
+    res = web.post("/api/no-location/apply", json=body).json()
+    assert res["aktualisiert"] == 2  # DSC09812 (Upload) + DSC10002; externe bleiben gesperrt
+    over = web.get("/api/no-location?overview=true").json()
+    # Die externe DSC09812-Kopie hat nun über ihre verortete Upload-Kopie einen Vorschlag
+    assert next(o for o in over["orte"] if o["key"] == "~ohne")["anzahl"] == 1  # nur DSC20000
+
+
 def test_settings_screenshots_toggle(web):
     web.put("/api/settings", json={"location_skip_screenshots": False})
     assert web.get("/api/no-location").json()["medien"] == 8
