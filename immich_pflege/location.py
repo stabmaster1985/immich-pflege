@@ -30,6 +30,7 @@ from typing import Any, Iterable
 from .client import ImmichClient
 from .library import Library
 from .models import Asset
+from .textscan import is_document
 
 log = logging.getLogger(__name__)
 
@@ -58,8 +59,8 @@ SCREEN_SIZES = {
 }
 MESSENGER_RE = re.compile(r"(-WA\d{4}|^signal-\d{4}-\d\d-\d\d|^threema|^telegram|^photo_\d{4}-\d\d-\d\d_\d\d-\d\d-\d\d|"
                           r"^received_|^IMG-\d{8}-WA)", re.IGNORECASE)
-HERKUNFT = {"kamera": "Kamerafotos", "messenger": "Messenger", "ohne_kamera": "Ohne Kameradaten",
-            "screenshot": "Screenshots"}
+HERKUNFT = {"kamera": "Kamerafotos", "dokument": "Dokumente & Text", "messenger": "Messenger",
+            "ohne_kamera": "Ohne Kameradaten", "screenshot": "Screenshots"}
 
 
 def screen_sized(a: Asset) -> bool:
@@ -77,10 +78,13 @@ def is_screenshot(a: Asset) -> bool:
     return screen_sized(a)
 
 
-def origin(a: Asset) -> str:
-    """Herkunft: kamera, messenger, ohne_kamera (gespeichert, heruntergeladen, bearbeitet) oder screenshot."""
+def origin(a: Asset, text: dict[str, Any] | None = None) -> str:
+    """Herkunft: kamera, dokument (viel erkannter Text, siehe textscan), messenger, ohne_kamera
+    (gespeichert, heruntergeladen, bearbeitet) oder screenshot."""
     if is_screenshot(a):
         return "screenshot"
+    if is_document(text):
+        return "dokument"
     if MESSENGER_RE.search(a.file_name or ""):
         return "messenger"
     if not a.make and not a.model:
@@ -151,6 +155,7 @@ class Candidate:
     suggestion: Suggestion | None
     editable: bool
     series_id: str | None = None
+    text: dict[str, Any] | None = None  # Texterkennung (siehe textscan)
 
     @property
     def applicable(self) -> bool:
@@ -158,11 +163,14 @@ class Candidate:
 
     @property
     def origin(self) -> str:
-        return origin(self.asset)
+        return origin(self.asset, self.text)
 
     def to_dict(self) -> dict[str, Any]:
-        return {**self.asset.summary(), "aenderbar": self.editable, "serie": self.series_id, "herkunft": self.origin,
-                "vorschlag": self.suggestion.to_dict() if self.suggestion else None}
+        out = {**self.asset.summary(), "aenderbar": self.editable, "serie": self.series_id, "herkunft": self.origin,
+               "vorschlag": self.suggestion.to_dict() if self.suggestion else None}
+        if is_document(self.text):
+            out["text"] = self.text["t"]
+        return out
 
 
 class GpsIndex:
@@ -309,10 +317,11 @@ def _build_series(cands: list[Candidate]) -> list[Series]:
 
 def analyze(lib: Library, max_hours: float, include_external: bool,
             skip_screenshots: bool = True, exclude: set[str] = frozenset(),
-            no_place: set[str] = frozenset(), show: set[str] = frozenset()) -> Analysis:
+            no_place: set[str] = frozenset(), show: set[str] = frozenset(),
+            texts: Any = None) -> Analysis:
     """``exclude``: Medien, die schon vorgemerkt sind – sie tauchen nicht mehr auf.
     ``no_place``: von Hand als „kein Ort nötig“ ausgeblendet; ``show``: Screenshots, die trotzdem
-    erscheinen sollen (falsch erkannt)."""
+    erscheinen sollen (falsch erkannt); ``texts``: Texterkennung (TextStore) für die Herkunft „dokument“."""
     index = GpsIndex(lib.assets.values())
     cands: list[Candidate] = []
     hidden: list[tuple[Asset, str]] = []
@@ -325,7 +334,8 @@ def analyze(lib: Library, max_hours: float, include_external: bool,
         if skip_screenshots and a.id not in show and is_screenshot(a):
             hidden.append((a, "screenshot"))
             continue
-        cands.append(Candidate(a, index.suggest(a, max_hours), include_external or not a.is_external))
+        cands.append(Candidate(a, index.suggest(a, max_hours), include_external or not a.is_external,
+                               text=texts.get(a) if texts is not None else None))
     series = _build_series(cands)
     cands.sort(key=lambda c: (c.asset.local_date_time or "", c.asset.id), reverse=True)
     shots = sum(1 for _, why in hidden if why == "screenshot")

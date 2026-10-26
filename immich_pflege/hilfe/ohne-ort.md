@@ -32,11 +32,14 @@ Nicht jedes Bild braucht einen Ort. Das Tool teilt alle Medien ohne Ort nach Her
 | Herkunft | Woran erkannt |
 |---|---|
 | 📷 **Kamerafotos** | Kameradaten (Hersteller/Modell) vorhanden – die lohnen sich zu verorten |
+| 📄 **Dokumente & Text** | viel erkannter Text im Bild: ab **10 %** Textfläche oder **300** Zeichen – Dokumente, Quittungen, Speisekarten, abfotografierte Bildschirme, Screenshots in ungewöhnlicher Größe. Gilt auch mit Kameradaten |
 | 💬 **Messenger** | Dateiname von WhatsApp (`IMG-20240718-WA0003`, `-WA0001`), Signal, Threema, Telegram |
 | 🖼 **Ohne Kameradaten** | weder Hersteller noch Modell: gespeichert, heruntergeladen, bearbeitet, Scans |
 | 📱 **Screenshots** | Dateiname (Screenshot, Bildschirmfoto, RPReplay …), PNG ohne Kameradaten **oder** ein Bild ohne Kameradaten in genau der Bildschirmgröße eines Handys oder Tablets (z. B. 1179×2556 – so werden auch markierte und als JPG gespeicherte Screenshots erkannt) |
 
 Der Filter wirkt **im gewählten Ort**: In der Übersicht steht er oben und zählt über alle Orte. Öffnest du einen Ort, steht er im Kopf des Orts und zählt nur dessen Bilder, z. B. „Ohne Vorschlag: 💬 Messenger (5)“. Dann zeigen die Serien nur die Bilder dieser Herkunft, und **Vormerken**, **Alle vormerken** und **Ort für alle suchen** gelten nur für sie.
+
+**Texterkennung:** Dafür nutzt das Tool Immichs Texterkennung (OCR). In Immich unter *Administration → Einstellungen → Maschinelles Lernen → Texterkennung* muss sie eingeschaltet sein, und der Auftrag „Texterkennung“ muss einmal gelaufen sein. Das Tool fragt das Ergebnis nur für Bilder **ohne Ort** ab, im Hintergrund, und merkt es sich (`data/texterkennung.json`). Neue Bilder kommen nach jedem Einlesen dazu. Solange es läuft, steht in der Zusammenfassung „⟳ Texterkennung: … von … Bildern geprüft“. Ein einzelnes Schild im Urlaubsfoto zählt nicht, nur Bilder, die zu einem großen Teil aus Text bestehen. Auf den Kacheln steht der Anfang des erkannten Texts.
 
 Screenshots sind ausgeblendet (abschaltbar unter ⚙ Einstellungen). Bei **Messenger** und **Ohne Kameradaten** erscheint **Alle … prüfen & ausblenden**. Die Prüf-Ansicht zeigt alle, du wählst ab, was doch einen Ort bekommen soll. Dann:
 

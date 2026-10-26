@@ -531,6 +531,17 @@ def create_app(state: MockState) -> FastAPI:
         album["members"].pop(user_id, None)
         return Response(status_code=204)
 
+    @app.get("/api/assets/{asset_id}/ocr")
+    async def asset_ocr(asset_id: str, request: Request):
+        """Texterkennung: im Test pro Asset hinterlegte Textfelder (``_ocr``)."""
+        user = auth(request)
+        state.calls.append(("GET", f"/api/assets/{asset_id}/ocr", user["name"].lower(), None))
+        a = state.assets.get(asset_id)
+        if a is None:
+            raise HTTPException(400, "Not found or no asset.read access")
+        return [{"id": f"ocr{i}", "assetId": asset_id, "boxScore": 0.9, "textScore": 0.9, **box}
+                for i, box in enumerate(a.get("_ocr", []))]
+
     @app.get("/api/assets/{asset_id}/thumbnail")
     async def thumbnail(asset_id: str, request: Request, size: str = "preview"):
         user = auth(request)

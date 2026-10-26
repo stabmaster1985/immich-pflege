@@ -55,7 +55,7 @@ def web(env, http):
 def test_counts_filter_and_hide(web, state):
     r = web.get("/api/no-location").json()
     assert r["screenshots_ausgeblendet"] == 2  # Screenshot.png und das JPG in Bildschirmgröße
-    assert {k: v["anzahl"] for k, v in r["herkunft"].items()} == {"kamera": 7, "messenger": 1, "ohne_kamera": 1,
+    assert {k: v["anzahl"] for k, v in r["herkunft"].items()} == {"kamera": 7, "dokument": 0, "messenger": 1, "ohne_kamera": 1,
                                                                   "screenshot": 0}
     wa = web.get("/api/no-location", params={"herkunft": "messenger"}).json()
     assert any(m["id"] == state.ids["wa"] for s in wa["serien"] for m in s["medien"])
@@ -94,3 +94,51 @@ def test_filter_within_place(web, state):
     assert res["vorgemerkt"] == 1
     staged = web.get("/api/staged").json()["eintraege"][0]
     assert staged["daten"]["aenderungen"][0]["asset_id"] == state.ids["wa"]
+
+
+def box(x, y, w, h, text):
+    return {"x1": x, "y1": y, "x2": x + w, "y2": y, "x3": x + w, "y3": y + h, "x4": x, "y4": y + h, "text": text,
+            "textScore": 0.9}
+
+
+def test_text_stats():
+    from immich_pflege.textscan import is_document, text_stats
+
+    doc = text_stats([box(0.1, 0.1 + i * 0.05, 0.8, 0.03, "Rechnung Nr. 4711 Betrag") for i in range(10)])
+    assert doc["f"] == pytest.approx(0.24, abs=0.001) and is_document(doc) and doc["t"].startswith("Rechnung")
+    sign = text_stats([box(0.4, 0.4, 0.1, 0.03, "Ausgang")])  # Schild im Urlaubsfoto
+    assert not is_document(sign)
+    shaky = text_stats([{**box(0, 0, 1, 1, "xx"), "textScore": 0.1}])  # unsicher: zählt nicht
+    assert shaky["f"] == 0 and not is_document(shaky)
+    assert not is_document(None)
+
+
+def test_documents_by_text(web, state, env, http):
+    """Foto eines Dokuments mit Kameradaten: über die Texterkennung als „Dokumente & Text“ erkannt."""
+    doc = state.add_asset("frank", "IMG_7777.HEIC", "2024-07-16T12:42:00.000Z")  # Apple iPhone, ohne GPS
+    state.assets[doc]["_ocr"] = [box(0.1, 0.1 + i * 0.06, 0.8, 0.04, "Mietvertrag Seite 1 Paragraph") for i in range(8)]
+    sign = state.add_asset("frank", "IMG_7778.HEIC", "2024-07-16T12:43:00.000Z")
+    state.assets[sign]["_ocr"] = [box(0.4, 0.4, 0.1, 0.03, "Ausgang")]
+    web.post("/api/scan")
+    svc = web.app.state.service
+    res = svc.fetch_texts()
+    assert res["mit_text"] == 1 and res["fehler"] == 0
+    asked = [c[1] for c in state.calls if c[1].endswith("/ocr")]
+    assert f"/api/assets/{doc}/ocr" in asked and len(asked) == res["gesamt"]  # nur Bilder ohne Ort
+    r = web.get("/api/no-location").json()
+    assert r["herkunft"]["dokument"]["anzahl"] == 1
+    only = web.get("/api/no-location", params={"herkunft": "dokument"}).json()
+
+    members = [m for s in only["serien"] for m in s["medien"]]
+    assert [m["id"] for m in members] == [doc] and members[0]["text"].startswith("Mietvertrag")
+    # zweites Mal: alles im Zwischenspeicher, keine neuen Anfragen
+    before = len(state.calls)
+    assert svc.fetch_texts()["gesamt"] == 0 and len(state.calls) == before
+
+
+def test_herkunft_types_match():
+    """Die API kennt genau die Herkünfte, die location.HERKUNFT kennt."""
+    import typing
+    from immich_pflege.location import HERKUNFT
+    from immich_pflege.web.app import Herkunft
+    assert set(typing.get_args(Herkunft)) == set(HERKUNFT)

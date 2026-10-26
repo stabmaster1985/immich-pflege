@@ -24,6 +24,7 @@ from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, Ignore
                          clear_immich_duplicates, execute_steps, find_groups, plan_group)
 from .cleanup import ARTEN as CLEANUP_ARTEN, KATEGORIEN as CLEANUP_KATEGORIEN, KeepList, find_items
 from .history import HistoryStore, undo_ops
+from .textscan import TextProgress, TextStore, fetch_missing
 from .timefix import (ARTEN as TIME_ARTEN, execute_shifts, find_fixes, fmt_offset, plan_shifts, shifted,
                       summary as time_summary)
 from .imagehash import HashProgress, HashStore, compute_missing, similar_pairs
@@ -94,6 +95,9 @@ class Pflege:
         self.progress = ""  # was beim Einlesen gerade passiert (für die Oberfläche)
         self.last_error: str | None = None
         self.hash_store = HashStore(settings.data_dir / "bildhash.json")
+        self.text_store = TextStore(settings.data_dir / "texterkennung.json")
+        self.text_progress = TextProgress()
+        self._text_thread: threading.Thread | None = None
         self.hash_progress = HashProgress()
         self._hash_thread: threading.Thread | None = None
         self._pairs_cache: tuple[tuple, list[tuple[str, str]]] | None = None
@@ -169,6 +173,7 @@ class Pflege:
             self.sync_folders()
         if self.settings.dup_image_hash:
             self.start_hashing()
+        self.start_text_scan()
         self.warm_up_background()
         return lib
 
@@ -356,6 +361,27 @@ class Pflege:
         self._hash_thread.start()
         return True
 
+    def start_text_scan(self) -> bool:
+        """Texterkennung für Bilder ohne Ort im Hintergrund holen (falls nicht schon läuft)."""
+        if self._text_thread and self._text_thread.is_alive():
+            return False
+        lib = self.cached_library()
+        if lib is None or not self.background_albums:
+            return False  # nur in der Weboberfläche im Hintergrund; Kommandozeile und Tests: fetch_texts()
+        self.text_progress = TextProgress()
+        no_gps = [a for a in lib.assets.values() if not a.has_gps]
+        self._text_thread = threading.Thread(target=fetch_missing, args=(no_gps, self.clients, self.text_store, self.text_progress),
+                                             name="texterkennung", daemon=True)
+        self._text_thread.start()
+        return True
+
+    def fetch_texts(self) -> dict[str, Any]:
+        """Synchron holen (CLI und Tests)."""
+        self.text_progress = TextProgress()
+        fetch_missing([a for a in self.library().assets.values() if not a.has_gps], self.clients, self.text_store,
+                      self.text_progress)
+        return self.text_progress.to_dict()
+
     def compute_hashes(self) -> dict[str, Any]:
         """Synchron rechnen (CLI und Tests)."""
         self.hash_progress = HashProgress()
@@ -537,13 +563,13 @@ class Pflege:
         np = self.no_place_list()
         no_place, show = frozenset(np.hidden), frozenset(np.shown)
         key = (lib.uid, lib.rev, hours, self.settings.location_include_external,
-               self.settings.location_skip_screenshots, staged, no_place, show)
+               self.settings.location_skip_screenshots, staged, no_place, show, self.text_store.rev)
         with self._calc_lock:
             cache = self._analysis_cache
             if not cache or cache[0] != key:
                 cache = self._analysis_cache = (key, analyze(lib, hours, self.settings.location_include_external,
                                                              self.settings.location_skip_screenshots, staged,
-                                                             no_place, show))
+                                                             no_place, show, self.text_store))
         return hours, cache[1]
 
     def no_place_list(self) -> NoPlaceList:
@@ -574,6 +600,8 @@ class Pflege:
         if herkunft and herkunft not in HERKUNFT:
             raise ActionError(f"Herkunft muss {', '.join(HERKUNFT)} sein")
         lib = self.library()
+        if self.text_progress.finished_at is None:
+            self.start_text_scan()  # einmal je Programmstart; danach nach jedem Einlesen
         hours, an = self._analysis(max_hours)
         base = self._filter_series(an.series, only_suggestions, min_confidence, herkunft=herkunft)
         if herkunft:  # Serien (und damit Orte, Monate, Zahlen) nur mit den Medien dieser Herkunft
@@ -589,6 +617,7 @@ class Pflege:
             "extern_erlaubt": self.settings.location_include_external,
             "screenshots_ausgeblendet": an.screenshots,
             "kein_ort_ausgeblendet": sum(1 for _, why in an.hidden if why == "kein_ort"),
+            "texterkennung": self.text_progress.to_dict(),
             "herkunft": {k: {"name": v, "anzahl": origins.get(k, 0)} for k, v in HERKUNFT.items()},
             "medien": len(an.candidates),
             "mit_vorschlag": len(applicable),

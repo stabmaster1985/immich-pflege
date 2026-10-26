@@ -119,6 +119,10 @@ class ImmichClient:
         data = self.request("POST", "/search/smart", json={"query": query, "size": size, "page": 1})
         return ((data or {}).get("assets") or {}).get("items") or []
 
+    def ocr(self, asset_id: str) -> list[dict]:
+        """Texterkennung eines Bilds: Textfelder mit Text und Ecken (0–1); leer, wenn nichts erkannt."""
+        return self.request("GET", f"/assets/{asset_id}/ocr") or []
+
     def search_places(self, name: str) -> list[dict]:
         return self.request("GET", "/search/places", params={"name": name}) or []
 

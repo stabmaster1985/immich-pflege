@@ -506,3 +506,4 @@ dialog.review[open] { display: flex; flex-direction: column; }
 .linklike { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
 .place-herkunft { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
 .place-herkunft .herkunft { display: flex; }
+.ocr-text { font-size: .72rem; color: var(--muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

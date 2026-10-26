@@ -626,6 +626,11 @@ async function loadLocation(reset) {
   $("#loc-summary").textContent = `${n(r.medien, "Medium", "Medien")} ohne Ort · ` +
     `Vorschläge: ${by.hoch} sicher, ${by.mittel} wahrscheinlich, ${by.niedrig} unsicher` +
     (r.extern_erlaubt ? "" : " · externe Bibliotheken gesperrt");
+  const tx = r.texterkennung;
+  if (tx && tx.laeuft && tx.gesamt) {
+    $("#loc-summary").append(` · ⟳ Texterkennung: ${tx.fertig.toLocaleString("de-DE")} von ${tx.gesamt.toLocaleString("de-DE")} Bildern geprüft`);
+    watchTextScan();
+  }
   const hiddenN = r.screenshots_ausgeblendet + r.kein_ort_ausgeblendet;
   if (hiddenN) {
     $("#loc-summary").append(" · ", h("button", { type: "button", class: "linklike", onclick: (e) => openHiddenReview(e.currentTarget) },
@@ -673,9 +678,28 @@ function herkunftBar(r) {
   return [chips, hint];
 }
 
-const HERKUNFT_ICON = { kamera: "📷", messenger: "💬", ohne_kamera: "🖼", screenshot: "📱" };
-const HERKUNFT_KURZ = { messenger: "Messenger", ohne_kamera: "ohne Kameradaten", screenshot: "Screenshot" };
-const HERKUNFT_PLURAL = { messenger: "Messenger-Bilder", ohne_kamera: "Bilder ohne Kameradaten", screenshot: "Screenshots" };
+// Texterkennung läuft im Hintergrund: Zahlen nachziehen, danach einmal neu laden
+let textWatch = null;
+function watchTextScan() {
+  if (textWatch) return;
+  textWatch = setInterval(async () => {
+    if (S.tab !== "loc") return;
+    let r;
+    try { r = await api("api/no-location?overview=true&limit=0"); } catch (_) { return; }
+    if (r.texterkennung.laeuft) {
+      const el = $("#loc-summary");
+      el.childNodes.forEach((nd) => { if (nd.nodeType === 3 && nd.textContent.includes("Texterkennung")) nd.textContent = ` · ⟳ Texterkennung: ${r.texterkennung.fertig.toLocaleString("de-DE")} von ${r.texterkennung.gesamt.toLocaleString("de-DE")} Bildern geprüft`; });
+      return;
+    }
+    clearInterval(textWatch); textWatch = null;
+    if (r.herkunft.dokument.anzahl) toast(`Texterkennung fertig: ${r.herkunft.dokument.anzahl} Dokumente und Textbilder ohne Ort`);
+    loadTab("loc", true);
+  }, 8000);
+}
+
+const HERKUNFT_ICON = { kamera: "📷", dokument: "📄", messenger: "💬", ohne_kamera: "🖼", screenshot: "📱" };
+const HERKUNFT_KURZ = { dokument: "Dokument/Text", messenger: "Messenger", ohne_kamera: "ohne Kameradaten", screenshot: "Screenshot" };
+const HERKUNFT_PLURAL = { dokument: "Dokumente und Textbilder", messenger: "Messenger-Bilder", ohne_kamera: "Bilder ohne Kameradaten", screenshot: "Screenshots" };
 
 // Alle Medien einer Herkunft prüfen: „kein Ort nötig“ (dauerhaft ausblenden) oder archivieren
 async function openOriginReview(herkunft, name, btn) {
@@ -856,7 +880,8 @@ function renderSeries(ser) {
     h("div", { class: "meta" },
       h("div", { class: "name" }, m.dateiname),
       h("div", {}, `${fmtTime(m.aufnahme)} · ${m.benutzer}${m.extern ? " · extern" : ""}`),
-      m.herkunft && m.herkunft !== "kamera" ? h("div", { class: "chip" }, `${HERKUNFT_ICON[m.herkunft]} ${HERKUNFT_KURZ[m.herkunft]}`) : null,
+      m.herkunft && m.herkunft !== "kamera" ? h("div", { class: "chip", title: m.text || "" }, `${HERKUNFT_ICON[m.herkunft]} ${HERKUNFT_KURZ[m.herkunft]}`) : null,
+      m.text ? h("div", { class: "ocr-text" }, `„${m.text}“`) : null,
       info, openLinks(m))));
   }
   card.append(grid);

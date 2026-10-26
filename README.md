@@ -335,6 +335,7 @@ DATA_DIR=./data .venv/bin/uvicorn immich_pflege.web.app:create_app --factory --p
 
 - `PUT /api/assets` (Koordinaten setzen) ist in v3 als *deprecated* markiert, ist aber in 3.2.4 und 3.3.1 der einzige Weg dafür. Der Aufruf steckt an einer Stelle in `client.py` (`set_location`).
 - In `POST /api/search/metadata` sind seit 3.2.0 die einfachen Filter (`isNotInAlbum`, `albumIds`, `personIds`, `tagIds`, `page`) *deprecated* zugunsten von `filter` und `cursor`. Sie funktionieren weiter. Das Tool liest `nextCursor` und fällt auf `nextPage` zurück.
+- **Texterkennung:** `GET /api/assets/{id}/ocr` (seit Immich 2.x, Recht `asset.read`) liefert erkannte Textfelder mit Ecken (0–1). Das Tool fragt sie nur für Bilder ohne Ort ab und ordnet Bilder mit viel Text der Herkunft „Dokumente & Text“ zu.
 - **Albuminhalte:** `POST /api/search/metadata` mit `albumIds` liefert jedem Benutzer nur seine eigenen Medien, und `GET /api/albums/{id}` enthält seit 3.x keine Medienliste mehr. Findet die Suche weniger, als das Album zählt (`assetCount`), etwa Julias Fotos in Franks nicht geteiltem Album, liest das Tool das Album über `GET /api/timeline/buckets` und `/bucket` mit `albumId` nach. So zeigt auch Immich ein Album an, mit allen Besitzern.
 - Titelbilder setzt das Tool mit `PATCH /api/albums/{id}` (`albumThumbnailAssetId`), immer mit dem Key des Album-Besitzers.
 - Bulk-Aufrufe gehen in Blöcken zu 500 IDs. Ist Immich nicht 3.x, erscheint eine Warnung.

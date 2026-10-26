@@ -91,6 +91,10 @@ class DuplicatesIgnore(BaseModel):
     undo: bool = False
 
 
+# Herkunft eines Mediums ohne Ort (siehe location.HERKUNFT)
+Herkunft = Literal["kamera", "dokument", "messenger", "ohne_kamera", "screenshot"]
+
+
 class NoLocationApply(BaseModel):
     ids: list[str] = Field(default_factory=list)
     series: list[str] = Field(default_factory=list)
@@ -98,7 +102,7 @@ class NoLocationApply(BaseModel):
     place: Optional[Place] = None
     ort: Optional[str] = None
     monat: Optional[str] = None
-    herkunft: Optional[Literal["kamera", "messenger", "ohne_kamera", "screenshot"]] = None  # nur Medien dieser Herkunft
+    herkunft: Optional[Herkunft] = None  # nur Medien dieser Herkunft
     label: Optional[str] = None  # nur beim Vormerken: Titel in der Liste
     max_hours: Optional[float] = Field(default=None, gt=0, le=48)
 
@@ -600,12 +604,12 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
                     only_suggestions: bool = False,
                     min_confidence: Optional[Literal["niedrig", "mittel", "hoch"]] = None,
                     ort: Optional[str] = None, monat: Optional[str] = None, overview: bool = False,
-                    herkunft: Optional[Literal["kamera", "messenger", "ohne_kamera", "screenshot"]] = None):
+                    herkunft: Optional[Herkunft] = None):
         return svc().no_location_view(max_hours, offset, limit, only_suggestions, min_confidence,
                                       ort, monat, overview, herkunft)
 
     @app.get("/api/no-location/origin-media")
-    def no_location_origin_media(herkunft: Literal["kamera", "messenger", "ohne_kamera", "screenshot"],
+    def no_location_origin_media(herkunft: Herkunft,
                                  max_hours: Optional[float] = Query(None, gt=0, le=48),
                                  ort: Optional[str] = None, monat: Optional[str] = None):
         return svc().origin_media(herkunft, max_hours, ort, monat)
