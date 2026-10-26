@@ -701,6 +701,30 @@ const HERKUNFT_ICON = { kamera: "📷", dokument: "📄", messenger: "💬", ohn
 const HERKUNFT_KURZ = { dokument: "Dokument/Text", messenger: "Messenger", ohne_kamera: "ohne Kameradaten", screenshot: "Screenshot" };
 const HERKUNFT_PLURAL = { dokument: "Dokumente und Textbilder", messenger: "Messenger-Bilder", ohne_kamera: "Bilder ohne Kameradaten", screenshot: "Screenshots" };
 
+// Gewählte Bilder archivieren: vormerken (geht erst beim Übertragen an Immich) und hier ausblenden
+async function archiveLocSelection(btn) {
+  const ids = [...S.loc.sel];
+  busy(btn, true);
+  try {
+    const res = await api("api/staged/archive", { method: "POST", body: { ids, label: "Ohne Ort – Auswahl" } });
+    await api("api/no-location/no-place", { method: "POST", body: { ids } });
+    toast(`${n(res.vorgemerkt, "Medium", "Medien")} zum Archivieren vorgemerkt – unter Vorgemerkt übertragen`);
+    S.loc.sel.clear(); S.stage.loaded = false;
+    await loadTab("loc", true); loadCounts();
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
+
+async function noPlaceLocSelection(btn) {
+  const ids = [...S.loc.sel];
+  busy(btn, true);
+  try {
+    await api("api/no-location/no-place", { method: "POST", body: { ids } });
+    toast(`${n(ids.length, "Medium", "Medien")} ausgeblendet – zurückholen unter „… ausgeblendet – ansehen“`);
+    S.loc.sel.clear();
+    await loadTab("loc", true); loadCounts();
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
+
 // Alle Medien einer Herkunft prüfen: „kein Ort nötig“ (dauerhaft ausblenden) oder archivieren
 async function openOriginReview(herkunft, name, btn) {
   busy(btn, true);
@@ -3023,6 +3047,11 @@ function updateActionbar() {
     info.textContent = cnt ? n(cnt, "Medium", "Medien") + " gewählt" : "Serie vormerken oder Bilder antippen";
     if (cnt) {
       const chosen = S.loc.series.flatMap((s) => s.medien).filter((m) => S.loc.sel.has(m.id));
+      // gewählte Bilder ohne Ort-Vorschlag: archivieren (vormerken) oder „kein Ort nötig“
+      buttons.push(h("button", { class: "btn small", type: "button", title: "Aus der Zeitleiste nehmen – bleibt in Suche und Alben",
+        onclick: (e) => archiveLocSelection(e.currentTarget) }, "Archivieren"));
+      buttons.push(h("button", { class: "btn small", type: "button", title: "Hier dauerhaft ausblenden",
+        onclick: (e) => noPlaceLocSelection(e.currentTarget) }, "Kein Ort nötig"));
       buttons.push(h("button", { class: "btn small", type: "button", onclick: () => openPlaceSearch({ ids: [...S.loc.sel], count: cnt, label: "Auswahl" }) }, "Ort wählen …"));
       buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !chosen.some(selectable), onclick: (e) => applyLocation(e.currentTarget) }, "Vormerken"));
     } else {

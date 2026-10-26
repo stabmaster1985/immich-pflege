@@ -46,6 +46,8 @@ Screenshots sind ausgeblendet (abschaltbar unter ⚙ Einstellungen). Bei **Messe
 - **ausblenden – kein Ort nötig:** verschwinden dauerhaft aus „Ohne Ort“, aus den Zahlen und aus „Alle sicheren“.
 - **archivieren:** zusätzlich aus der Immich-Zeitleiste nehmen (wird vorgemerkt).
 
+**Einzelne Bilder:** In der Liste Bilder antippen, dann unten **Archivieren** oder **Kein Ort nötig**. Das geht ohne Prüf-Ansicht, gut für ein paar Bilder. Archivieren wird wie alles erst **vorgemerkt** und geht beim **Übertragen** unter Vorgemerkt an Immich. Bis dahin ist das Bild hier schon ausgeblendet.
+
 Oben in der Zusammenfassung steht **„… ausgeblendet – ansehen“**. Dort siehst du die erkannten Screenshots und alles, was du ausgeblendet hast. Antippen und **wieder einblenden**, auch für ein Bild, das fälschlich als Screenshot erkannt wurde.
 
 ## So arbeitest du am schnellsten
