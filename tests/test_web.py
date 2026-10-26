@@ -298,3 +298,14 @@ def test_ui_stays_responsive_while_scanning(web, monkeypatch):
     web.app.state.scan_thread.join(10)
     st = web.get("/api/status?server=false").json()
     assert not st["einlesen_laeuft"] and st["fortschritt"] == "" and st["bibliothek"]["gesamt"] == 12
+
+
+def test_assets_are_versioned(web):
+    """Nach einem Update darf der Browser keine alte app.css/app.js mit der neuen Seite mischen."""
+    import re as _re
+    html = web.get("/").text
+    css = _re.search(r'static/app\.css\?v=(\w+)"', html)
+    js = _re.search(r'static/app\.js\?v=(\w+)"', html)
+    assert css and js and css.group(1) != js.group(1)
+    assert web.get(f"/static/app.css?v={css.group(1)}").status_code == 200
+    assert web.get("/").headers["cache-control"] == "no-cache"

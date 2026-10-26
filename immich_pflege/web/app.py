@@ -6,6 +6,7 @@ Start: uvicorn immich_pflege.web.app:create_app --factory --host 0.0.0.0 --port 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -217,6 +218,25 @@ class RulesSave(BaseModel):
     yaml: Optional[str] = None
 
 
+ASSET_RE = re.compile(r'((?:/|)static/(app\.css|app\.js))"')
+
+
+def asset_version(name: str) -> str:
+    """Kurzer Inhalts-Hash – ändert sich mit jeder neuen Fassung der Datei."""
+    try:
+        return hashlib.sha1((STATIC / name).read_bytes()).hexdigest()[:10]
+    except OSError:
+        return __version__
+
+
+def page(name: str) -> Response:
+    """HTML-Seite mit ``?v=<Hash>`` an Stylesheet und Skript: nach einem Update holt der Browser sicher die
+    neuen Dateien, statt eine alte app.css aus dem Zwischenspeicher mit der neuen Seite zu mischen."""
+    html = (STATIC / name).read_text(encoding="utf-8")
+    html = ASSET_RE.sub(lambda m: f'{m.group(1)}?v={asset_version(m.group(2))}"', html)
+    return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+
+
 def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None = None,
                ext_http: httpx.Client | None = None, version: Version | None = None,
                auto_scan_enabled: bool = True) -> FastAPI:
@@ -377,7 +397,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         settings = svc().settings
         if not settings.auth_enabled or sessions.check(request.cookies.get(COOKIE), settings):
             return RedirectResponse("/", status_code=303)
-        return FileResponse(STATIC / "login.html", headers={"Cache-Control": "no-cache"})
+        return page("login.html")
 
     @app.post("/api/login")
     async def login(body: LoginRequest, request: Request):
@@ -844,7 +864,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     # -------------------------------------------------------- Oberfläche
     @app.get("/", include_in_schema=False)
     def index():
-        return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+        return page("index.html")
 
     @app.get("/sw.js", include_in_schema=False)
     def service_worker():
