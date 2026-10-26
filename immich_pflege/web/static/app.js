@@ -208,6 +208,22 @@ function albumLinks(al) {
       title: `„${al.name}“ in Immich im Browser öffnen` }, "Web ↗") : null);
 }
 
+// Knopf während einer Aktion sperren. Den Knopf vorher merken: e.currentTarget ist nach dem Klick
+// (also nach dem ersten await) leer – sonst bliebe der Knopf für immer gesperrt.
+function onBusyClick(sel, action) {
+  $(sel).addEventListener("click", (e) => {
+    const btn = e.currentTarget;
+    busy(btn, true);
+    Promise.resolve().then(action).catch((err) => toast(err.message, true)).finally(() => {
+      busy(btn, false);
+      if (typeof autoMore !== "undefined" && btn.classList.contains("more")) {  // noch sichtbar? dann gleich weiter
+        autoMore.unobserve(btn);
+        autoMore.observe(btn);
+      }
+    });
+  });
+}
+
 function busy(btn, on) {
   if (!btn) return;
   btn.disabled = on;
@@ -3366,8 +3382,8 @@ $("#viewer").addEventListener("keydown", (e) => {
 $("#set-btn").addEventListener("click", () => go("set"));
 window.addEventListener("popstate", () => go(location.hash.slice(1), false));
 $("#scan-full").addEventListener("click", (e) => rescan(true, e.currentTarget));
-$("#dup-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadDuplicates(false).finally(() => busy(e.currentTarget, false)); });
-$("#loc-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadLocation(false).finally(() => busy(e.currentTarget, false)); });
+onBusyClick("#dup-more", () => loadDuplicates(false));
+onBusyClick("#loc-more", () => loadLocation(false));
 $("#dup-done").addEventListener("change", (e) => { S.dup.includeDone = e.target.checked; loadTab("dup", true); });
 $("#loc-only").addEventListener("change", (e) => { S.loc.only = e.target.checked; loadTab("loc", true); });
 $("#loc-conf").addEventListener("change", (e) => { S.loc.minConf = e.target.value || null; loadTab("loc", true); });
@@ -3377,8 +3393,16 @@ $("#loc-hours").addEventListener("change", (e) => {
   const v = parseFloat(String(e.target.value).replace(",", "."));
   if (v > 0 && v <= 48) { S.loc.hours = v; loadTab("loc", true); } else { e.target.value = S.loc.hours; }
 });
-$("#cln-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadCleanup(false).finally(() => busy(e.currentTarget, false)); });
-$("#alb-more").addEventListener("click", (e) => { busy(e.currentTarget, true); loadAlbums(false).finally(() => busy(e.currentTarget, false)); });
+onBusyClick("#cln-more", () => loadCleanup(false));
+onBusyClick("#alb-more", () => loadAlbums(false));
+// Unten angekommen: automatisch nachladen (der Knopf bleibt als Rückfall)
+const autoMore = new IntersectionObserver((entries) => {
+  for (const en of entries) {
+    const btn = en.target;
+    if (en.isIntersecting && !btn.hidden && !btn.disabled && !btn.closest("[hidden]")) btn.click();
+  }
+}, { rootMargin: "0px 0px 400px 0px" });
+["#dup-more", "#loc-more", "#cln-more", "#alb-more"].forEach((sel) => autoMore.observe($(sel)));
 $("#tags-reload").addEventListener("click", () => loadTab("tags", true));
 $("#smart-go").addEventListener("click", () => { const q = $("#smart-q").value.trim(); if (q) loadSmart({ suche: q }); });
 $("#smart-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#smart-go").click(); } });
@@ -3399,7 +3423,7 @@ $("#set-logout").addEventListener("click", async () => {
   await fetch("/api/logout", { method: "POST" }).catch(() => null);
   location.href = "/login";
 });
-$("#version-check").addEventListener("click", async (e) => { busy(e.currentTarget, true); await loadVersion(true); busy(e.currentTarget, false); });
+onBusyClick("#version-check", () => loadVersion(true));
 $("#version-update").addEventListener("click", (e) => startUpdate(e.currentTarget));
 
 if ("serviceWorker" in navigator) {
