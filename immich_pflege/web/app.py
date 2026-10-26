@@ -98,6 +98,7 @@ class NoLocationApply(BaseModel):
     place: Optional[Place] = None
     ort: Optional[str] = None
     monat: Optional[str] = None
+    herkunft: Optional[Literal["kamera", "messenger", "ohne_kamera", "screenshot"]] = None  # nur Medien dieser Herkunft
     label: Optional[str] = None  # nur beim Vormerken: Titel in der Liste
     max_hours: Optional[float] = Field(default=None, gt=0, le=48)
 
@@ -605,8 +606,9 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
 
     @app.get("/api/no-location/origin-media")
     def no_location_origin_media(herkunft: Literal["kamera", "messenger", "ohne_kamera", "screenshot"],
-                                 max_hours: Optional[float] = Query(None, gt=0, le=48)):
-        return svc().origin_media(herkunft, max_hours)
+                                 max_hours: Optional[float] = Query(None, gt=0, le=48),
+                                 ort: Optional[str] = None, monat: Optional[str] = None):
+        return svc().origin_media(herkunft, max_hours, ort, monat)
 
     @app.get("/api/no-location/hidden")
     def no_location_hidden(max_hours: Optional[float] = Query(None, gt=0, le=48)):
@@ -827,7 +829,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         return svc().stage_no_location(
             label=body.label, ids=body.ids, max_hours=body.max_hours, min_confidence=body.min_confidence,
             series=body.series, place=body.place.model_dump() if body.place else None,
-            ort=body.ort, monat=body.monat)
+            ort=body.ort, monat=body.monat, herkunft=body.herkunft)
 
     @app.post("/api/staged/tags")
     def stage_tags(body: TagsApply):

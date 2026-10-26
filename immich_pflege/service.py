@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections import Counter
 from dataclasses import replace
 from datetime import datetime, timedelta
 import time
@@ -575,7 +576,12 @@ class Pflege:
         lib = self.library()
         hours, an = self._analysis(max_hours)
         base = self._filter_series(an.series, only_suggestions, min_confidence, herkunft=herkunft)
+        if herkunft:  # Serien (und damit Orte, Monate, Zahlen) nur mit den Medien dieser Herkunft
+            base = [replace(s, members=[c for c in s.members if c.origin == herkunft]) for s in base]
         series = self._filter_series(base, ort=ort, monat=monat)
+        # Herkunft zählen im gewählten Ort/Monat (ohne den Herkunfts-Filter selbst) – wie bei Ort und Monat
+        scope = self._filter_series(self._filter_series(an.series, only_suggestions, min_confidence), ort=ort, monat=monat)
+        origins = Counter(c.origin for s in scope for c in s.members)
         applicable = [c for c in an.candidates if c.applicable]
         out = {
             "stand": lib.scanned_at,
@@ -583,7 +589,7 @@ class Pflege:
             "extern_erlaubt": self.settings.location_include_external,
             "screenshots_ausgeblendet": an.screenshots,
             "kein_ort_ausgeblendet": sum(1 for _, why in an.hidden if why == "kein_ort"),
-            "herkunft": {k: {"name": v, "anzahl": sum(1 for c in an.candidates if c.origin == k)} for k, v in HERKUNFT.items()},
+            "herkunft": {k: {"name": v, "anzahl": origins.get(k, 0)} for k, v in HERKUNFT.items()},
             "medien": len(an.candidates),
             "mit_vorschlag": len(applicable),
             "nach_sicherheit": {lvl: sum(1 for c in applicable if c.suggestion.confidence == lvl)
@@ -602,7 +608,7 @@ class Pflege:
         return out
 
     def _select_locations(self, ids=None, max_hours=None, min_confidence=None, series=None, place=None,
-                          ort=None, monat=None):
+                          ort=None, monat=None, herkunft=None):
         """Auswahl auflösen: ids und/oder series (Serien-IDs); ort/monat wählt alle Serien eines
         Ortes bzw. Monats; place = {breite, laenge, name} setzt einen von Hand gewählten Ort;
         min_confidence ohne Auswahl = alle ab dieser Sicherheit. Vorgemerktes zählt nicht mit."""
@@ -622,7 +628,7 @@ class Pflege:
                 raise ActionError(f"Serie(n) {', '.join(missing)} nicht gefunden – bitte neu laden")
             for sid in series:
                 selected += [c.asset.id for c in known[sid].members
-                             if c.editable and (place or c.suggestion)
+                             if c.editable and (place or c.suggestion) and (not herkunft or c.origin == herkunft)
                              and (not min_confidence or (c.suggestion and
                                   level_at_least(c.suggestion.confidence, min_confidence)))]
         if not selected:
@@ -643,13 +649,16 @@ class Pflege:
                                  manual=manual, exclude=self.staging.asset_ids("ort"),
                                  no_place=self.no_place_list().hidden, show=self.no_place_list().shown)
 
-    def origin_media(self, herkunft: str, max_hours: float | None = None) -> dict[str, Any]:
-        """Alle Medien ohne Ort einer Herkunft – zum Prüfen und Ausblenden („kein Ort nötig“)."""
+    def origin_media(self, herkunft: str, max_hours: float | None = None, ort: str | None = None,
+                     monat: str | None = None) -> dict[str, Any]:
+        """Alle Medien ohne Ort einer Herkunft – zum Prüfen und Ausblenden („kein Ort nötig“);
+        mit ``ort``/``monat`` nur aus diesem Ort bzw. Monat."""
         if herkunft not in HERKUNFT:
             raise ActionError(f"Herkunft muss {', '.join(HERKUNFT)} sein")
         _, an = self._analysis(max_hours)
+        series = self._filter_series(an.series, ort=ort, monat=monat)
         return {"herkunft": herkunft, "name": HERKUNFT[herkunft],
-                "medien": self._review_media([c.asset.id for c in an.candidates if c.origin == herkunft])}
+                "medien": self._review_media([c.asset.id for s in series for c in s.members if c.origin == herkunft])}
 
     def hidden_location_media(self, max_hours: float | None = None) -> dict[str, Any]:
         """Ausgeblendete Medien ohne Ort: erkannte Screenshots und „kein Ort nötig“."""

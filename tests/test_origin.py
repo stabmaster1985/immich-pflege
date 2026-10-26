@@ -75,3 +75,22 @@ def test_counts_filter_and_hide(web, state):
     assert r["kein_ort_ausgeblendet"] == 1 and r["screenshots_ausgeblendet"] == 1
     assert r["herkunft"]["screenshot"]["anzahl"] == 1 and r["herkunft"]["ohne_kamera"]["anzahl"] == 1
     assert web.get("/api/no-location", params={"herkunft": "quatsch"}).status_code == 422
+
+
+def test_filter_within_place(web, state):
+    """Im Ort zählt und filtert die Herkunft nur dort; Vormerken nimmt nur die gefilterte Herkunft."""
+    overview = web.get("/api/no-location", params={"overview": True}).json()
+    sg = next(o for o in overview["orte"] if "gimignano" in o["key"])
+    r = web.get("/api/no-location", params={"ort": sg["key"]}).json()
+    counts = {k: v["anzahl"] for k, v in r["herkunft"].items()}
+    assert counts["messenger"] == 1 and counts["ohne_kamera"] == 1 and counts["kamera"] >= 1
+    assert sum(counts.values()) == r["medien_gefiltert"]  # die Zahlen gehören zu diesem Ort
+    only = web.get("/api/no-location", params={"ort": sg["key"], "herkunft": "messenger"}).json()
+    members = [m for s in only["serien"] for m in s["medien"]]
+    assert [m["id"] for m in members] == [state.ids["wa"]] and only["medien_gefiltert"] == 1
+    media = web.get("/api/no-location/origin-media", params={"herkunft": "ohne_kamera", "ort": sg["key"]}).json()["medien"]
+    assert [m["id"] for m in media] == [state.ids["meme"]]
+    res = web.post("/api/staged/no-location", json={"ort": sg["key"], "herkunft": "messenger", "label": "Test"}).json()
+    assert res["vorgemerkt"] == 1
+    staged = web.get("/api/staged").json()["eintraege"][0]
+    assert staged["daten"]["aenderungen"][0]["asset_id"] == state.ids["wa"]

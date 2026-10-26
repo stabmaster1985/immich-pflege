@@ -36,6 +36,8 @@ Nicht jedes Bild braucht einen Ort. Das Tool teilt alle Medien ohne Ort nach Her
 | 🖼 **Ohne Kameradaten** | weder Hersteller noch Modell: gespeichert, heruntergeladen, bearbeitet, Scans |
 | 📱 **Screenshots** | Dateiname (Screenshot, Bildschirmfoto, RPReplay …), PNG ohne Kameradaten **oder** ein Bild ohne Kameradaten in genau der Bildschirmgröße eines Handys oder Tablets (z. B. 1179×2556 – so werden auch markierte und als JPG gespeicherte Screenshots erkannt) |
 
+Der Filter wirkt **im gewählten Ort**: In der Übersicht steht er oben und zählt über alle Orte. Öffnest du einen Ort, steht er im Kopf des Orts und zählt nur dessen Bilder, z. B. „Ohne Vorschlag: 💬 Messenger (5)“. Dann zeigen die Serien nur die Bilder dieser Herkunft, und **Vormerken**, **Alle vormerken** und **Ort für alle suchen** gelten nur für sie.
+
 Screenshots sind ausgeblendet (abschaltbar unter ⚙ Einstellungen). Bei **Messenger** und **Ohne Kameradaten** erscheint **Alle … prüfen & ausblenden**. Die Prüf-Ansicht zeigt alle, du wählst ab, was doch einen Ort bekommen soll. Dann:
 
 - **ausblenden – kein Ort nötig:** verschwinden dauerhaft aus „Ohne Ort“, aus den Zahlen und aus „Alle sicheren“.

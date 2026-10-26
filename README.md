@@ -241,7 +241,7 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/api/timefix` | Falsche Aufnahmezeiten: `art` (`zeitversatz`, `dateiname`, `zukunft`, `standard`) |
 | GET | `/api/tags/rules/{name}/media` | alle neuen Treffer einer eigenen Regel |
 | POST | `/api/staged/tags/{name}/auswahl` | eigene Regel ohne abgewählte Medien vormerken: `ohne` |
-| GET | `/api/no-location/origin-media` | alle Medien ohne Ort einer `herkunft` (`kamera`, `messenger`, `ohne_kamera`, `screenshot`) |
+| GET | `/api/no-location/origin-media` | alle Medien ohne Ort einer `herkunft` (`kamera`, `messenger`, `ohne_kamera`, `screenshot`), optional nur in `ort`/`monat` |
 | GET | `/api/no-location/hidden` | ausgeblendete Medien ohne Ort mit `grund` (`screenshot` oder `kein_ort`) |
 | POST | `/api/no-location/no-place` | „kein Ort nötig“: `ids`; mit `undo` wieder einblenden (auch erkannte Screenshots) |
 | GET | `/api/no-location/media` | alle Medien mit Ortsvorschlag ab `min_confidence` (Standard `hoch`), mit `ort_neu` |

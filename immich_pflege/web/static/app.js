@@ -648,7 +648,18 @@ function renderLocFilters(r) {
     h("option", { value: "" }, `Alle Monate`),
     ...r.monate.map((m) => h("option", { value: m.key }, `${m.name} (${m.anzahl})`)));
   monthSel.value = l.monat || "";
-  // Herkunft: wo kommt das Bild her? Screenshots, Messenger-Bilder & Co. brauchen meist keinen Ort
+  // in einem Ort steht der Herkunfts-Filter im Kopf des Orts (mit dessen Zahlen), sonst hier
+  const inPlace = l.ort !== null && l.ort !== "*";
+  $("#loc-filters").replaceChildren(...[
+    h("label", { class: "field grow" }, "Ort", placeSel),
+    h("label", { class: "field grow" }, "Monat", monthSel),
+    ...(inPlace ? [] : herkunftBar(r))].filter(Boolean));
+}
+
+// Herkunft: wo kommt das Bild her? Screenshots, Messenger-Bilder & Co. brauchen meist keinen Ort.
+// Die Zahlen gelten für die aktuelle Auswahl (alle Orte bzw. den gewählten Ort und Monat).
+function herkunftBar(r) {
+  const l = S.loc;
   const chips = h("div", { class: "row-gap herkunft" }, h("span", { class: "muted small" }, "Herkunft:"),
     h("button", { type: "button", class: "chip-btn" + (l.herkunft ? "" : " on"), onclick: () => { l.herkunft = null; loadTab("loc", true); } }, "Alle"),
     ...Object.entries(r.herkunft).filter(([k, v]) => v.anzahl || l.herkunft === k).map(([k, v]) =>
@@ -659,10 +670,7 @@ function renderLocFilters(r) {
       h("button", { type: "button", class: "btn small", onclick: (e) => openOriginReview(l.herkunft, r.herkunft[l.herkunft].name, e.currentTarget) },
         `Alle ${r.herkunft[l.herkunft].anzahl} prüfen & ausblenden`))
     : null;
-  $("#loc-filters").replaceChildren(...[
-    h("label", { class: "field grow" }, "Ort", placeSel),
-    h("label", { class: "field grow" }, "Monat", monthSel),
-    chips, hint].filter(Boolean));
+  return [chips, hint];
 }
 
 const HERKUNFT_ICON = { kamera: "📷", messenger: "💬", ohne_kamera: "🖼", screenshot: "📱" };
@@ -674,7 +682,11 @@ async function openOriginReview(herkunft, name, btn) {
   busy(btn, true);
   let r;
   try {
-    r = await api(`api/no-location/origin-media?herkunft=${herkunft}` + (S.loc.hours ? `&max_hours=${S.loc.hours}` : ""));
+    const scope = new URLSearchParams({ herkunft });
+    if (S.loc.hours) scope.set("max_hours", S.loc.hours);
+    if (S.loc.ort && S.loc.ort !== "*") scope.set("ort", S.loc.ort);
+    if (S.loc.monat) scope.set("monat", S.loc.monat);
+    r = await api("api/no-location/origin-media?" + scope);
   } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
   const after = async () => { S.loc.loaded = false; await loadTab("loc", true); loadCounts(); };
   openReview({
@@ -749,7 +761,9 @@ function renderPlaceHeader(r) {
   return h("div", { class: "card place-head" },
     h("div", { class: "card-head" },
       h("button", { type: "button", class: "btn small", onclick: () => { S.loc.ort = null; S.loc.monat = null; loadTab("loc", true); } }, "← Alle Orte"),
-      h("div", {}, h("h2", {}, scope), h("span", { class: "muted" }, `${n(r.medien_gefiltert, "Medium", "Medien")} in ${n(r.serien_gesamt, "Serie", "Serien")}`))),
+      h("div", {}, h("h2", {}, scope), h("span", { class: "muted" }, `${n(r.medien_gefiltert, "Medium", "Medien")} in ${n(r.serien_gesamt, "Serie", "Serien")}`
+        + (S.loc.herkunft ? ` · nur ${HERKUNFT_PLURAL[S.loc.herkunft] || r.herkunft[S.loc.herkunft].name}` : "")))),
+    h("div", { class: "place-herkunft" }, ...herkunftBar(r).filter(Boolean)),
     special ? h("div", {},
       h("p", { class: "muted small" }, o.key === "~ohne"
         ? "Keine GPS-Fotos in der Nähe. Pro Serie „Ort suchen …“ nutzen – oder mit dem Monatsfilter eingrenzen und für alle auf einmal suchen."
@@ -856,7 +870,8 @@ function renderSeries(ser) {
 async function doApplyLocation(body, btn, label) {
   busy(btn, true);
   try {
-    const r = await api("api/staged/no-location", { method: "POST", body: { ...body, label, max_hours: S.loc.hours } });
+    const r = await api("api/staged/no-location", { method: "POST",
+      body: { ...body, label, max_hours: S.loc.hours, ...(S.loc.herkunft ? { herkunft: S.loc.herkunft } : {}) } });
     toast(`${n(r.vorgemerkt, "Medium", "Medien")} vorgemerkt` + (r.uebersprungen.length ? `, ${r.uebersprungen.length} übersprungen` : ""));
     await afterStage("loc");
     return true;

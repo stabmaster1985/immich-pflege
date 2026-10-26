@@ -504,3 +504,5 @@ dialog.review[open] { display: flex; flex-direction: column; }
 .herkunft-hint { flex: 1 1 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
   background: var(--chip); color: var(--fg); margin: 0; }
 .linklike { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+.place-herkunft { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
+.place-herkunft .herkunft { display: flex; }
