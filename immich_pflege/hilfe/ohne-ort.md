@@ -41,14 +41,14 @@ Der Filter wirkt **im gewählten Ort**: In der Übersicht steht er oben und zäh
 
 **Texterkennung:** Dafür nutzt das Tool Immichs Texterkennung (OCR). In Immich unter *Administration → Einstellungen → Maschinelles Lernen → Texterkennung* muss sie eingeschaltet sein, und der Auftrag „Texterkennung“ muss einmal gelaufen sein. Das Tool fragt das Ergebnis nur für Bilder **ohne Ort** ab, im Hintergrund, und merkt es sich (`data/texterkennung.json`). Neue Bilder kommen nach jedem Einlesen dazu. Solange es läuft, steht in der Zusammenfassung „⟳ Texterkennung: … von … Bildern geprüft“. Ein einzelnes Schild im Urlaubsfoto zählt nicht, nur Bilder, die zu einem großen Teil aus Text bestehen. Auf den Kacheln steht der Anfang des erkannten Texts.
 
-Screenshots sind ausgeblendet (abschaltbar unter ⚙ Einstellungen). Bei **Messenger** und **Ohne Kameradaten** erscheint **Alle … prüfen & ausblenden**. Die Prüf-Ansicht zeigt alle, du wählst ab, was doch einen Ort bekommen soll. Dann:
+Screenshots sind ausgeblendet (abschaltbar unter ⚙ Einstellungen), ebenso Bilder, die in Immich **archiviert** sind: Die hast du bewusst aus der Zeitleiste genommen, sie brauchen meist keinen Ort. Bei **Messenger** und **Ohne Kameradaten** erscheint **Alle … prüfen & ausblenden**. Die Prüf-Ansicht zeigt alle, du wählst ab, was doch einen Ort bekommen soll. Dann:
 
 - **ausblenden – kein Ort nötig:** verschwinden dauerhaft aus „Ohne Ort“, aus den Zahlen und aus „Alle sicheren“.
 - **archivieren:** zusätzlich aus der Immich-Zeitleiste nehmen (wird vorgemerkt).
 
 **Einzelne Bilder:** In der Liste Bilder antippen, dann unten **Archivieren** oder **Kein Ort nötig**. Das geht ohne Prüf-Ansicht, gut für ein paar Bilder. Archivieren wird wie alles erst **vorgemerkt** und geht beim **Übertragen** unter Vorgemerkt an Immich. Bis dahin ist das Bild hier schon ausgeblendet.
 
-Oben in der Zusammenfassung steht **„… ausgeblendet – ansehen“**. Dort siehst du die erkannten Screenshots und alles, was du ausgeblendet hast. Antippen und **wieder einblenden**, auch für ein Bild, das fälschlich als Screenshot erkannt wurde.
+Oben in der Zusammenfassung steht **„… ausgeblendet – ansehen“**. Dort siehst du getrennt: was du ausgeblendet hast, was in Immich archiviert ist und was als Screenshot erkannt wurde. Antippen und **wieder einblenden**, auch für ein Bild, das fälschlich als Screenshot erkannt wurde.
 
 ## So arbeitest du am schnellsten
 

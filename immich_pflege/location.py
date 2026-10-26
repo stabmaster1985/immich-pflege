@@ -259,7 +259,7 @@ class Analysis:
     series: list[Series]
     screenshots: int = 0
     by_id: dict[str, Candidate] = field(default_factory=dict)
-    hidden: list[tuple[Asset, str]] = field(default_factory=list)  # ausgeblendet: (Medium, screenshot|kein_ort)
+    hidden: list[tuple[Asset, str]] = field(default_factory=list)  # ausgeblendet: (Medium, kein_ort|archiviert|screenshot)
 
 
 def _series_id(ids: Iterable[str]) -> str:
@@ -320,8 +320,8 @@ def analyze(lib: Library, max_hours: float, include_external: bool,
             no_place: set[str] = frozenset(), show: set[str] = frozenset(),
             texts: Any = None) -> Analysis:
     """``exclude``: Medien, die schon vorgemerkt sind – sie tauchen nicht mehr auf.
-    ``no_place``: von Hand als „kein Ort nötig“ ausgeblendet; ``show``: Screenshots, die trotzdem
-    erscheinen sollen (falsch erkannt); ``texts``: Texterkennung (TextStore) für die Herkunft „dokument“."""
+    ``no_place``: von Hand als „kein Ort nötig“ ausgeblendet; ``show``: archivierte Medien und Screenshots,
+    die trotzdem erscheinen sollen; ``texts``: Texterkennung (TextStore) für die Herkunft „dokument“."""
     index = GpsIndex(lib.assets.values())
     cands: list[Candidate] = []
     hidden: list[tuple[Asset, str]] = []
@@ -330,6 +330,9 @@ def analyze(lib: Library, max_hours: float, include_external: bool,
             continue
         if a.id in no_place:
             hidden.append((a, "kein_ort"))
+            continue
+        if a.visibility == "archive" and a.id not in show:  # in Immich archiviert: braucht meist keinen Ort
+            hidden.append((a, "archiviert"))
             continue
         if skip_screenshots and a.id not in show and is_screenshot(a):
             hidden.append((a, "screenshot"))

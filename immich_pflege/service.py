@@ -617,6 +617,7 @@ class Pflege:
             "extern_erlaubt": self.settings.location_include_external,
             "screenshots_ausgeblendet": an.screenshots,
             "kein_ort_ausgeblendet": sum(1 for _, why in an.hidden if why == "kein_ort"),
+            "archiviert_ausgeblendet": sum(1 for _, why in an.hidden if why == "archiviert"),
             "texterkennung": self.text_progress.to_dict(),
             "herkunft": {k: {"name": v, "anzahl": origins.get(k, 0)} for k, v in HERKUNFT.items()},
             "medien": len(an.candidates),
@@ -690,7 +691,7 @@ class Pflege:
                 "medien": self._review_media([c.asset.id for s in series for c in s.members if c.origin == herkunft])}
 
     def hidden_location_media(self, max_hours: float | None = None) -> dict[str, Any]:
-        """Ausgeblendete Medien ohne Ort: erkannte Screenshots und „kein Ort nötig“."""
+        """Ausgeblendete Medien ohne Ort: „kein Ort nötig“, in Immich archiviert, erkannte Screenshots."""
         _, an = self._analysis(max_hours)
         why = {a.id: reason for a, reason in an.hidden}
         media = self._review_media(list(why))
@@ -699,14 +700,15 @@ class Pflege:
         return {"medien": media}
 
     def set_no_place(self, ids: list[str], undo: bool = False) -> dict[str, Any]:
-        """„Kein Ort nötig“ setzen – oder zurücknehmen (bei erkannten Screenshots: trotzdem zeigen)."""
+        """„Kein Ort nötig“ setzen – oder zurücknehmen (bei archivierten und Screenshots: trotzdem zeigen)."""
         if not ids:
             raise ActionError("Keine Medien angegeben")
         lib = self.library()
         np = self.no_place_list()
         if undo:
             np.update(hidden=set(), unhide=set(ids),
-                      show={i for i in ids if i in lib.assets and is_screenshot(lib.assets[i])})
+                      show={i for i in ids if i in lib.assets
+                            and (is_screenshot(lib.assets[i]) or lib.assets[i].visibility == "archive")})
         else:
             np.update(hidden=set(ids), unhide=set(), show=set())
         return {"medien": len(ids), "rueckgaengig": undo}

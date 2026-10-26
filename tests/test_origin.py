@@ -142,3 +142,18 @@ def test_herkunft_types_match():
     from immich_pflege.location import HERKUNFT
     from immich_pflege.web.app import Herkunft
     assert set(typing.get_args(Herkunft)) == set(HERKUNFT)
+
+
+def test_archived_hidden_and_restorable(web, state):
+    """In Immich archivierte Medien ohne Ort sind ausgeblendet – einzeln wieder einblendbar."""
+    arch = state.add_asset("frank", "IMG_9999.HEIC", "2024-07-16T12:41:00.000Z", visibility="archive")
+    r = web.get("/api/no-location").json()
+    assert r["archiviert_ausgeblendet"] == 1
+    all_ids = {m["id"] for m in web.get("/api/no-location/origin-media", params={"herkunft": "kamera"}).json()["medien"]}
+    assert arch not in all_ids
+    hidden = {m["id"]: m["grund"] for m in web.get("/api/no-location/hidden").json()["medien"]}
+    assert hidden[arch] == "archiviert"
+    web.post("/api/no-location/no-place", json={"ids": [arch], "undo": True})
+    r = web.get("/api/no-location").json()
+    assert r["archiviert_ausgeblendet"] == 0
+    assert arch in {m["id"] for m in web.get("/api/no-location/origin-media", params={"herkunft": "kamera"}).json()["medien"]}

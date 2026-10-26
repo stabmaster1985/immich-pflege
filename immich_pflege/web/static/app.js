@@ -631,10 +631,12 @@ async function loadLocation(reset) {
     $("#loc-summary").append(` · ⟳ Texterkennung: ${tx.fertig.toLocaleString("de-DE")} von ${tx.gesamt.toLocaleString("de-DE")} Bildern geprüft`);
     watchTextScan();
   }
-  const hiddenN = r.screenshots_ausgeblendet + r.kein_ort_ausgeblendet;
+  const hiddenN = r.screenshots_ausgeblendet + r.kein_ort_ausgeblendet + r.archiviert_ausgeblendet;
   if (hiddenN) {
+    const parts = [r.archiviert_ausgeblendet ? `${r.archiviert_ausgeblendet} archiviert` : "",
+      r.screenshots_ausgeblendet ? `${r.screenshots_ausgeblendet} Screenshots` : ""].filter(Boolean);
     $("#loc-summary").append(" · ", h("button", { type: "button", class: "linklike", onclick: (e) => openHiddenReview(e.currentTarget) },
-      `${hiddenN} ausgeblendet` + (r.screenshots_ausgeblendet ? ` (${r.screenshots_ausgeblendet} Screenshots)` : "") + " – ansehen"));
+      `${hiddenN} ausgeblendet` + (parts.length ? ` (${parts.join(", ")})` : "") + " – ansehen"));
   }
   setCount("ort", r.mit_vorschlag);
   $("#loc-more").hidden = overview || l.series.length >= l.total;
@@ -761,10 +763,10 @@ async function openHiddenReview(btn) {
   busy(btn, true);
   let r;
   try { r = await api("api/no-location/hidden" + (S.loc.hours ? `?max_hours=${S.loc.hours}` : "")); } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
-  const label = { screenshot: "📱 Als Screenshot erkannt", kein_ort: "🚫 Kein Ort nötig (von dir ausgeblendet)" };
+  const label = { kein_ort: "🚫 Kein Ort nötig (von dir ausgeblendet)", archiviert: "🗄 In Immich archiviert", screenshot: "📱 Als Screenshot erkannt" };
   openReview({
     titel: "Ohne Ort: ausgeblendet", medien: r.medien, gruppe: (m) => [m.grund, label[m.grund]], ohne: r.medien.map((m) => m.id),
-    hinweis: "Anfangs ist nichts gewählt. Antippen, was doch einen Ort bekommen soll – auch falsch erkannte Screenshots.",
+    hinweis: "Anfangs ist nichts gewählt. Antippen, was doch einen Ort bekommen soll – auch Archiviertes oder falsch erkannte Screenshots.",
     aktionen: [{ klasse: "primary", text: (k) => `${k} wieder einblenden`, run: async (ids) => {
       await api("api/no-location/no-place", { method: "POST", body: { ids, undo: true } });
       toast(`${n(ids.length, "Medium", "Medien")} wieder eingeblendet`);
