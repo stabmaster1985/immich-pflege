@@ -6,7 +6,7 @@ const S = {
   tab: "dup",
   status: null,
   dup: { groups: [], total: 0, open: 0, keep: {}, sel: new Set(), includeDone: false, art: null, monat: null, crossUser: false, ignored: false, loaded: false, info: null },
-  loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, loaded: false, info: null },
+  loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, herkunft: null, loaded: false, info: null },
   ovw: { loaded: false },
   cln: { bereich: "speicher", kategorie: null, ignored: false, items: [], total: 0, sel: new Set(), keep: {}, loaded: false, info: null },
   fol: { items: [], status: null, ignored: false, choice: {}, sync: {}, ohne: {} },
@@ -602,6 +602,7 @@ async function loadLocation(reset) {
   if (l.minConf) params.set("min_confidence", l.minConf);
   if (l.ort && l.ort !== "*") params.set("ort", l.ort);
   if (l.monat) params.set("monat", l.monat);
+  if (l.herkunft) params.set("herkunft", l.herkunft);
   const r = await api("api/no-location?" + params);
   l.loaded = true; l.info = r;
   // gewählter Ort/Monat existiert nicht mehr (z. B. nach Übernehmen) -> zurück zur Übersicht
@@ -624,8 +625,12 @@ async function loadLocation(reset) {
   const by = r.nach_sicherheit;
   $("#loc-summary").textContent = `${n(r.medien, "Medium", "Medien")} ohne Ort · ` +
     `Vorschläge: ${by.hoch} sicher, ${by.mittel} wahrscheinlich, ${by.niedrig} unsicher` +
-    (r.screenshots_ausgeblendet ? ` · ${r.screenshots_ausgeblendet} Screenshots ausgeblendet` : "") +
     (r.extern_erlaubt ? "" : " · externe Bibliotheken gesperrt");
+  const hiddenN = r.screenshots_ausgeblendet + r.kein_ort_ausgeblendet;
+  if (hiddenN) {
+    $("#loc-summary").append(" · ", h("button", { type: "button", class: "linklike", onclick: (e) => openHiddenReview(e.currentTarget) },
+      `${hiddenN} ausgeblendet` + (r.screenshots_ausgeblendet ? ` (${r.screenshots_ausgeblendet} Screenshots)` : "") + " – ansehen"));
+  }
   setCount("ort", r.mit_vorschlag);
   $("#loc-more").hidden = overview || l.series.length >= l.total;
   updateActionbar();
@@ -643,9 +648,69 @@ function renderLocFilters(r) {
     h("option", { value: "" }, `Alle Monate`),
     ...r.monate.map((m) => h("option", { value: m.key }, `${m.name} (${m.anzahl})`)));
   monthSel.value = l.monat || "";
-  $("#loc-filters").replaceChildren(
+  // Herkunft: wo kommt das Bild her? Screenshots, Messenger-Bilder & Co. brauchen meist keinen Ort
+  const chips = h("div", { class: "row-gap herkunft" }, h("span", { class: "muted small" }, "Herkunft:"),
+    h("button", { type: "button", class: "chip-btn" + (l.herkunft ? "" : " on"), onclick: () => { l.herkunft = null; loadTab("loc", true); } }, "Alle"),
+    ...Object.entries(r.herkunft).filter(([k, v]) => v.anzahl || l.herkunft === k).map(([k, v]) =>
+      h("button", { type: "button", class: "chip-btn" + (l.herkunft === k ? " on" : ""), onclick: () => { l.herkunft = k; loadTab("loc", true); } },
+        `${HERKUNFT_ICON[k]} ${v.name} (${v.anzahl})`)));
+  const hint = l.herkunft && l.herkunft !== "kamera" && r.herkunft[l.herkunft].anzahl
+    ? h("div", { class: "banner herkunft-hint" }, `${HERKUNFT_PLURAL[l.herkunft]} brauchen meist keinen Ort. `,
+      h("button", { type: "button", class: "btn small", onclick: (e) => openOriginReview(l.herkunft, r.herkunft[l.herkunft].name, e.currentTarget) },
+        `Alle ${r.herkunft[l.herkunft].anzahl} prüfen & ausblenden`))
+    : null;
+  $("#loc-filters").replaceChildren(...[
     h("label", { class: "field grow" }, "Ort", placeSel),
-    h("label", { class: "field grow" }, "Monat", monthSel));
+    h("label", { class: "field grow" }, "Monat", monthSel),
+    chips, hint].filter(Boolean));
+}
+
+const HERKUNFT_ICON = { kamera: "📷", messenger: "💬", ohne_kamera: "🖼", screenshot: "📱" };
+const HERKUNFT_KURZ = { messenger: "Messenger", ohne_kamera: "ohne Kameradaten", screenshot: "Screenshot" };
+const HERKUNFT_PLURAL = { messenger: "Messenger-Bilder", ohne_kamera: "Bilder ohne Kameradaten", screenshot: "Screenshots" };
+
+// Alle Medien einer Herkunft prüfen: „kein Ort nötig“ (dauerhaft ausblenden) oder archivieren
+async function openOriginReview(herkunft, name, btn) {
+  busy(btn, true);
+  let r;
+  try {
+    r = await api(`api/no-location/origin-media?herkunft=${herkunft}` + (S.loc.hours ? `&max_hours=${S.loc.hours}` : ""));
+  } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  const after = async () => { S.loc.loaded = false; await loadTab("loc", true); loadCounts(); };
+  openReview({
+    titel: `Ohne Ort: ${name}`, medien: r.medien, gruppe: "monat",
+    hinweis: "Abwählen, was doch einen Ort bekommen soll. Ausgeblendetes lässt sich unter „… ausgeblendet – ansehen“ zurückholen.",
+    aktionen: [
+      { text: (k) => `${k} archivieren`, run: async (ids) => {
+        const res = await api("api/staged/archive", { method: "POST", body: { ids, label: name } });
+        await api("api/no-location/no-place", { method: "POST", body: { ids } });
+        toast(`${n(res.vorgemerkt, "Medium", "Medien")} zum Archivieren vorgemerkt und hier ausgeblendet`);
+        S.stage.loaded = false; await after();
+      } },
+      { klasse: "primary", text: (k) => `${k} ausblenden – kein Ort nötig`, run: async (ids) => {
+        await api("api/no-location/no-place", { method: "POST", body: { ids } });
+        toast(`${n(ids.length, "Medium", "Medien")} ausgeblendet`);
+        await after();
+      } },
+    ],
+  });
+}
+
+// Ausgeblendetes ansehen (erkannte Screenshots und „kein Ort nötig“) und Gewähltes zurückholen
+async function openHiddenReview(btn) {
+  busy(btn, true);
+  let r;
+  try { r = await api("api/no-location/hidden" + (S.loc.hours ? `?max_hours=${S.loc.hours}` : "")); } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  const label = { screenshot: "📱 Als Screenshot erkannt", kein_ort: "🚫 Kein Ort nötig (von dir ausgeblendet)" };
+  openReview({
+    titel: "Ohne Ort: ausgeblendet", medien: r.medien, gruppe: (m) => [m.grund, label[m.grund]], ohne: r.medien.map((m) => m.id),
+    hinweis: "Anfangs ist nichts gewählt. Antippen, was doch einen Ort bekommen soll – auch falsch erkannte Screenshots.",
+    aktionen: [{ klasse: "primary", text: (k) => `${k} wieder einblenden`, run: async (ids) => {
+      await api("api/no-location/no-place", { method: "POST", body: { ids, undo: true } });
+      toast(`${n(ids.length, "Medium", "Medien")} wieder eingeblendet`);
+      S.loc.loaded = false; await loadTab("loc", true); loadCounts();
+    } }],
+  });
 }
 
 function confCounts(by) {
@@ -777,6 +842,7 @@ function renderSeries(ser) {
     h("div", { class: "meta" },
       h("div", { class: "name" }, m.dateiname),
       h("div", {}, `${fmtTime(m.aufnahme)} · ${m.benutzer}${m.extern ? " · extern" : ""}`),
+      m.herkunft && m.herkunft !== "kamera" ? h("div", { class: "chip" }, `${HERKUNFT_ICON[m.herkunft]} ${HERKUNFT_KURZ[m.herkunft]}`) : null,
       info, openLinks(m))));
   }
   card.append(grid);

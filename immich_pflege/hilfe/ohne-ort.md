@@ -25,6 +25,24 @@ Medien ohne Ort mit höchstens **2 Stunden** Abstand bilden eine **Serie**.
 - Widersprechen sich die Vorschläge, steht „Mehrere Orte“ dran, und es wird nichts automatisch übertragen.
 - Serien ganz ohne Vorschlag werden zusätzlich **pro Tag** zusammengefasst.
 
+## Herkunft: Screenshots, Messenger & Co.
+
+Nicht jedes Bild braucht einen Ort. Das Tool teilt alle Medien ohne Ort nach Herkunft ein, oben unter **Herkunft** mit Anzahl zum Filtern:
+
+| Herkunft | Woran erkannt |
+|---|---|
+| 📷 **Kamerafotos** | Kameradaten (Hersteller/Modell) vorhanden – die lohnen sich zu verorten |
+| 💬 **Messenger** | Dateiname von WhatsApp (`IMG-20240718-WA0003`, `-WA0001`), Signal, Threema, Telegram |
+| 🖼 **Ohne Kameradaten** | weder Hersteller noch Modell: gespeichert, heruntergeladen, bearbeitet, Scans |
+| 📱 **Screenshots** | Dateiname (Screenshot, Bildschirmfoto, RPReplay …), PNG ohne Kameradaten **oder** ein Bild ohne Kameradaten in genau der Bildschirmgröße eines Handys oder Tablets (z. B. 1179×2556 – so werden auch markierte und als JPG gespeicherte Screenshots erkannt) |
+
+Screenshots sind ausgeblendet (abschaltbar unter ⚙ Einstellungen). Bei **Messenger** und **Ohne Kameradaten** erscheint **Alle … prüfen & ausblenden**. Die Prüf-Ansicht zeigt alle, du wählst ab, was doch einen Ort bekommen soll. Dann:
+
+- **ausblenden – kein Ort nötig:** verschwinden dauerhaft aus „Ohne Ort“, aus den Zahlen und aus „Alle sicheren“.
+- **archivieren:** zusätzlich aus der Immich-Zeitleiste nehmen (wird vorgemerkt).
+
+Oben in der Zusammenfassung steht **„… ausgeblendet – ansehen“**. Dort siehst du die erkannten Screenshots und alles, was du ausgeblendet hast. Antippen und **wieder einblenden**, auch für ein Bild, das fälschlich als Screenshot erkannt wurde.
+
 ## So arbeitest du am schnellsten
 
 1. Die **Übersicht nach Ort** zeigt pro vorgeschlagenem Ort, wie viele Medien und Serien betroffen sind.
@@ -40,7 +58,7 @@ Mit **App ↗** und **Web ↗** unter jedem Bild öffnest du das Original in Imm
 
 ## Was ausgeblendet wird
 
-- **Screenshots und Bildschirmaufnahmen:** Erkannt am Dateinamen (Screenshot, Bildschirmfoto, Bildschirmaufnahme, RPReplay …) oder als PNG ohne Kameradaten, so speichert das iPhone Screenshots. Abschaltbar unter ⚙ Einstellungen.
+- **Screenshots und Bildschirmaufnahmen:** Erkannt am Dateinamen (Screenshot, Bildschirmfoto, Bildschirmaufnahme, RPReplay …), als PNG ohne Kameradaten (so speichert das iPhone Screenshots) oder an der Bildschirmgröße (siehe Herkunft). Ausblenden abschaltbar unter ⚙ Einstellungen.
 - **Externe Bibliotheken** werden standardmäßig nicht geändert. Das lässt sich ebenfalls in den Einstellungen freigeben.
 
 ## Wo es danebenliegen kann

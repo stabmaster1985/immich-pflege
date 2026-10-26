@@ -28,8 +28,8 @@ from .timefix import (ARTEN as TIME_ARTEN, execute_shifts, find_fixes, fmt_offse
 from .imagehash import HashProgress, HashStore, compute_missing, similar_pairs
 from .library import Library, apply_album_membership, read_albums, scan_library
 from .models import Asset
-from .location import (LEVELS, LocationChange, analyze, execute_location_changes, level_at_least,
-                       month_facets, month_key, month_label, place_facets, place_key, resolve_locations)
+from .location import (HERKUNFT, LEVELS, LocationChange, NoPlaceList, analyze, execute_location_changes, is_screenshot,
+                       level_at_least, month_facets, month_key, month_label, place_facets, place_key, resolve_locations)
 from .rules import (Resolver, Rule, RuleError, apply as apply_rules, dump_rules, evaluate_rule, load_rules, parse_rules,
                     preview as preview_rules, tag_ids)
 from .suggestions import BEGRIFFE, SMART_SIZE, HiddenList, data_suggestions, smart_results
@@ -533,17 +533,23 @@ class Pflege:
         hours = max_hours or self.settings.location_max_hours
         lib = self.library()
         staged = frozenset(self.staging.asset_ids("ort"))
+        np = self.no_place_list()
+        no_place, show = frozenset(np.hidden), frozenset(np.shown)
         key = (lib.uid, lib.rev, hours, self.settings.location_include_external,
-               self.settings.location_skip_screenshots, staged)
+               self.settings.location_skip_screenshots, staged, no_place, show)
         with self._calc_lock:
             cache = self._analysis_cache
             if not cache or cache[0] != key:
                 cache = self._analysis_cache = (key, analyze(lib, hours, self.settings.location_include_external,
-                                                             self.settings.location_skip_screenshots, staged))
+                                                             self.settings.location_skip_screenshots, staged,
+                                                             no_place, show))
         return hours, cache[1]
 
+    def no_place_list(self) -> NoPlaceList:
+        return NoPlaceList(self.settings.data_dir / "ohne_ort_ausgeblendet.json")
+
     @staticmethod
-    def _filter_series(series, only_suggestions=False, min_confidence=None, ort=None, monat=None):
+    def _filter_series(series, only_suggestions=False, min_confidence=None, ort=None, monat=None, herkunft=None):
         if min_confidence and min_confidence not in LEVELS:
             raise ActionError(f"Sicherheit muss {', '.join(LEVELS)} sein")
         if only_suggestions or min_confidence:
@@ -554,16 +560,21 @@ class Pflege:
             series = [s for s in series if place_key(s) == ort]
         if monat:
             series = [s for s in series if month_key(s) == monat]
+        if herkunft:
+            series = [s for s in series if any(c.origin == herkunft for c in s.members)]
         return series
 
     def no_location_view(self, max_hours: float | None = None, offset: int = 0, limit: int = 20,
                          only_suggestions: bool = False, min_confidence: str | None = None,
                          ort: str | None = None, monat: str | None = None,
-                         overview: bool = False) -> dict[str, Any]:
-        """Serien ohne Ort. ``overview`` liefert nur die Orte mit Mengen (ohne Serien)."""
+                         overview: bool = False, herkunft: str | None = None) -> dict[str, Any]:
+        """Serien ohne Ort. ``overview`` liefert nur die Orte mit Mengen (ohne Serien).
+        ``herkunft``: nur Serien mit Medien dieser Herkunft (kamera, messenger, ohne_kamera, screenshot)."""
+        if herkunft and herkunft not in HERKUNFT:
+            raise ActionError(f"Herkunft muss {', '.join(HERKUNFT)} sein")
         lib = self.library()
         hours, an = self._analysis(max_hours)
-        base = self._filter_series(an.series, only_suggestions, min_confidence)
+        base = self._filter_series(an.series, only_suggestions, min_confidence, herkunft=herkunft)
         series = self._filter_series(base, ort=ort, monat=monat)
         applicable = [c for c in an.candidates if c.applicable]
         out = {
@@ -571,6 +582,8 @@ class Pflege:
             "max_stunden": hours,
             "extern_erlaubt": self.settings.location_include_external,
             "screenshots_ausgeblendet": an.screenshots,
+            "kein_ort_ausgeblendet": sum(1 for _, why in an.hidden if why == "kein_ort"),
+            "herkunft": {k: {"name": v, "anzahl": sum(1 for c in an.candidates if c.origin == k)} for k, v in HERKUNFT.items()},
             "medien": len(an.candidates),
             "mit_vorschlag": len(applicable),
             "nach_sicherheit": {lvl: sum(1 for c in applicable if c.suggestion.confidence == lvl)
@@ -578,7 +591,7 @@ class Pflege:
             # Mengen je Ort (für den aktuellen Monat) und je Monat (für den aktuellen Ort)
             "orte": place_facets(self._filter_series(base, monat=monat)),
             "monate": month_facets(self._filter_series(base, ort=ort)),
-            "filter": {"ort": ort, "monat": monat},
+            "filter": {"ort": ort, "monat": monat, "herkunft": herkunft},
             "serien_gesamt": len(series),
             "medien_gefiltert": sum(len(s.members) for s in series),
             "offset": offset,
@@ -627,7 +640,38 @@ class Pflege:
         return resolve_locations(self.library(), selected, hours, self.settings.location_include_external,
                                  skip_screenshots=self.settings.location_skip_screenshots,
                                  min_confidence=min_confidence if selected is None else None,
-                                 manual=manual, exclude=self.staging.asset_ids("ort"))
+                                 manual=manual, exclude=self.staging.asset_ids("ort"),
+                                 no_place=self.no_place_list().hidden, show=self.no_place_list().shown)
+
+    def origin_media(self, herkunft: str, max_hours: float | None = None) -> dict[str, Any]:
+        """Alle Medien ohne Ort einer Herkunft – zum Prüfen und Ausblenden („kein Ort nötig“)."""
+        if herkunft not in HERKUNFT:
+            raise ActionError(f"Herkunft muss {', '.join(HERKUNFT)} sein")
+        _, an = self._analysis(max_hours)
+        return {"herkunft": herkunft, "name": HERKUNFT[herkunft],
+                "medien": self._review_media([c.asset.id for c in an.candidates if c.origin == herkunft])}
+
+    def hidden_location_media(self, max_hours: float | None = None) -> dict[str, Any]:
+        """Ausgeblendete Medien ohne Ort: erkannte Screenshots und „kein Ort nötig“."""
+        _, an = self._analysis(max_hours)
+        why = {a.id: reason for a, reason in an.hidden}
+        media = self._review_media(list(why))
+        for m in media:
+            m["grund"] = why[m["id"]]
+        return {"medien": media}
+
+    def set_no_place(self, ids: list[str], undo: bool = False) -> dict[str, Any]:
+        """„Kein Ort nötig“ setzen – oder zurücknehmen (bei erkannten Screenshots: trotzdem zeigen)."""
+        if not ids:
+            raise ActionError("Keine Medien angegeben")
+        lib = self.library()
+        np = self.no_place_list()
+        if undo:
+            np.update(hidden=set(), unhide=set(ids),
+                      show={i for i in ids if i in lib.assets and is_screenshot(lib.assets[i])})
+        else:
+            np.update(hidden=set(ids), unhide=set(), show=set())
+        return {"medien": len(ids), "rueckgaengig": undo}
 
     def location_media(self, min_confidence: str = "hoch", max_hours: float | None = None) -> dict[str, Any]:
         """Alle Medien mit Ortsvorschlag ab dieser Sicherheit – für die Prüf-Ansicht, mit dem neuen Ort."""

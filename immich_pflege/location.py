@@ -17,11 +17,14 @@ from __future__ import annotations
 
 import bisect
 import hashlib
+import json
 import logging
 import math
 import re
+import threading
 from dataclasses import dataclass, field, replace
 from datetime import date
+from pathlib import Path
 from typing import Any, Iterable
 
 from .client import ImmichClient
@@ -40,11 +43,49 @@ SCREENSHOT_RE = re.compile(
     r"rpreplay|screenrecording|screen recording)", re.IGNORECASE)
 
 
+# Bildschirmauflösungen gängiger Handys und Tablets (kurze, lange Seite). Ein Bild ohne Kameradaten
+# in genau dieser Größe ist ein Screenshot – auch nach Markieren/Teilen als JPG oder HEIC.
+SCREEN_SIZES = {
+    # iPhone
+    (640, 1136), (750, 1334), (828, 1792), (1080, 1920), (1125, 2436), (1170, 2532), (1179, 2556),
+    (1206, 2622), (1242, 2208), (1242, 2688), (1284, 2778), (1290, 2796), (1320, 2868), (1080, 2340),
+    # Android
+    (720, 1520), (720, 1600), (1080, 2160), (1080, 2220), (1080, 2280), (1080, 2316), (1080, 2400),
+    (1080, 2408), (1080, 2412), (1260, 2800), (1344, 2992), (1440, 2560), (1440, 2960), (1440, 3040),
+    (1440, 3088), (1440, 3120), (1440, 3200),
+    # iPad
+    (1536, 2048), (1620, 2160), (1640, 2360), (1668, 2224), (1668, 2388), (1488, 2266), (2048, 2732),
+}
+MESSENGER_RE = re.compile(r"(-WA\d{4}|^signal-\d{4}-\d\d-\d\d|^threema|^telegram|^photo_\d{4}-\d\d-\d\d_\d\d-\d\d-\d\d|"
+                          r"^received_|^IMG-\d{8}-WA)", re.IGNORECASE)
+HERKUNFT = {"kamera": "Kamerafotos", "messenger": "Messenger", "ohne_kamera": "Ohne Kameradaten",
+            "screenshot": "Screenshots"}
+
+
+def screen_sized(a: Asset) -> bool:
+    if a.type != "IMAGE" or a.make or a.model or not a.width or not a.height:
+        return False
+    return (min(a.width, a.height), max(a.width, a.height)) in SCREEN_SIZES
+
+
 def is_screenshot(a: Asset) -> bool:
     if SCREENSHOT_RE.match(a.file_name or ""):
         return True
     # iPhone-Screenshots heißen auch IMG_1234.PNG – erkennbar an fehlenden Kameradaten
-    return (a.file_name or "").lower().endswith(".png") and not a.make and not a.model
+    if (a.file_name or "").lower().endswith(".png") and not a.make and not a.model:
+        return True
+    return screen_sized(a)
+
+
+def origin(a: Asset) -> str:
+    """Herkunft: kamera, messenger, ohne_kamera (gespeichert, heruntergeladen, bearbeitet) oder screenshot."""
+    if is_screenshot(a):
+        return "screenshot"
+    if MESSENGER_RE.search(a.file_name or ""):
+        return "messenger"
+    if not a.make and not a.model:
+        return "ohne_kamera"
+    return "kamera"
 
 
 def km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -115,8 +156,12 @@ class Candidate:
     def applicable(self) -> bool:
         return self.editable and self.suggestion is not None
 
+    @property
+    def origin(self) -> str:
+        return origin(self.asset)
+
     def to_dict(self) -> dict[str, Any]:
-        return {**self.asset.summary(), "aenderbar": self.editable, "serie": self.series_id,
+        return {**self.asset.summary(), "aenderbar": self.editable, "serie": self.series_id, "herkunft": self.origin,
                 "vorschlag": self.suggestion.to_dict() if self.suggestion else None}
 
 
@@ -206,6 +251,7 @@ class Analysis:
     series: list[Series]
     screenshots: int = 0
     by_id: dict[str, Candidate] = field(default_factory=dict)
+    hidden: list[tuple[Asset, str]] = field(default_factory=list)  # ausgeblendet: (Medium, screenshot|kein_ort)
 
 
 def _series_id(ids: Iterable[str]) -> str:
@@ -262,21 +308,28 @@ def _build_series(cands: list[Candidate]) -> list[Series]:
 
 
 def analyze(lib: Library, max_hours: float, include_external: bool,
-            skip_screenshots: bool = True, exclude: set[str] = frozenset()) -> Analysis:
-    """``exclude``: Medien, die schon vorgemerkt sind – sie tauchen nicht mehr auf."""
+            skip_screenshots: bool = True, exclude: set[str] = frozenset(),
+            no_place: set[str] = frozenset(), show: set[str] = frozenset()) -> Analysis:
+    """``exclude``: Medien, die schon vorgemerkt sind – sie tauchen nicht mehr auf.
+    ``no_place``: von Hand als „kein Ort nötig“ ausgeblendet; ``show``: Screenshots, die trotzdem
+    erscheinen sollen (falsch erkannt)."""
     index = GpsIndex(lib.assets.values())
     cands: list[Candidate] = []
-    screenshots = 0
+    hidden: list[tuple[Asset, str]] = []
     for a in lib.assets.values():
         if a.has_gps or a.id in exclude:
             continue
-        if skip_screenshots and is_screenshot(a):
-            screenshots += 1
+        if a.id in no_place:
+            hidden.append((a, "kein_ort"))
+            continue
+        if skip_screenshots and a.id not in show and is_screenshot(a):
+            hidden.append((a, "screenshot"))
             continue
         cands.append(Candidate(a, index.suggest(a, max_hours), include_external or not a.is_external))
     series = _build_series(cands)
     cands.sort(key=lambda c: (c.asset.local_date_time or "", c.asset.id), reverse=True)
-    return Analysis(cands, series, screenshots, {c.asset.id: c for c in cands})
+    shots = sum(1 for _, why in hidden if why == "screenshot")
+    return Analysis(cands, series, shots, {c.asset.id: c for c in cands}, hidden)
 
 
 def find_candidates(lib: Library, max_hours: float, include_external: bool,
@@ -321,10 +374,11 @@ class LocationChange:
 def resolve_locations(lib: Library, ids: Iterable[str] | None, max_hours: float, include_external: bool, *,
                       skip_screenshots: bool = True, min_confidence: str | None = None,
                       manual: tuple[float, float, str | None] | None = None,
-                      exclude: set[str] = frozenset()) -> tuple[list[LocationChange], list[dict[str, str]]]:
+                      exclude: set[str] = frozenset(), no_place: set[str] = frozenset(),
+                      show: set[str] = frozenset()) -> tuple[list[LocationChange], list[dict[str, str]]]:
     """Welche Orte gesetzt würden: vorgeschlagener Ort (ids), alle ab einer Sicherheit
     (min_confidence) oder ein von Hand gewählter Ort (manual = (breite, länge, name))."""
-    analysis = analyze(lib, max_hours, include_external, skip_screenshots, exclude)
+    analysis = analyze(lib, max_hours, include_external, skip_screenshots, exclude, no_place, show)
     if ids is None:
         if not min_confidence:
             raise ValueError("ids oder min_confidence angeben")
@@ -469,3 +523,29 @@ def month_facets(series: list[Series]) -> list[dict[str, Any]]:
         m["anzahl"] += len(s.members)
         m["serien"] += 1
     return sorted(months.values(), key=lambda m: m["key"], reverse=True)
+
+
+class NoPlaceList:
+    """„Kein Ort nötig“ (DATA_DIR/ohne_ort_ausgeblendet.json): ``hidden`` von Hand ausgeblendet,
+    ``shown`` als Screenshot erkannt, soll aber trotzdem erscheinen."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self._lock = threading.Lock()
+        self.hidden: set[str] = set()
+        self.shown: set[str] = set()
+        try:
+            if path.exists():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                self.hidden, self.shown = set(data.get("ausgeblendet", [])), set(data.get("trotzdem_zeigen", []))
+        except (OSError, ValueError) as exc:
+            log.warning("%s unlesbar: %s", path, exc)
+
+    def update(self, hidden: set[str], unhide: set[str], show: set[str]) -> None:
+        with self._lock:
+            self.hidden = (self.hidden | hidden) - unhide
+            self.shown = (self.shown | show) - hidden
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"ausgeblendet": sorted(self.hidden), "trotzdem_zeigen": sorted(self.shown)}),
+                           encoding="utf-8")
+            tmp.replace(self.path)

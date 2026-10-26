@@ -578,9 +578,23 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
                     offset: int = Query(0, ge=0), limit: int = Query(20, ge=0, le=5000),
                     only_suggestions: bool = False,
                     min_confidence: Optional[Literal["niedrig", "mittel", "hoch"]] = None,
-                    ort: Optional[str] = None, monat: Optional[str] = None, overview: bool = False):
+                    ort: Optional[str] = None, monat: Optional[str] = None, overview: bool = False,
+                    herkunft: Optional[Literal["kamera", "messenger", "ohne_kamera", "screenshot"]] = None):
         return svc().no_location_view(max_hours, offset, limit, only_suggestions, min_confidence,
-                                      ort, monat, overview)
+                                      ort, monat, overview, herkunft)
+
+    @app.get("/api/no-location/origin-media")
+    def no_location_origin_media(herkunft: Literal["kamera", "messenger", "ohne_kamera", "screenshot"],
+                                 max_hours: Optional[float] = Query(None, gt=0, le=48)):
+        return svc().origin_media(herkunft, max_hours)
+
+    @app.get("/api/no-location/hidden")
+    def no_location_hidden(max_hours: Optional[float] = Query(None, gt=0, le=48)):
+        return svc().hidden_location_media(max_hours)
+
+    @app.post("/api/no-location/no-place")
+    def no_location_no_place(body: SuggestionHide):
+        return svc().set_no_place(body.ids, body.undo)
 
     @app.post("/api/no-location/apply")
     def no_location_apply(body: NoLocationApply):

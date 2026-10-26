@@ -171,7 +171,7 @@ def test_no_location_by_place(web):
     key = over["orte"][0]["key"]
     r = web.get("/api/no-location", params={"ort": key}).json()
     assert r["serien_gesamt"] == 1 and r["medien_gefiltert"] == 2
-    assert r["filter"] == {"ort": key, "monat": None}
+    assert r["filter"] == {"ort": key, "monat": None, "herkunft": None}
     assert web.get("/api/no-location", params={"ort": "~ohne"}).json()["medien_gefiltert"] == 4
     assert web.get("/api/no-location", params={"monat": "2024-06"}).json()["serien_gesamt"] == 0
 

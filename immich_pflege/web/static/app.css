@@ -497,3 +497,10 @@ dialog.review[open] { display: flex; flex-direction: column; }
 .v-btn.small { min-height: 36px; font-size: .85rem; padding: 6px 12px; }
 .v-result { margin-top: 6px; padding: 6px 10px; border-radius: 8px; background: rgba(255,255,255,.1); }
 .v-result.ok { background: rgba(76,194,131,.25); }
+
+/* Ohne Ort: Herkunft */
+.herkunft { flex: 1 1 100%; flex-wrap: wrap; }
+.herkunft .chip-btn { padding: 4px 10px; font-size: .82rem; }
+.herkunft-hint { flex: 1 1 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  background: var(--chip); color: var(--fg); margin: 0; }
+.linklike { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
