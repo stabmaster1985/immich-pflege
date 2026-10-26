@@ -5,12 +5,12 @@ In der Oberfläche geht keine Änderung sofort an Immich. Was du unter **Aufräu
 ## Ablauf
 
 1. **Vormerken:** Wie gewohnt auswählen und bestätigen. Das Vorgemerkte verschwindet sofort aus der Übersicht, damit du mit dem Rest weitermachen kannst. In Immich ändert sich noch nichts.
-2. **Prüfen:** Unter **✓** steht jeder Eintrag mit Vorschaubildern:
+2. **Prüfen:** Die Einträge sind **nach Art gruppiert** (Duplikate, Aufräumen, Archivieren, Orte, Alben, Tags …), jede Gruppe mit eigener Farbe und **einklappbar**. Im Kopf einer Gruppe stehen Anzahl, Medien und ggf. 🗑 Papierkorb, dazu **Übertragen (n)** und **Zurücknehmen** nur für diese Gruppe. Oben führt jeder Chip direkt zu seiner Gruppe, **Alle auf-/zuklappen** schaltet alle um. Der Klappzustand bleibt gespeichert, bei vielen Einträgen sind die Gruppen anfangs zu. Jeder Eintrag zeigt Vorschaubilder:
    - Duplikate: grün umrandet ist das Bild, das bleibt. Darunter steht, wohin die Kopien gehen (Prüf-Album oder Papierkorb).
    - Orte: unter jedem Bild steht der neue Ort.
    - Alben: neues Album oder welches ergänzt wird, mit wem es geteilt wird, Beispielbilder.
    - Tags: Regel, Tags und Beispielbilder.
-3. **Zurücknehmen** legt einen Eintrag wieder in die Übersicht zurück. Er wird dort neu bewertet.
+3. **Zurücknehmen** (↩ am Eintrag) legt einen Eintrag wieder in die Übersicht zurück. Er wird dort neu bewertet.
 4. **Übertragen** führt einen einzelnen Eintrag in Immich aus, **Alle übertragen** in der Aktionsleiste alle auf einmal. Geht etwas in den Papierkorb, musst du das vorher ausdrücklich bestätigen.
 
 Erfolgreich Übertragenes verschwindet aus der Liste. Schlägt ein Eintrag fehl, z. B. weil Immich nicht erreichbar war, bleibt er mit der Fehlermeldung stehen und kann später erneut übertragen werden.
@@ -26,7 +26,7 @@ Erfolgreich Übertragenes verschwindet aus der Liste. Schlägt ein Eintrag fehl,
 
 ## Verlauf und Rückgängig
 
-Unter der Vormerkliste steht der **Verlauf**: jede Übertragung mit Zeitpunkt und Anzahl, auch die per API oder Kommandozeile. Gespeichert werden die letzten 500 in `data/verlauf.json`.
+Unter der Vormerkliste steht der **Verlauf**: jede Übertragung mit Zeitpunkt und Anzahl, auch die per API oder Kommandozeile. Er ist **nach Tagen gruppiert** und einklappbar (heute aufgeklappt), mit derselben Farbe je Art. Gespeichert werden die letzten 500 in `data/verlauf.json`.
 
 **Rückgängig** macht eine Übertragung wieder rückgängig:
 

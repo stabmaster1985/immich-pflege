@@ -2906,19 +2906,39 @@ async function loadStaged() {
 
 const HIST_SOURCE = { oberflaeche: "Oberfläche", api: "API/Kommandozeile", automatisch: "automatisch" };
 
+// Verlauf nach Tagen, einklappbar (heute offen); Farbe je Art wie bei den vorgemerkten Gruppen
 function renderHistory(entries) {
   const list = $("#history-list");
   if (!entries.length) { list.replaceChildren(h("p", { class: "muted" }, "Noch nichts übertragen.")); return; }
-  list.replaceChildren(...entries.map((e) => {
-    let status;
-    if (e.rueckgaengig) status = h("span", { class: "chip" }, "↩ rückgängig gemacht " + fmtDateTime(e.rueckgaengig));
-    else if (e.rueckgaengig_moeglich) status = h("button", { type: "button", class: "btn small", onclick: (ev) => undoHistory(e, ev.currentTarget) }, "Rückgängig");
-    else status = h("span", { class: "muted small" }, e.nicht_rueckgaengig || "");
-    return h("div", { class: "hist-row" + (e.rueckgaengig ? " undone" : "") },
-      h("div", { class: "grow" }, h("div", {}, e.titel),
-        h("div", { class: "muted small" }, `${fmtDateTime(e.zeit)} · ${n(e.anzahl, "Medium", "Medien")} · ${HIST_SOURCE[e.quelle] || e.quelle}`),
-        e.rueck_fehler && e.rueck_fehler.length ? h("div", { class: "banner err" }, e.rueck_fehler.join(" · ")) : null),
-      status);
+  const localDay = (d) => d.toLocaleDateString("sv-SE");  // JJJJ-MM-TT in Ortszeit
+  const days = new Map();
+  for (const x of entries) {
+    const key = x.zeit ? localDay(new Date(x.zeit)) : "";
+    if (!days.has(key)) days.set(key, []);
+    days.get(key).push(x);
+  }
+  const today = localDay(new Date());
+  const yesterday = localDay(new Date(Date.now() - 864e5));
+  list.replaceChildren(...[...days].map(([day, xs], i) => {
+    const det = h("details", { class: "hist-day" });
+    det.open = stageOpen("hist-" + day, i === 0);
+    det.addEventListener("toggle", () => rememberOpen("hist-" + day, det.open));
+    const label = day === today ? "Heute" : day === yesterday ? "Gestern" : fmtTaken(day + " 00:00").slice(0, 10);
+    const media = xs.reduce((a, x) => a + (x.rueckgaengig ? 0 : x.anzahl), 0);
+    det.append(h("summary", {}, h("b", {}, label), h("span", { class: "muted small" }, ` ${n(xs.length, "Übertragung", "Übertragungen")} · ${n(media, "Medium", "Medien")}`)),
+      ...xs.map((x) => {
+        let status;
+        if (x.rueckgaengig) status = h("span", { class: "chip" }, "↩ rückgängig " + fmtDateTime(x.rueckgaengig).slice(-5));
+        else if (x.rueckgaengig_moeglich) status = h("button", { type: "button", class: "btn small", onclick: (ev) => undoHistory(x, ev.currentTarget) }, "Rückgängig");
+        else status = h("span", { class: "muted small" }, x.nicht_rueckgaengig || "");
+        return h("div", { class: "hist-row" + (x.rueckgaengig ? " undone" : ""), "data-typ": x.typ },
+          h("span", { class: "sg-icon small", "aria-hidden": "true" }, STAGE_ICON[x.typ] || (x.typ === "papierkorb" ? "♻" : "•")),
+          h("div", { class: "grow" }, h("div", {}, x.titel),
+            h("div", { class: "muted small" }, `${fmtDateTime(x.zeit).slice(-5)} · ${n(x.anzahl, "Medium", "Medien")} · ${HIST_SOURCE[x.quelle] || x.quelle}`),
+            x.rueck_fehler && x.rueck_fehler.length ? h("div", { class: "banner err" }, x.rueck_fehler.join(" · ")) : null),
+          status);
+      }));
+    return det;
   }));
 }
 
@@ -2964,6 +2984,27 @@ function stageMedia(e) {
   }));
 }
 
+// Je Art eine einklappbare Gruppe mit eigener Farbe; der Klappzustand bleibt gespeichert
+const STAGE_ICON = { duplikat: "⧉", aufraeumen: "🧹", archiv: "🗄", stapel: "📚", albenpflege: "🗂", zeit: "🕑", ort: "📍", album: "🖼", tag: "🏷" };
+
+function stageOpen(key, fallback) {
+  try {
+    const v = JSON.parse(localStorage.getItem("pflege-offen") || "{}")[key];
+    return v === undefined ? fallback : v;
+  } catch (_) { return fallback; }
+}
+
+function rememberOpen(key, open) {
+  try {
+    const all = JSON.parse(localStorage.getItem("pflege-offen") || "{}");
+    all[key] = open;
+    localStorage.setItem("pflege-offen", JSON.stringify(all));
+  } catch (_) { /* egal */ }
+}
+
+// Knopf im Kopf einer <details>-Gruppe: ohne dabei auf- oder zuzuklappen
+const headBtn = (attrs, label) => h("button", { ...attrs, type: "button", onclick: (ev) => { ev.preventDefault(); ev.stopPropagation(); attrs.onclick(ev); } }, label);
+
 function renderStaged() {
   const st = S.stage;
   const cnt = st.info ? st.info.anzahl : 0;
@@ -2975,31 +3016,72 @@ function renderStaged() {
     : "";
   if (!cnt) {
     list.append(h("div", { class: "empty" }, h("p", {}, "Nichts vorgemerkt."),
-      h("p", {}, "Was du in den anderen Tabs vormerkst, landet hier – noch ohne Änderung in Immich.")));
+      h("p", {}, "Was du unter Aufräumen, Ordnen oder Alben vormerkst, landet hier – noch ohne Änderung in Immich.")));
     updateActionbar();
     return;
   }
-  for (const [typ, label] of STAGE_TYPES) {
-    const entries = st.entries.filter((e) => e.typ === typ);
-    if (!entries.length) continue;
-    list.append(h("h2", { class: "stage-head" }, `${label} (${entries.length})`));
-    for (const e of entries) {
-      const trash = e.daten.schritte ? e.daten.schritte.filter((s) => s.aktion === "papierkorb").length : 0;
-      list.append(h("article", { class: "card" },
-        h("div", { class: "card-head" },
-          h("div", {}, h("h2", {}, e.titel),
-            h("span", { class: "muted" }, `${n(e.anzahl, "Medium", "Medien")} · vorgemerkt ${fmtDateTime(e.erstellt)}`)),
-          trash ? h("span", { class: "chip" }, `🗑 ${trash}`) : null),
-        e.fehler ? h("div", { class: "banner err" }, "Letzte Übertragung fehlgeschlagen: " + e.fehler) : null,
-        typ === "album" && e.daten.hinweise.length ? h("div", { class: "banner warn" }, e.daten.hinweise.join(" · ")) : null,
-        typ === "album" && e.daten.album_id ? h("div", { class: "small" }, "Album ansehen: ", albumLinks({ id: e.daten.album_id, name: e.daten.name })) : null,
-        e.medien.length ? stageMedia(e) : null,
-        h("div", { class: "row-gap stage-actions" },
-          h("button", { type: "button", class: "btn small", onclick: (ev) => unstage(e, ev.currentTarget) }, "Zurücknehmen"),
-          h("button", { type: "button", class: "btn small primary", onclick: (ev) => applyStaged([e.id], ev.currentTarget) }, "Übertragen"))));
-    }
-  }
+  const groups = STAGE_TYPES.map(([typ, label]) => ({ typ, label, entries: st.entries.filter((x) => x.typ === typ) })).filter((g) => g.entries.length);
+  const many = st.entries.length > 6;  // viele Einträge: anfangs eingeklappt
+  const sections = groups.map((g) => {
+    const media = g.entries.reduce((a, x) => a + x.anzahl, 0);
+    const trash = g.entries.reduce((a, x) => a + (x.daten.schritte ? x.daten.schritte.filter((s) => s.aktion === "papierkorb").length : 0), 0);
+    const errors = g.entries.filter((x) => x.fehler).length;
+    const det = h("details", { class: "stage-group", "data-typ": g.typ, id: "stage-" + g.typ });
+    det.open = stageOpen("stage-" + g.typ, !many);
+    det.addEventListener("toggle", () => rememberOpen("stage-" + g.typ, det.open));
+    det.append(
+      h("summary", {},
+        h("span", { class: "sg-icon", "aria-hidden": "true" }, STAGE_ICON[g.typ] || "•"),
+        h("span", { class: "sg-title" }, h("b", {}, g.label),
+          h("span", { class: "muted small" }, `${n(g.entries.length, "Eintrag", "Einträge")} · ${n(media, "Medium", "Medien")}`)),
+        trash ? h("span", { class: "chip sg-trash" }, `🗑 ${trash}`) : null,
+        errors ? h("span", { class: "chip sg-err" }, `⚠ ${errors}`) : null,
+        h("span", { class: "sg-actions" },
+          headBtn({ class: "btn small", title: "Alle Einträge dieser Gruppe zurücknehmen", onclick: (ev) => unstageGroup(g, ev.currentTarget) }, "Zurücknehmen"),
+          headBtn({ class: "btn small primary", onclick: (ev) => applyStaged(g.entries.map((x) => x.id), ev.currentTarget) }, `Übertragen (${g.entries.length})`))),
+      h("div", { class: "sg-body" }, ...g.entries.map(stageEntry)));
+    return det;
+  });
+  // Übersicht: jede Gruppe antippbar (öffnet und springt hin), dazu alle auf-/zuklappen
+  const allOpen = sections.every((d) => d.open);
+  const overview = h("div", { class: "stage-overview" },
+    ...groups.map((g) => h("button", { type: "button", class: "chip-btn sg-chip", "data-typ": g.typ,
+      onclick: () => { const d = $("#stage-" + g.typ); d.open = true; d.scrollIntoView({ behavior: "smooth", block: "start" }); } },
+    `${STAGE_ICON[g.typ]} ${g.label} ${g.entries.length}`)),
+    h("button", { type: "button", class: "chip-btn", onclick: () => { groups.forEach((g) => rememberOpen("stage-" + g.typ, !allOpen)); renderStaged(); } },
+      allOpen ? "Alle zuklappen" : "Alle aufklappen"));
+  list.append(overview, ...sections);
   updateActionbar();
+}
+
+function stageEntry(x) {
+  const trash = x.daten.schritte ? x.daten.schritte.filter((s) => s.aktion === "papierkorb").length : 0;
+  return h("div", { class: "stage-entry" + (x.fehler ? " err" : "") },
+    h("div", { class: "se-head" },
+      h("div", { class: "grow" }, h("div", { class: "se-title" }, x.titel),
+        h("div", { class: "muted small" }, `${n(x.anzahl, "Medium", "Medien")} · vorgemerkt ${fmtDateTime(x.erstellt)}` + (trash ? ` · 🗑 ${trash}` : ""))),
+      h("div", { class: "se-actions" },
+        h("button", { type: "button", class: "btn small", title: "Zurücknehmen", onclick: (ev) => unstage(x, ev.currentTarget) }, "↩"),
+        h("button", { type: "button", class: "btn small primary", onclick: (ev) => applyStaged([x.id], ev.currentTarget) }, "Übertragen"))),
+    x.fehler ? h("div", { class: "banner err" }, "Letzte Übertragung fehlgeschlagen: " + x.fehler) : null,
+    x.typ === "album" && x.daten.hinweise && x.daten.hinweise.length ? h("div", { class: "banner warn" }, x.daten.hinweise.join(" · ")) : null,
+    x.typ === "album" && x.daten.album_id ? h("div", { class: "small" }, "Album ansehen: ", albumLinks({ id: x.daten.album_id, name: x.daten.name })) : null,
+    x.medien.length ? stageMedia(x) : null);
+}
+
+async function unstageGroup(g, btn) {
+  const ok = await confirmDialog({ title: `${g.label}: alles zurücknehmen?`,
+    body: h("p", {}, `${n(g.entries.length, "Eintrag kommt", "Einträge kommen")} zurück in die Übersicht. In Immich ändert sich nichts.`),
+    okLabel: "Zurücknehmen" });
+  if (!ok) return;
+  busy(btn, true);
+  try {
+    for (const x of g.entries) await api("api/staged/" + encodeURIComponent(x.id), { method: "DELETE" });
+    toast(`${n(g.entries.length, "Eintrag", "Einträge")} zurückgenommen`);
+    const src = STAGE_SOURCE[g.typ];
+    await Promise.all([loadTab("stage", true), S[src] && S[src].loaded ? loadTab(src, true) : null]);
+    loadCounts();
+  } catch (err) { toast(err.message, true); busy(btn, false); }
 }
 
 const STAGE_SOURCE = { duplikat: "dup", aufraeumen: "cln", archiv: "tags", stapel: "cln", albenpflege: "cln", zeit: "cln", ort: "loc", album: "alb", tag: "tags" };
