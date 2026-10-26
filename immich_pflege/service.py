@@ -576,7 +576,7 @@ class Pflege:
         return NoPlaceList(self.settings.data_dir / "ohne_ort_ausgeblendet.json")
 
     @staticmethod
-    def _filter_series(series, only_suggestions=False, min_confidence=None, ort=None, monat=None, herkunft=None):
+    def _filter_series(series, only_suggestions=False, min_confidence=None, ort=None, monat=None):
         if min_confidence and min_confidence not in LEVELS:
             raise ActionError(f"Sicherheit muss {', '.join(LEVELS)} sein")
         if only_suggestions or min_confidence:
@@ -587,29 +587,44 @@ class Pflege:
             series = [s for s in series if place_key(s) == ort]
         if monat:
             series = [s for s in series if month_key(s) == monat]
-        if herkunft:
-            series = [s for s in series if any(c.origin == herkunft for c in s.members)]
         return series
+
+    @staticmethod
+    def _member_filter(series, herkunft=None, benutzer=None):
+        """Serien nur mit den Medien dieser Herkunft bzw. dieses Benutzers; leere fallen weg."""
+        if not herkunft and not benutzer:
+            return series
+        out = []
+        for s in series:
+            members = [c for c in s.members if (not herkunft or c.origin == herkunft)
+                       and (not benutzer or c.asset.owner == benutzer)]
+            if members:
+                out.append(replace(s, members=members))
+        return out
 
     def no_location_view(self, max_hours: float | None = None, offset: int = 0, limit: int = 20,
                          only_suggestions: bool = False, min_confidence: str | None = None,
                          ort: str | None = None, monat: str | None = None,
-                         overview: bool = False, herkunft: str | None = None) -> dict[str, Any]:
+                         overview: bool = False, herkunft: str | None = None,
+                         benutzer: str | None = None) -> dict[str, Any]:
         """Serien ohne Ort. ``overview`` liefert nur die Orte mit Mengen (ohne Serien).
-        ``herkunft``: nur Serien mit Medien dieser Herkunft (kamera, messenger, ohne_kamera, screenshot)."""
+        ``herkunft`` / ``benutzer``: nur die Medien dieser Herkunft bzw. dieses Benutzers."""
         if herkunft and herkunft not in HERKUNFT:
             raise ActionError(f"Herkunft muss {', '.join(HERKUNFT)} sein")
+        if benutzer and benutzer not in self.clients:
+            raise ActionError(f"Benutzer muss {', '.join(self.clients)} sein")
         lib = self.library()
         if self.text_progress.finished_at is None:
             self.start_text_scan()  # einmal je Programmstart; danach nach jedem Einlesen
         hours, an = self._analysis(max_hours)
-        base = self._filter_series(an.series, only_suggestions, min_confidence, herkunft=herkunft)
-        if herkunft:  # Serien (und damit Orte, Monate, Zahlen) nur mit den Medien dieser Herkunft
-            base = [replace(s, members=[c for c in s.members if c.origin == herkunft]) for s in base]
+        # Serien (und damit Orte, Monate, Zahlen) nur mit den Medien dieser Herkunft / dieses Benutzers
+        base = self._member_filter(self._filter_series(an.series, only_suggestions, min_confidence), herkunft, benutzer)
         series = self._filter_series(base, ort=ort, monat=monat)
-        # Herkunft zählen im gewählten Ort/Monat (ohne den Herkunfts-Filter selbst) – wie bei Ort und Monat
+        # Herkunft und Benutzer zählen im gewählten Ort/Monat – jeweils ohne den eigenen Filter (wie bei Ort und Monat)
         scope = self._filter_series(self._filter_series(an.series, only_suggestions, min_confidence), ort=ort, monat=monat)
-        origins = Counter(c.origin for s in scope for c in s.members)
+        members = [c for s in scope for c in s.members]
+        origins = Counter(c.origin for c in members if not benutzer or c.asset.owner == benutzer)
+        owners = Counter(c.asset.owner for c in members if not herkunft or c.origin == herkunft)
         applicable = [c for c in an.candidates if c.applicable]
         out = {
             "stand": lib.scanned_at,
@@ -620,6 +635,7 @@ class Pflege:
             "archiviert_ausgeblendet": sum(1 for _, why in an.hidden if why == "archiviert"),
             "texterkennung": self.text_progress.to_dict(),
             "herkunft": {k: {"name": v, "anzahl": origins.get(k, 0)} for k, v in HERKUNFT.items()},
+            "benutzer": {u: owners.get(u, 0) for u in self.clients},
             "medien": len(an.candidates),
             "mit_vorschlag": len(applicable),
             "nach_sicherheit": {lvl: sum(1 for c in applicable if c.suggestion.confidence == lvl)
@@ -627,7 +643,7 @@ class Pflege:
             # Mengen je Ort (für den aktuellen Monat) und je Monat (für den aktuellen Ort)
             "orte": place_facets(self._filter_series(base, monat=monat)),
             "monate": month_facets(self._filter_series(base, ort=ort)),
-            "filter": {"ort": ort, "monat": monat, "herkunft": herkunft},
+            "filter": {"ort": ort, "monat": monat, "herkunft": herkunft, "benutzer": benutzer},
             "serien_gesamt": len(series),
             "medien_gefiltert": sum(len(s.members) for s in series),
             "offset": offset,
@@ -638,7 +654,7 @@ class Pflege:
         return out
 
     def _select_locations(self, ids=None, max_hours=None, min_confidence=None, series=None, place=None,
-                          ort=None, monat=None, herkunft=None):
+                          ort=None, monat=None, herkunft=None, benutzer=None):
         """Auswahl auflösen: ids und/oder series (Serien-IDs); ort/monat wählt alle Serien eines
         Ortes bzw. Monats; place = {breite, laenge, name} setzt einen von Hand gewählten Ort;
         min_confidence ohne Auswahl = alle ab dieser Sicherheit. Vorgemerktes zählt nicht mit."""
@@ -659,6 +675,7 @@ class Pflege:
             for sid in series:
                 selected += [c.asset.id for c in known[sid].members
                              if c.editable and (place or c.suggestion) and (not herkunft or c.origin == herkunft)
+                             and (not benutzer or c.asset.owner == benutzer)
                              and (not min_confidence or (c.suggestion and
                                   level_at_least(c.suggestion.confidence, min_confidence)))]
         if not selected:
@@ -680,7 +697,7 @@ class Pflege:
                                  no_place=self.no_place_list().hidden, show=self.no_place_list().shown)
 
     def origin_media(self, herkunft: str, max_hours: float | None = None, ort: str | None = None,
-                     monat: str | None = None) -> dict[str, Any]:
+                     monat: str | None = None, benutzer: str | None = None) -> dict[str, Any]:
         """Alle Medien ohne Ort einer Herkunft – zum Prüfen und Ausblenden („kein Ort nötig“);
         mit ``ort``/``monat`` nur aus diesem Ort bzw. Monat."""
         if herkunft not in HERKUNFT:
@@ -688,7 +705,8 @@ class Pflege:
         _, an = self._analysis(max_hours)
         series = self._filter_series(an.series, ort=ort, monat=monat)
         return {"herkunft": herkunft, "name": HERKUNFT[herkunft],
-                "medien": self._review_media([c.asset.id for s in series for c in s.members if c.origin == herkunft])}
+                "medien": self._review_media([c.asset.id for s in series for c in s.members if c.origin == herkunft
+                                              and (not benutzer or c.asset.owner == benutzer)])}
 
     def hidden_location_media(self, max_hours: float | None = None) -> dict[str, Any]:
         """Ausgeblendete Medien ohne Ort: „kein Ort nötig“, in Immich archiviert, erkannte Screenshots."""
@@ -713,10 +731,14 @@ class Pflege:
             np.update(hidden=set(ids), unhide=set(), show=set())
         return {"medien": len(ids), "rueckgaengig": undo}
 
-    def location_media(self, min_confidence: str = "hoch", max_hours: float | None = None) -> dict[str, Any]:
-        """Alle Medien mit Ortsvorschlag ab dieser Sicherheit – für die Prüf-Ansicht, mit dem neuen Ort."""
+    def location_media(self, min_confidence: str = "hoch", max_hours: float | None = None,
+                       benutzer: str | None = None, herkunft: str | None = None) -> dict[str, Any]:
+        """Alle Medien mit Ortsvorschlag ab dieser Sicherheit – für die Prüf-Ansicht, mit dem neuen Ort;
+        optional nur eines Benutzers bzw. einer Herkunft."""
         changes, _ = self._select_locations(max_hours=max_hours, min_confidence=min_confidence)
-        new = {ch.asset_id: ch for ch in changes}
+        _, an = self._analysis(max_hours)
+        new = {ch.asset_id: ch for ch in changes if (not benutzer or ch.owner == benutzer)
+               and (not herkunft or (ch.asset_id in an.by_id and an.by_id[ch.asset_id].origin == herkunft))}
         media = self._review_media(list(new))
         for m in media:
             ch = new[m["id"]]

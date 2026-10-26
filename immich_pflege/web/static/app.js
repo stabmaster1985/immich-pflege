@@ -6,7 +6,7 @@ const S = {
   tab: "dup",
   status: null,
   dup: { groups: [], total: 0, open: 0, keep: {}, sel: new Set(), includeDone: false, art: null, monat: null, crossUser: false, ignored: false, loaded: false, info: null },
-  loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, herkunft: null, loaded: false, info: null },
+  loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, herkunft: null, benutzer: null, loaded: false, info: null },
   ovw: { loaded: false },
   cln: { bereich: "speicher", kategorie: null, ignored: false, items: [], total: 0, sel: new Set(), keep: {}, loaded: false, info: null },
   fol: { items: [], status: null, ignored: false, choice: {}, sync: {}, ohne: {} },
@@ -603,6 +603,7 @@ async function loadLocation(reset) {
   if (l.ort && l.ort !== "*") params.set("ort", l.ort);
   if (l.monat) params.set("monat", l.monat);
   if (l.herkunft) params.set("herkunft", l.herkunft);
+  if (l.benutzer) params.set("benutzer", l.benutzer);
   const r = await api("api/no-location?" + params);
   l.loaded = true; l.info = r;
   // gewählter Ort/Monat existiert nicht mehr (z. B. nach Übernehmen) -> zurück zur Übersicht
@@ -677,7 +678,14 @@ function herkunftBar(r) {
       h("button", { type: "button", class: "btn small", onclick: (e) => openOriginReview(l.herkunft, r.herkunft[l.herkunft].name, e.currentTarget) },
         `Alle ${r.herkunft[l.herkunft].anzahl} prüfen & ausblenden`))
     : null;
-  return [chips, hint];
+  // Benutzer: nur die eigenen oder nur Julias Bilder (Zahlen passend zu Ort, Monat und Herkunft)
+  const users = Object.entries(r.benutzer || {});
+  const people = users.length > 1 ? h("div", { class: "row-gap herkunft" }, h("span", { class: "muted small" }, "Benutzer:"),
+    h("button", { type: "button", class: "chip-btn" + (l.benutzer ? "" : " on"), onclick: () => { l.benutzer = null; loadTab("loc", true); } }, "Alle"),
+    ...users.filter(([u, c]) => c || l.benutzer === u).map(([u, c]) =>
+      h("button", { type: "button", class: "chip-btn" + (l.benutzer === u ? " on" : ""), onclick: () => { l.benutzer = u; loadTab("loc", true); } },
+        `👤 ${u.charAt(0).toUpperCase() + u.slice(1)} (${c})`))) : null;
+  return [people, chips, hint];
 }
 
 // Texterkennung läuft im Hintergrund: Zahlen nachziehen, danach einmal neu laden
@@ -736,6 +744,7 @@ async function openOriginReview(herkunft, name, btn) {
     if (S.loc.hours) scope.set("max_hours", S.loc.hours);
     if (S.loc.ort && S.loc.ort !== "*") scope.set("ort", S.loc.ort);
     if (S.loc.monat) scope.set("monat", S.loc.monat);
+    if (S.loc.benutzer) scope.set("benutzer", S.loc.benutzer);
     r = await api("api/no-location/origin-media?" + scope);
   } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
   const after = async () => { S.loc.loaded = false; await loadTab("loc", true); loadCounts(); };
@@ -812,7 +821,8 @@ function renderPlaceHeader(r) {
     h("div", { class: "card-head" },
       h("button", { type: "button", class: "btn small", onclick: () => { S.loc.ort = null; S.loc.monat = null; loadTab("loc", true); } }, "← Alle Orte"),
       h("div", {}, h("h2", {}, scope), h("span", { class: "muted" }, `${n(r.medien_gefiltert, "Medium", "Medien")} in ${n(r.serien_gesamt, "Serie", "Serien")}`
-        + (S.loc.herkunft ? ` · nur ${HERKUNFT_PLURAL[S.loc.herkunft] || r.herkunft[S.loc.herkunft].name}` : "")))),
+        + (S.loc.herkunft ? ` · nur ${HERKUNFT_PLURAL[S.loc.herkunft] || r.herkunft[S.loc.herkunft].name}` : "")
+        + (S.loc.benutzer ? ` · nur von ${S.loc.benutzer.charAt(0).toUpperCase() + S.loc.benutzer.slice(1)}` : "")))),
     h("div", { class: "place-herkunft" }, ...herkunftBar(r).filter(Boolean)),
     special ? h("div", {},
       h("p", { class: "muted small" }, o.key === "~ohne"
@@ -922,7 +932,8 @@ async function doApplyLocation(body, btn, label) {
   busy(btn, true);
   try {
     const r = await api("api/staged/no-location", { method: "POST",
-      body: { ...body, label, max_hours: S.loc.hours, ...(S.loc.herkunft ? { herkunft: S.loc.herkunft } : {}) } });
+      body: { ...body, label, max_hours: S.loc.hours, ...(S.loc.herkunft ? { herkunft: S.loc.herkunft } : {}),
+        ...(S.loc.benutzer ? { benutzer: S.loc.benutzer } : {}) } });
     toast(`${n(r.vorgemerkt, "Medium", "Medien")} vorgemerkt` + (r.uebersprungen.length ? `, ${r.uebersprungen.length} übersprungen` : ""));
     await afterStage("loc");
     return true;
@@ -970,7 +981,11 @@ async function applyLocation(btn) {
 async function applyAllSure(btn) {
   busy(btn, true);
   let r;
-  try { r = await api(`api/no-location/media?min_confidence=hoch&max_hours=${S.loc.hours}`); } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  const q = new URLSearchParams({ min_confidence: "hoch", max_hours: S.loc.hours });
+  if (S.loc.benutzer) q.set("benutzer", S.loc.benutzer);
+  if (S.loc.herkunft) q.set("herkunft", S.loc.herkunft);
+  const filtered = !!(S.loc.benutzer || S.loc.herkunft);
+  try { r = await api("api/no-location/media?" + q); } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
   if (!r.medien.length) { toast("Keine sicheren Vorschläge offen"); return; }
   for (const m of r.medien) m.info = "📍 " + m.ort_neu;
   openReview({
@@ -978,7 +993,7 @@ async function applyAllSure(btn) {
     gruppe: (m) => [m.ort_neu, "📍 " + m.ort_neu],
     hinweis: "Jedes Bild bekommt den Ort eines GPS-Fotos, das höchstens 30 Minuten entfernt ist oder bei dem die Fotos davor und danach am selben Ort entstanden.",
     aktionen: [{ klasse: "primary", text: (k) => `${k.toLocaleString("de-DE")} verorten`, run: async (ids, ohne) =>
-      doApplyLocation(ohne.length ? { ids } : { min_confidence: "hoch" }, null, "Alle sicheren Vorschläge") }],
+      doApplyLocation(ohne.length || filtered ? { ids } : { min_confidence: "hoch" }, null, "Alle sicheren Vorschläge") }],
   });
 }
 
@@ -3045,7 +3060,10 @@ function updateActionbar() {
     }
   } else if (S.tab === "loc") {
     const cnt = S.loc.sel.size;
-    const sure = S.loc.info ? S.loc.info.nach_sicherheit.hoch : 0;
+    // sichere Vorschläge passend zu Herkunft/Benutzer (aus den Orten gezählt)
+    const sure = !S.loc.info ? 0 : (S.loc.herkunft || S.loc.benutzer)
+      ? S.loc.info.orte.reduce((a, o) => a + (o.nach_sicherheit ? o.nach_sicherheit.hoch : 0), 0)
+      : S.loc.info.nach_sicherheit.hoch;
     info.textContent = cnt ? n(cnt, "Medium", "Medien") + " gewählt" : "Serie vormerken oder Bilder antippen";
     if (cnt) {
       const chosen = S.loc.series.flatMap((s) => s.medien).filter((m) => S.loc.sel.has(m.id));

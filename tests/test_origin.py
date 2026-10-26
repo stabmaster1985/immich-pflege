@@ -157,3 +157,24 @@ def test_archived_hidden_and_restorable(web, state):
     r = web.get("/api/no-location").json()
     assert r["archiviert_ausgeblendet"] == 0
     assert arch in {m["id"] for m in web.get("/api/no-location/origin-media", params={"herkunft": "kamera"}).json()["medien"]}
+
+
+def test_filter_by_user(web, state):
+    """Nur Franks oder nur Julias Bilder: Zahlen, Serien, Prüf-Listen und Vormerken."""
+    r = web.get("/api/no-location").json()
+    assert set(r["benutzer"]) == {"frank", "julia"} and sum(r["benutzer"].values()) == r["medien_gefiltert"]
+    julia = web.get("/api/no-location", params={"benutzer": "julia"}).json()
+    members = [m for s in julia["serien"] for m in s["medien"]]
+    assert members and all(m["benutzer"] == "julia" for m in members)
+    assert julia["medien_gefiltert"] == r["benutzer"]["julia"]
+    # Herkunft zählt passend zum Benutzer: das WhatsApp-Bild gehört Julia, der Download Frank
+    assert julia["herkunft"]["messenger"]["anzahl"] == 1 and julia["herkunft"]["ohne_kamera"]["anzahl"] == 0
+    frank = web.get("/api/no-location/origin-media", params={"herkunft": "ohne_kamera", "benutzer": "frank"}).json()
+    assert [m["id"] for m in frank["medien"]] == [state.ids["meme"]]
+    sure_frank = web.get("/api/no-location/media", params={"min_confidence": "niedrig", "benutzer": "frank"}).json()
+    assert sure_frank["medien"] and all(m["benutzer"] == "frank" for m in sure_frank["medien"])
+    sg = next(o for o in web.get("/api/no-location", params={"overview": True}).json()["orte"] if "gimignano" in o["key"])
+    res = web.post("/api/staged/no-location", json={"ort": sg["key"], "benutzer": "frank", "label": "Test"}).json()
+    staged = web.get("/api/staged").json()["eintraege"][0]["daten"]["aenderungen"]
+    assert res["vorgemerkt"] == len(staged) and all(ch["owner"] == "frank" for ch in staged)
+    assert web.get("/api/no-location", params={"benutzer": "gibtsnicht"}).status_code == 400
