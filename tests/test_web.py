@@ -82,7 +82,7 @@ def test_album_all(web, state):
 def test_duplicate_filters_and_kinds(web):
     r = web.get("/api/duplicates").json()
     assert {k: v["anzahl"] for k, v in r["arten"].items()} == {"identisch": 1, "sehr_wahrscheinlich": 1, "format": 0, "bearbeitung": 0,
-                                                                "raw_paar": 0, "serie": 0, "aehnlich": 1}
+                                                                "raw_paar": 0, "messenger": 0, "serie": 0, "aehnlich": 1}
     assert r["monate"] == [{"key": "2024-07", "name": "Juli 2024", "anzahl": 3}]
     assert web.get("/api/duplicates?art=identisch").json()["gesamt"] == 1
     assert web.get("/api/duplicates?benutzeruebergreifend=true").json()["gesamt"] == 1
@@ -171,7 +171,7 @@ def test_no_location_by_place(web):
     key = over["orte"][0]["key"]
     r = web.get("/api/no-location", params={"ort": key}).json()
     assert r["serien_gesamt"] == 1 and r["medien_gefiltert"] == 2
-    assert r["filter"] == {"ort": key, "monat": None, "herkunft": None, "benutzer": None}
+    assert r["filter"] == {"ort": key, "monat": None, "herkunft": None, "benutzer": None, "sortierung": "datum"}
     assert web.get("/api/no-location", params={"ort": "~ohne"}).json()["medien_gefiltert"] == 4
     assert web.get("/api/no-location", params={"monat": "2024-06"}).json()["serien_gesamt"] == 0
 
@@ -309,3 +309,19 @@ def test_assets_are_versioned(web):
     assert css and js and css.group(1) != js.group(1)
     assert web.get(f"/static/app.css?v={css.group(1)}").status_code == 200
     assert web.get("/").headers["cache-control"] == "no-cache"
+
+
+def test_sort_by_benefit_and_progress(web):
+    r = web.get("/api/duplicates", params={"sortierung": "speicher"}).json()
+    saved = [sum(m["groesse"] or 0 for m in g["medien"] if m["id"] != g["vorschlag"]) for g in r["gruppen"]]
+    assert saved == sorted(saved, reverse=True) and r["fortschritt"] == {"heute": 0, "woche": 0}
+    assert web.get("/api/duplicates", params={"sortierung": "quatsch"}).status_code == 422
+    ser = web.get("/api/no-location", params={"ort": "*", "sortierung": "menge", "limit": 0}).json()["serien"]
+    assert [s["anzahl"] for s in ser] == sorted((s["anzahl"] for s in ser), reverse=True)
+    items = web.get("/api/cleanup", params={"sortierung": "speicher"}).json()["eintraege"]
+    assert [i["groesse"] for i in items] == sorted((i["groesse"] for i in items), reverse=True)
+    # Übertragen zählt im Fortschritt
+    gid = next(g["id"] for g in r["gruppen"] if g["art"] == "identisch")
+    web.post("/api/staged/duplicates", json={"action": "album", "groups": [{"id": gid}]})
+    web.post("/api/staged/apply", json={})
+    assert web.get("/api/duplicates").json()["fortschritt"]["heute"] >= 1

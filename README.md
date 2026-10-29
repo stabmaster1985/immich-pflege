@@ -196,11 +196,11 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | GET | `/healthz` | Lebenszeichen (ohne Anmeldung) |
 | GET | `/api/status` | Version, Stand der Bibliothek, Schlüsselprüfung (`?server=false` ohne Immich-Abfrage) |
 | POST | `/api/scan` | Einlesen, normalerweise nur Änderungen. `{"full": true}` liest alles, `{"wait": false}` startet im Hintergrund (202) |
-| GET | `/api/duplicates` | Gruppen mit Mengen je Art und Monat. Parameter: `art`, `monat`, `benutzeruebergreifend`, `ignoriert`, `offset`, `limit`, `include_done` |
+| GET | `/api/duplicates` | Gruppen mit Mengen je Art und Monat. Parameter: `art`, `monat`, `benutzeruebergreifend`, `ignoriert`, `offset`, `limit`, `include_done`, `sortierung` (`datum`, `speicher`); `fortschritt` = übertragen heute/7 Tage |
 | POST | `/api/duplicates/apply` | Aktion auf Gruppen (`groups`) oder alle offenen der Auswahl (`all` + `art`/`monat`/`benutzeruebergreifend`) |
 | POST | `/api/duplicates/ignore` | „Kein Duplikat“: `{"groups": [...]}`, mit `"undo": true` wieder aufnehmen |
 | POST | `/api/fingerprints/start` | Fehlende Bild-Fingerabdrücke im Hintergrund berechnen |
-| GET | `/api/no-location` | Medien ohne Ort als Serien mit Mengen je Ort (`orte`) und Monat (`monate`). Parameter: `ort`, `monat`, `overview=true` (nur die Mengen), `max_hours`, `offset`, `limit`, `only_suggestions`, `min_confidence` |
+| GET | `/api/no-location` | Medien ohne Ort als Serien mit Mengen je Ort (`orte`) und Monat (`monate`). Parameter: `ort`, `monat`, `overview=true` (nur die Mengen), `max_hours`, `offset`, `limit`, `only_suggestions`, `min_confidence`, `sortierung` (`datum`, `menge`); `fortschritt` = übertragen heute/7 Tage |
 | POST | `/api/no-location/apply` | Ort übernehmen: `ids`, `series`, `ort`/`monat` (alle Serien eines Ortes oder Monats), `min_confidence` (`hoch`/`mittel`/`niedrig`), optional `place` `{breite, laenge, name}` |
 | GET | `/api/places?q=Siena` | Ortssuche über Immich |
 | GET | `/api/album-suggestions` | Reisen mit Albumvorschlag. Parameter: `status` (`neu`, `ergaenzen`, `vorhanden`; ohne = offene), `jahr`, `ignoriert`, `offset`, `limit` |
@@ -267,6 +267,8 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | DELETE | `/api/staged/{id}` | Eintrag zurücknehmen |
 | GET | `/api/staged/{id}/media` | alle Medien eines vorgemerkten Eintrags (mit `marke`, z. B. 🗑 oder neuer Ort) |
 | POST | `/api/staged/{id}/ohne` | einzelne Medien aus einem vorgemerkten Eintrag nehmen: `ohne` (fällt alles weg, verschwindet der Eintrag) |
+| GET | `/api/auto-stage` | Vorschau „Eindeutiges vormerken“: je Art (`orte`, `identisch`, `messenger`, `bearbeitung`, `serien`) Anzahl und Medien; `aktion` (`album`/`papierkorb`) |
+| POST | `/api/auto-stage` | Eindeutiges vormerken: `arten`, `aktion` – je Art ein Eintrag unter Vorgemerkt |
 | POST | `/api/staged/apply` | Vorgemerktes übertragen: `ids` (ohne = alle), bei Papierkorb `confirm: "PAPIERKORB"` |
 
 Fehler kommen als `{"fehler": "…"}` zurück: 400 bei ungültiger Anfrage, 409 solange das Tool noch nicht eingerichtet ist, 422 bei fehlerhaften Regeln oder Einstellungen (mit `details`), 502 wenn Immich nicht erreichbar ist.

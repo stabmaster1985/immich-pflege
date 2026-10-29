@@ -160,7 +160,7 @@ def duplikate(
         None, "--behalten", help="Vorschlag überschreiben: GRUPPE=MEDIUM-ID (mehrfach möglich)"),
     erledigte: bool = typer.Option(False, "--erledigte", help="Auch erledigte Gruppen anzeigen"),
     art: Optional[str] = typer.Option(None, "--art", help="Nur diese Art: identisch, sehr_wahrscheinlich, format, "
-                                                         "bearbeitung, raw_paar, serie, aehnlich"),
+                                                         "bearbeitung, raw_paar, messenger, serie, aehnlich"),
     monat: Optional[str] = typer.Option(None, "--monat", help="Nur Gruppen aus diesem Monat (JJJJ-MM)"),
     uebergreifend: bool = typer.Option(False, "--benutzeruebergreifend", help="Nur Gruppen mit Kopien beider Benutzer"),
     kein_duplikat: Optional[list[str]] = typer.Option(None, "--kein-duplikat",

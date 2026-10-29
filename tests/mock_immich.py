@@ -667,8 +667,8 @@ def demo_state() -> MockState:
     s.add_asset("julia", "IMG_0200.HEIC", "2024-07-16T10:00:00.000Z",
                 utc="2024-07-16T08:00:00.000Z", duplicate_id="d0000000-0000-4000-8000-000000000001",
                 lat=43.3188, lon=11.3308, city="Siena", country="Italien", size=3_000_000)
-    s.add_asset("julia", "IMG_0200 2.JPG", "2024-07-16T10:00:01.000Z",
-                utc="2024-07-16T08:00:01.000Z", duplicate_id="d0000000-0000-4000-8000-000000000001",
+    s.add_asset("julia", "IMG_0200 2.JPG", "2024-07-16T10:00:30.000Z",
+                utc="2024-07-16T08:00:30.000Z", duplicate_id="d0000000-0000-4000-8000-000000000001",
                 width=1920, height=1440, size=800_000)
 
     # Fotos ohne Ort, zeitlich nahe an Fotos mit GPS

@@ -145,7 +145,7 @@ def test_group_kinds():
     a = asset(name="IMG_1.JPG", local="2024-01-01T10:00:00Z")
     b = asset(name="IMG_1.JPG", local="2024-01-01T10:00:00Z", library_id=EXT)
     assert find_groups(library(a, b))[0].kind == "sehr_wahrscheinlich"
-    c, d = asset(name="Strand.JPG"), asset(name="Meer.JPG")
+    c, d = asset(name="Strand.JPG"), asset(name="Meer.JPG", utc="2024-07-14T12:00:00Z")
     lib = library(c, d, duplicates=[ImmichDuplicate("frank", "x", [c.id, d.id], [c.id])])
     g = find_groups(lib)[0]
     assert g.kind == "aehnlich" and g.to_dict()["art_text"] == "ähnlich"

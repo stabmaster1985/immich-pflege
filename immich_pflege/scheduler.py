@@ -91,22 +91,21 @@ class AutoScan:
             return False
         self.last_error = None
         self.last_run = self._now()
-        if settings.auto_stage_locations:
-            self._stage_locations(svc)
+        kinds = (["orte"] if settings.auto_stage_locations else []) + list(settings.auto_stage_more)
+        if kinds:
+            self._auto_stage(svc, kinds)
         return True
 
-    def _stage_locations(self, svc) -> None:
-        """Sichere Ortsvorschläge vormerken – übertragen wird erst nach Prüfung in der App."""
+    def _auto_stage(self, svc, kinds: list[str]) -> None:
+        """Eindeutiges vormerken (sichere Orte, identische Duplikate …) – übertragen wird erst nach Prüfung."""
         from .service import ActionError
 
         day = self._now().astimezone(ZoneInfo(svc.settings.timezone)).strftime("%d.%m.%Y")
         try:
-            r = svc.stage_no_location(label=f"Automatisch {day}: sichere Orte", min_confidence="hoch")
-            log.info("Automatisch %d sichere Orte vorgemerkt", r["vorgemerkt"])
-        except ActionError as exc:
-            log.info("Automatisch vormerken: %s", exc)  # meist: nichts Neues
-        except ImmichError as exc:
-            log.warning("Sichere Orte nicht vorgemerkt: %s", exc)
+            r = svc.auto_stage(kinds, svc.settings.auto_stage_action, label=f"Automatisch {day}")
+            log.info("Automatisch vorgemerkt: %s", r["vorgemerkt"])
+        except (ActionError, ImmichError) as exc:
+            log.warning("Automatisch vormerken fehlgeschlagen: %s", exc)
 
     def info(self) -> dict:
         nxt = self.next_run()

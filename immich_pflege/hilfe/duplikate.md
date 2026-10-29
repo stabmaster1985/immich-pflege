@@ -21,10 +21,17 @@ Das Tool sucht doppelte Fotos und Videos über **beide Benutzer** und über **Up
 | **identisch** | Alle Dateien haben dieselbe Prüfsumme. | Gefahrlos, kann gesammelt erledigt werden. |
 | **sehr wahrscheinlich** | Name + Zeit gleich oder Bild-Fingerabdruck fast gleich. | Kurz ansehen, meist eindeutig. |
 | **anderes Format** | Dieselbe Aufnahme als HEIC und JPG, z. B. exportiert oder „Maximale Kompatibilität“. | Meist reicht das Original. |
-| **Original + Bearbeitung** | Das iPhone legt beim Bearbeiten `IMG_E…` neben das Original. | Je nach Einstellung eine Fassung behalten. |
+| **Original + Bearbeitung** | Das iPhone legt beim Bearbeiten `IMG_E…` neben das Original. Auch erkannt: nur ähnliche Bilder desselben Benutzers, aufgenommen in derselben Sekunde (±2 s) – z. B. aus einer Foto-App exportiert oder bearbeitet gespeichert. | Je nach Einstellung eine Fassung behalten. |
 | **RAW + JPG** | Kamera speichert beide Formate. Das ist oft gewollt. | Zählt **nicht** als offen und fällt nur unter „Alle …“, wenn du die Art ausdrücklich wählst. Mit „Kein Duplikat“ dauerhaft ausblenden. |
+| **Messenger-Kopie** | Nur ähnlich, aber ein Bild hat Kameradaten und die anderen nicht (oder heißen wie Messenger-Dateien, z. B. `IMG-20240716-WA0003.jpg`) und sind höchstens so groß. Typisch: Foto per WhatsApp, Signal & Co. verschickt oder in einer Gruppe empfangen und so ein zweites Mal gespeichert. | Das Original bleibt, die Kopie geht. Lag die Kopie in einem Album (z. B. dem geteilten Gruppen-Album), kommt das Original dort hinein. |
 | **Serienbild – eher stapeln** | Nur ähnlich (Immich-KI oder Bild-Fingerabdruck), aber **fortlaufende Dateinamen** derselben Kamera und desselben Benutzers innerhalb von 10 Minuten, z. B. `IMG_1234`, `IMG_1235`, `IMG_1237` (Lücken bis 3 erlaubt). Also verschiedene Fotos einer Serie, keine Kopien. | **Stapeln**: alle bleiben, oben liegt das mit ★ (antippen zum Ändern). Zählt **nicht** als offen und fällt nie unter „Alle ins Album/Papierkorb“. Bei gewählter Art „Serienbild“ stapelt **Alle stapeln** alle auf einmal. |
 | **ähnlich** | Nur Immich-KI: ähnliches Motiv ohne fortlaufende Namen. | Einzeln prüfen. |
+
+## Schneller durch viele Gruppen
+
+- **Sortierung → Meiste Ersparnis zuerst:** oben die Gruppen, die am meisten Speicher frei machen.
+- **⚡ Eindeutiges vormerken:** identische Duplikate, Messenger-Kopien und Serien auf einen Schlag (siehe Hilfe unter Vorgemerkt).
+- Oben steht, wie viel du heute und in den letzten 7 Tagen erledigt hast (übertragen laut Verlauf).
 
 ## Alle weg statt eins behalten
 
@@ -36,7 +43,8 @@ Jede Stufe schlägt alle niedrigeren zusammen:
 
 | Kriterium | Punkte |
 |---|---|
-| Favorit | 64 |
+| Favorit | 128 |
+| Original mit Kameradaten (nur wenn eine andere Kopie keine hat, z. B. eine WhatsApp-Kopie) | 64 |
 | in einem Album (das Prüf-Album zählt nicht) | 32 |
 | hat GPS | 16 |
 | Immich schlägt es vor | 8 |
@@ -49,6 +57,8 @@ Bei Gleichstand gewinnt die größere Auflösung, dann die größere Datei.
 Unter jedem Bild stehen die zutreffenden Gründe als Häkchen. **Grün** sind die Gründe, die nicht alle Kopien der Gruppe haben, nur sie machen den Unterschied. **Grau** sind Gründe, die alle Kopien teilen.
 
 **Bevorzugte Fassung:** Bei Original und Bearbeitung entscheidet die Einstellung, Standard ist die bearbeitete Fassung. Bei unterschiedlichen Formaten gewinnt das Originalformat (HEIC, RAW, DNG) vor der daraus erzeugten JPG- oder PNG-Kopie. **Tippe auf ein Bild**, um selbst zu wählen, welches bleibt.
+
+**Alben übernehmen:** Liegt eine Kopie, die weggeht, in einem Album (z. B. die WhatsApp-Kopie im geteilten Gruppen-Album), kommt das behaltene Bild beim Übertragen automatisch in dieses Album – sofern sein Besitzer dort hineinschreiben darf. So fehlt im Album nichts. „Rückgängig“ nimmt es dort wieder heraus.
 
 ## Original ansehen
 

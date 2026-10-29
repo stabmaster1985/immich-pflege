@@ -87,12 +87,25 @@ def test_tick_stages_sure_locations(settings, http, state):
     auto = AutoScan(lambda: svc, now=lambda: scanned + timedelta(hours=7))
     assert auto.tick() is True
     entries = svc.staging.of_type("ort")
-    assert len(entries) == 1 and entries[0]["titel"].startswith("📍 Automatisch")
+    assert len(entries) == 1 and entries[0]["titel"].startswith("📍 ⚡ Automatisch")
     assert all(ch["confidence"] == "hoch" for ch in entries[0]["daten"]["aenderungen"])
     assert not [c for c in state.calls if c[0] == "PUT"]  # nur vorgemerkt, nichts an Immich
     auto2 = AutoScan(lambda: svc, now=lambda: scanned + timedelta(hours=20))
     auto2.tick()
     assert len(svc.staging.of_type("ort")) == 1  # nichts Neues -> kein leerer Eintrag
+
+
+def test_tick_stages_identical_duplicates_too(settings, http, state):
+    svc = Pflege(settings, http=http)
+    svc.settings.auto_scan = "intervall"
+    svc.settings.auto_stage_more = ["identisch", "serien"]
+    scanned = datetime.fromisoformat(svc.library().scanned_at)
+    AutoScan(lambda: svc, now=lambda: scanned + timedelta(hours=7)).tick()
+    entries = svc.staging.of_type("duplikat")
+    assert len(entries) == 1 and entries[0]["daten"]["automatisch"] == "identisch"
+    assert all(s["aktion"] in ("album", "keine") for s in entries[0]["daten"]["schritte"])  # Standard: Prüf-Album
+    assert not svc.staging.of_type("ort")  # Orte nicht gewählt
+    assert not [c for c in state.calls if c[0] in ("PUT", "DELETE")]
 
 
 def test_tick_backs_off_after_error(settings):

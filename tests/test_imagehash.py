@@ -58,7 +58,7 @@ def test_whatsapp_copy_found_across_users(settings, http, state):
     groups = [g for g in svc.duplicate_groups() if {original, copy} <= g.asset_ids]
     assert len(groups) == 1
     g = groups[0]
-    assert g.sources == {"bildhash"} and g.kind == "sehr_wahrscheinlich"
+    assert g.sources == {"bildhash"} and g.kind == "messenger"  # Original + WhatsApp-Kopie
     assert g.suggested_keep == original  # GPS + höhere Auflösung
     # keine Fehlalarme: die übrigen Demo-Bilder haben eigene Motive
     assert sum(1 for gr in svc.duplicate_groups() if "bildhash" in gr.sources) == 1

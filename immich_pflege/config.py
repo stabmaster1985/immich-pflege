@@ -121,6 +121,8 @@ class Settings:
     auto_scan_time: str = "03:00"
     auto_scan_hours: int = 6
     auto_stage_locations: bool = False  # nach dem automatischen Einlesen sichere Orte vormerken
+    auto_stage_more: list[str] = field(default_factory=list)  # außerdem: identisch, messenger, bearbeitung, serien
+    auto_stage_action: str = "album"  # Duplikate dabei: album (Prüf-Album) | papierkorb
     report_channel: str = "aus"  # Wochenbericht: aus | ntfy | telegram
     memories: bool = False  # täglich „An diesem Tag“ über denselben Kanal
     memories_time: str = "08:00"
@@ -228,6 +230,8 @@ class Settings:
             auto_scan_hours=pick("AUTO_SCAN_HOURS", "auto_scan_hours", 6, parse_scan_hours),
             auto_stage_locations=pick("AUTO_STAGE_LOCATIONS", "auto_stage_locations", False,
                                       lambda v: _bool(v, False)),
+            auto_stage_more=pick("AUTO_STAGE", "auto_stage_more", [], parse_auto_stage),
+            auto_stage_action=pick("AUTO_STAGE_ACTION", "auto_stage_action", "album", parse_dup_action),
             report_channel=pick("REPORT_CHANNEL", "report_channel", "aus", parse_report_channel),
             report_day=pick("REPORT_DAY", "report_day", 0, parse_weekday),
             memories=pick("MEMORIES", "memories", False, lambda v: _bool(v, False)),
@@ -300,6 +304,8 @@ class Settings:
             "auto_scan_time": self.auto_scan_time,
             "auto_scan_hours": self.auto_scan_hours,
             "auto_stage_locations": self.auto_stage_locations,
+            "auto_stage_more": self.auto_stage_more,
+            "auto_stage_action": self.auto_stage_action,
             "report_channel": self.report_channel,
             "report_day": self.report_day,
             "memories": self.memories,
@@ -369,6 +375,8 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
     attempt("auto_scan_time", parse_time)
     attempt("auto_scan_hours", parse_scan_hours)
     attempt("auto_stage_locations", lambda v: _bool(v, False))
+    attempt("auto_stage_more", parse_auto_stage)
+    attempt("auto_stage_action", parse_dup_action)
     attempt("report_channel", parse_report_channel)
     attempt("report_day", parse_weekday)
     attempt("memories", lambda v: _bool(v, False))
@@ -493,6 +501,26 @@ def parse_min_km(value: Any) -> int:
 
 def parse_min_media(value: Any) -> int:
     return _int_range(value, 3, 1000, "Mindestzahl Medien für Albumvorschläge")
+
+
+AUTO_STAGE_KINDS = ("identisch", "messenger", "bearbeitung", "serien")
+
+
+def parse_auto_stage(value: Any) -> list[str]:
+    """Was nach dem Einlesen außer sicheren Orten automatisch vorgemerkt wird (Liste oder „a,b“)."""
+    items = value if isinstance(value, (list, tuple)) else str(value or "").split(",")
+    out = [str(v).strip().lower() for v in items if str(v).strip()]
+    bad = [v for v in out if v not in AUTO_STAGE_KINDS]
+    if bad:
+        raise ConfigError(f"Automatisch vormerken: {', '.join(AUTO_STAGE_KINDS)} (unbekannt: {', '.join(bad)})")
+    return [k for k in AUTO_STAGE_KINDS if k in out]
+
+
+def parse_dup_action(value: Any) -> str:
+    v = str(value or "").strip().lower()
+    if v not in ("album", "papierkorb"):
+        raise ConfigError(f"Duplikate automatisch: 'album' oder 'papierkorb' (ist: {value!r})")
+    return v
 
 
 def parse_report_channel(value: Any) -> str:

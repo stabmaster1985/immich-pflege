@@ -16,6 +16,20 @@ In der Oberfläche geht keine Änderung sofort an Immich. Was du unter **Aufräu
 
 Erfolgreich Übertragenes verschwindet aus der Liste. Schlägt ein Eintrag fehl, z. B. weil Immich nicht erreichbar war, bleibt er mit der Fehlermeldung stehen und kann später erneut übertragen werden.
 
+## ⚡ Eindeutiges vormerken
+
+Für große Mengen: **⚡ Eindeutiges vormerken** (auf der Startseite und oben bei Duplikate, Ohne Ort und Aufräumen) merkt die sicheren Fälle auf einen Schlag vor, je Art **ein** Eintrag:
+
+- **Sichere Orte:** nur Vorschläge der Stufe „sicher“.
+- **Identische Duplikate:** Byte für Byte gleiche Dateien.
+- **Messenger-Kopien:** per WhatsApp & Co. verschickte oder empfangene Kopien. Das Original mit Kameradaten bleibt und übernimmt die Alben der Kopie.
+- **Original + Bearbeitung:** anfangs nicht angehakt, weil Geschmackssache.
+- **Serienbilder stapeln:** aus Duplikaten und Aufräumen. Alle Fotos bleiben, nichts geht verloren.
+
+Duplikat-Kopien gehen wahlweise ins Prüf-Album oder in den Papierkorb. Die Schutzregeln gelten wie immer, der Papierkorb wird beim Übertragen noch einmal bestätigt. Danach prüfst du hier: **Ansehen** am Eintrag zeigt alles, Antippen nimmt einzelne heraus, **↩** nimmt den ganzen Eintrag zurück.
+
+**Automatisch nach jedem Einlesen:** ⚙ Einstellungen → Automatisch einlesen → „Danach … vormerken“ anhaken.
+
 ## Gut zu wissen
 
 - Die Liste liegt in `data/vorgemerkt.json`. Sie übersteht Neustarts und Updates.

@@ -575,3 +575,6 @@ dialog.review[open] { display: flex; flex-direction: column; }
 .banner.serie-hint { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap;
   background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .banner.serie-hint > div { flex: 1 1 220px; }
+.auto-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line); }
+.auto-row input { flex: none; width: 20px; height: 20px; margin-top: 3px; }
+.auto-cta { margin: 10px 0 4px; }

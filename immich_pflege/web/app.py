@@ -60,7 +60,7 @@ class DuplicatesApply(BaseModel):
     action: Literal["album", "papierkorb"]
     groups: Optional[list[GroupSelection]] = None
     all: bool = False
-    art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "serie", "aehnlich"]] = None
+    art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "messenger", "serie", "aehnlich"]] = None
     monat: Optional[str] = None
     benutzeruebergreifend: bool = False
     confirm: Optional[str] = None
@@ -77,7 +77,7 @@ class StageDuplicates(BaseModel):
     action: Literal["album", "papierkorb"]
     groups: Optional[list[GroupSelection]] = None
     all: bool = False
-    art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "serie", "aehnlich"]] = None
+    art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "messenger", "serie", "aehnlich"]] = None
     monat: Optional[str] = None
     benutzeruebergreifend: bool = False
 
@@ -85,6 +85,11 @@ class StageDuplicates(BaseModel):
 class StageDuplicateStacks(BaseModel):
     groups: Optional[list[GroupSelection]] = None  # keep = liegt oben
     all: bool = False  # alle Serienbild-Gruppen
+
+
+class AutoStage(BaseModel):
+    arten: list[Literal["orte", "identisch", "messenger", "bearbeitung", "serien"]]
+    aktion: Literal["album", "papierkorb"] = "album"
 
 
 class StagedApply(BaseModel):
@@ -583,10 +588,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.get("/api/duplicates")
     def duplicates(offset: int = Query(0, ge=0), limit: int = Query(50, ge=0, le=5000),
                    include_done: bool = True,
-                   art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "serie", "aehnlich"]] = None,
+                   art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "messenger", "serie", "aehnlich"]] = None,
                    monat: Optional[str] = None, benutzeruebergreifend: bool = False,
-                   ignoriert: bool = False):
-        return svc().duplicates_view(offset, limit, include_done, art, monat, benutzeruebergreifend, ignoriert)
+                   ignoriert: bool = False, sortierung: Literal["datum", "speicher"] = "datum"):
+        return svc().duplicates_view(offset, limit, include_done, art, monat, benutzeruebergreifend, ignoriert, sortierung)
 
     @app.get("/api/fingerprints")
     def fingerprints():
@@ -617,9 +622,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
                     only_suggestions: bool = False,
                     min_confidence: Optional[Literal["niedrig", "mittel", "hoch"]] = None,
                     ort: Optional[str] = None, monat: Optional[str] = None, overview: bool = False,
-                    herkunft: Optional[Herkunft] = None, benutzer: Optional[str] = None):
+                    herkunft: Optional[Herkunft] = None, benutzer: Optional[str] = None,
+                    sortierung: Literal["datum", "menge"] = "datum"):
         return svc().no_location_view(max_hours, offset, limit, only_suggestions, min_confidence,
-                                      ort, monat, overview, herkunft, benutzer)
+                                      ort, monat, overview, herkunft, benutzer, sortierung)
 
     @app.get("/api/no-location/origin-media")
     def no_location_origin_media(herkunft: Herkunft,
@@ -662,8 +668,9 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     # ------------------------------------------------------------ Aufräumen
     @app.get("/api/cleanup")
     def cleanup(art: Optional[Literal["speicher", "serien", "qualitaet", "verwaist"]] = None, kategorie: Optional[str] = None,
-                ignoriert: bool = False, offset: int = Query(0, ge=0), limit: int = Query(30, ge=0, le=5000)):
-        return svc().cleanup_view(art, kategorie, ignoriert, offset, limit)
+                ignoriert: bool = False, offset: int = Query(0, ge=0), limit: int = Query(30, ge=0, le=5000),
+                sortierung: Literal["standard", "speicher", "menge"] = "standard"):
+        return svc().cleanup_view(art, kategorie, ignoriert, offset, limit, sortierung)
 
     @app.post("/api/staged/cleanup")
     def stage_cleanup(body: CleanupStage):
@@ -852,6 +859,14 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         groups = [g.model_dump() for g in body.groups] if body.groups else None
         return svc().stage_duplicates(body.action, groups, body.all, body.art, body.monat,
                                       body.benutzeruebergreifend)
+
+    @app.get("/api/auto-stage")
+    def auto_stage_preview(aktion: Literal["album", "papierkorb"] = "album"):
+        return svc().auto_stage_preview(aktion)
+
+    @app.post("/api/auto-stage")
+    def auto_stage(body: AutoStage):
+        return svc().auto_stage(body.arten, body.aktion)
 
     @app.post("/api/staged/duplicate-stacks")
     def stage_duplicate_stacks(body: StageDuplicateStacks):

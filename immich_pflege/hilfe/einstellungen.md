@@ -37,6 +37,10 @@ Verpasst der Container den Termin, holt er ihn beim nächsten Start nach, solang
 
 **An diesem Tag:** Über denselben Kanal kommt auf Wunsch jeden Morgen eine Nachricht mit den Fotos vom selben Kalendertag aus früheren Jahren, z. B. „vor 2 Jahren (2024): 23 Fotos – Siena“. Antippen öffnet bei ntfy das schönste Foto direkt in der Immich-App (Favorit, sonst ein Foto aus einem Album). Bei Telegram steht ein Link zur Weboberfläche darunter. An Tagen ohne frühere Fotos kommt nichts. Screenshots, archivierte Fotos und das Prüf-Album zählen nicht. **Heute testen** schickt die heutige Nachricht sofort.
 
+## Automatisch vormerken
+
+Unter **Automatisch einlesen**: Nach jedem automatischen Einlesen werden die angehakten Arten vorgemerkt (sichere Orte, identische Duplikate, Messenger-Kopien, Original + Bearbeitung, Serienbilder stapeln). Dazu wählst du, ob Duplikat-Kopien ins Prüf-Album oder in den Papierkorb sollen. Übertragen wird erst unter Vorgemerkt. Per `.env`: `AUTO_STAGE=identisch,messenger,serien`, `AUTO_STAGE_ACTION=album`.
+
 ## Duplikate
 
 - **Prüf-Album:** Name des Albums für nicht behaltene Kopien.

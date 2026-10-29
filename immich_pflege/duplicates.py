@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from .client import ImmichClient
+from .client import ImmichClient, ImmichError
 from .library import Library
 from .models import Asset
 
@@ -17,7 +17,8 @@ log = logging.getLogger(__name__)
 
 # Punktwertung in der gewünschten Rangfolge; jede Stufe schlägt alle folgenden zusammen.
 WEIGHTS = [
-    ("favorit", "Favorit", 64),
+    ("favorit", "Favorit", 128),
+    ("original", "Original mit Kameradaten", 64),
     ("im_album", "im Album", 32),
     ("gps", "hat GPS", 16),
     ("immich", "Immich-Vorschlag", 8),
@@ -74,6 +75,7 @@ ARTEN = {
     "format": "anderes Format",  # z. B. IMG_1234.HEIC + IMG_1234.JPG
     "bearbeitung": "Original + Bearbeitung",  # z. B. IMG_1234.HEIC + IMG_E1234.HEIC
     "raw_paar": "RAW + JPG",  # Kamera-RAW und JPG derselben Aufnahme – oft gewollt
+    "messenger": "Messenger-Kopie",  # Original mit Kameradaten + verschickte/empfangene Kopie ohne
     "serie": "Serienbild – eher stapeln",  # nur ähnlich, aber fortlaufende Dateinamen kurz hintereinander
     "aehnlich": "ähnlich",  # nur Immich-KI: ähnliches Motiv, z. B. auch Serienbilder
 }
@@ -84,6 +86,30 @@ SIMILAR_SOURCES = {"immich", "bildhash"}  # nur „sieht ähnlich aus“, keine 
 NUMBER_RE = re.compile(r"^(.*?)(\d+)$")
 SERIES_NUMBER_GAP = 3  # Lücken in der Nummerierung erlaubt (gelöschte Fehlversuche)
 SERIES_SPAN_S = 10 * 60  # alle Aufnahmen innerhalb von 10 Minuten
+
+
+def camera_original(a: Asset) -> bool:
+    """Original aus der Kamera: mit Kameradaten und kein Messenger-Dateiname."""
+    from .location import MESSENGER_RE
+    return bool(a.make or a.model) and not MESSENGER_RE.search(a.file_name or "")
+
+
+def messenger_copies(assets: list[Asset]) -> bool:
+    """Ein Original mit Kameradaten und Kopien ohne (per WhatsApp, Signal & Co. verschickt oder in einer
+    Gruppe empfangen) – die Kopien sind höchstens so groß wie das Original."""
+    originals = [a for a in assets if camera_original(a)]
+    copies = [a for a in assets if not camera_original(a)]
+    if not originals or not copies or any(a.type != "IMAGE" for a in assets):
+        return False
+    best = max(o.pixels for o in originals)
+    return all(c.pixels <= best for c in copies)
+
+
+def same_moment(assets: list[Asset], seconds: float = 2) -> bool:
+    """Alle zur selben Zeit aufgenommen (Original und bearbeitete Fassung, z. B. aus einer Foto-App)."""
+    times = [a.taken_utc for a in assets]
+    return all(times) and len({a.owner for a in assets}) == 1 and \
+        (max(times) - min(times)).total_seconds() <= seconds
 
 
 def numbered_series(assets: list[Asset]) -> bool:
@@ -171,8 +197,13 @@ class DuplicateGroup:
         for kind in ("raw_paar", "bearbeitung", "format"):
             if kind in self.sources:
                 return kind
-        if self.sources <= SIMILAR_SOURCES and numbered_series(self.assets):
-            return "serie"
+        if self.sources <= SIMILAR_SOURCES:  # nur „sieht ähnlich aus“: genauer hinsehen
+            if messenger_copies(self.assets):
+                return "messenger"
+            if numbered_series(self.assets):
+                return "serie"
+            if same_moment(self.assets):
+                return "bearbeitung"
         if self.sources & STRONG_SOURCES:
             return "sehr_wahrscheinlich"
         return "aehnlich"
@@ -224,9 +255,11 @@ def _preferred_version(group: DuplicateGroup, a: Asset, edit_keep: str) -> bool:
 
 def _score_group(group: DuplicateGroup, edit_keep: str = "bearbeitung") -> None:
     max_px = max(a.pixels for a in group.assets)
+    mixed = len({camera_original(a) for a in group.assets}) > 1  # nur dann ein Unterschied
     for a in group.assets:
         flags = {
             "favorit": a.favorite,
+            "original": mixed and camera_original(a),
             "im_album": a.in_album,
             "gps": a.has_gps,
             "immich": a.id in group.immich_suggested,
@@ -309,10 +342,11 @@ class PlannedStep:
     asset: Asset
     action: str  # "papierkorb" | "album" | "keine"
     reason: str
+    keeper: Asset | None = None  # bleibt – übernimmt die Alben der Kopie
 
     def to_dict(self) -> dict[str, Any]:
         return {"id": self.asset.id, "benutzer": self.asset.owner, "dateiname": self.asset.file_name,
-                "aktion": self.action, "grund": self.reason}
+                "aktion": self.action, "grund": self.reason, "behalten": self.keeper.id if self.keeper else None}
 
 
 def plan_group(group: DuplicateGroup, keep_id: str | None, action: str) -> list[PlannedStep]:
@@ -321,6 +355,7 @@ def plan_group(group: DuplicateGroup, keep_id: str | None, action: str) -> list[
     if action not in AKTIONEN:
         raise ValueError(f"Unbekannte Aktion {action!r} (erlaubt: {', '.join(AKTIONEN)})")
     keeper = group.asset(keep_id or group.suggested_keep)
+    own = keeper if keep_id else None
     steps: list[PlannedStep] = []
     for a in group.assets:
         if a.id == keep_id:
@@ -331,14 +366,14 @@ def plan_group(group: DuplicateGroup, keep_id: str | None, action: str) -> list[
             elif a.owner != keeper.owner:
                 target, reason = "album", f"gehört {a.owner}, behalten wird bei {keeper.owner}"
             else:
-                steps.append(PlannedStep(a, "papierkorb", "Kopie" if keep_id else "alle weg"))
+                steps.append(PlannedStep(a, "papierkorb", "Kopie" if keep_id else "alle weg", own))
                 continue
         else:
             target, reason = "album", "Kopie"
         if a.in_review_album:
-            steps.append(PlannedStep(a, "keine", "liegt schon im Prüf-Album"))
+            steps.append(PlannedStep(a, "keine", "liegt schon im Prüf-Album", own))
         else:
-            steps.append(PlannedStep(a, target, reason))
+            steps.append(PlannedStep(a, target, reason, own))
     return steps
 
 
@@ -353,6 +388,39 @@ def ensure_review_album(lib: Library, client: ImmichClient, name: str) -> str:
     return album_id
 
 
+def take_over_albums(lib: Library, clients: dict[str, ImmichClient], steps: list[PlannedStep],
+                     result: dict[str, Any]) -> None:
+    """Was bleibt, kommt in die Alben der Kopien, die weggehen – z. B. das Original in das geteilte
+    Album, in dem nur die WhatsApp-Kopie lag. Nur wo der Besitzer des Originals hineinschreiben darf."""
+    review = {i for i in lib.review_albums.values() if i}
+    todo: dict[tuple[str, str], list[str]] = {}  # (Benutzer, Album) -> Medien
+    for s in steps:
+        k = s.keeper
+        if k is None or k.id not in lib.assets:
+            continue
+        for al in lib.albums.values():
+            if al["id"] in review or s.asset.id not in al["medien"] or k.id in al["medien"]:
+                continue
+            if al["rollen"].get(k.owner) in ("owner", "editor") and k.owner in clients:
+                ids = todo.setdefault((k.owner, al["id"]), [])
+                if k.id not in ids:
+                    ids.append(k.id)
+    for (user, album_id), ids in todo.items():
+        try:
+            res = clients[user].add_to_album(album_id, ids)
+        except ImmichError as exc:
+            result["fehler"].append({"id": album_id, "fehler": f"Album übernehmen: {exc}"})
+            continue
+        new = [r["id"] for r in res if r.get("success")]
+        if new:
+            lib.albums[album_id]["medien"] = sorted(set(lib.albums[album_id]["medien"]) | set(new))
+            for i in new:
+                lib.assets[i].in_album = True
+            result["alben_uebernommen"] += len(new)
+            result["rueck"].append({"op": "album_entfernen", "user": user, "album": album_id, "ids": new})
+            log.info("%d behaltene Medien von %s ins Album „%s“ übernommen", len(new), user, lib.albums[album_id]["name"])
+
+
 def execute_steps(lib: Library, clients: dict[str, ImmichClient], steps: list[PlannedStep],
                   review_album: str) -> dict[str, Any]:
     trash: dict[str, list[str]] = {}
@@ -364,7 +432,8 @@ def execute_steps(lib: Library, clients: dict[str, ImmichClient], steps: list[Pl
             album.setdefault(s.asset.owner, []).append(s.asset.id)
 
     # "rueck": Schritte für „Rückgängig“ im Verlauf (siehe history.py)
-    result: dict[str, Any] = {"papierkorb": 0, "album": 0, "fehler": [], "rueck": []}
+    result: dict[str, Any] = {"papierkorb": 0, "album": 0, "fehler": [], "rueck": [], "alben_uebernommen": 0}
+    take_over_albums(lib, clients, [s for s in steps if s.action in ("papierkorb", "album")], result)
     for user, ids in album.items():
         client = clients[user]
         album_id = ensure_review_album(lib, client, review_album)

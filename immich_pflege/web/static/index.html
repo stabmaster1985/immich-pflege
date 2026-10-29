@@ -45,6 +45,7 @@
     <section id="tab-dup" class="tab" role="tabpanel">
       <div class="toolbar">
         <span id="dup-summary" class="muted"></span>
+        <button type="button" class="btn small auto-btn" data-auto="1">⚡ Eindeutiges vormerken</button>
         <label class="toggle"><input type="checkbox" id="dup-done"> Erledigte zeigen</label>
         <button type="button" class="btn small help-btn" data-help="duplikate" aria-label="Hilfe zu Duplikaten">?</button>
       </div>
@@ -68,6 +69,7 @@
           </select>
         </label>
         <label class="toggle"><input type="checkbox" id="loc-only"> Nur mit Vorschlag</label>
+        <button type="button" class="btn small auto-btn">⚡ Eindeutiges vormerken</button>
         <button type="button" class="btn small help-btn" data-help="ohne-ort" aria-label="Hilfe zu Fotos ohne Ort">?</button>
       </div>
       <div id="loc-filters" class="toolbar"></div>
@@ -79,6 +81,7 @@
     <section id="tab-cln" class="tab" role="tabpanel" hidden>
       <div class="toolbar">
         <span id="cln-summary" class="muted"></span>
+        <button type="button" class="btn small auto-btn">⚡ Eindeutiges vormerken</button>
         <button type="button" class="btn small help-btn" data-help="aufraeumen" aria-label="Hilfe zum Aufräumen">?</button>
       </div>
       <div id="cln-filters" class="toolbar"></div>
@@ -199,6 +202,13 @@
           </div>
           <label class="f">Zeitzone <input type="text" id="set-tz" autocapitalize="off" spellcheck="false" placeholder="Europe/Berlin"></label>
           <label class="toggle"><input type="checkbox" id="set-auto-stage"> Danach sichere Ortsvorschläge vormerken</label>
+          <label class="toggle"><input type="checkbox" id="set-auto-identisch"> … identische Duplikate</label>
+          <label class="toggle"><input type="checkbox" id="set-auto-messenger"> … Messenger-Kopien (Original bleibt)</label>
+          <label class="toggle"><input type="checkbox" id="set-auto-bearbeitung"> … Original + Bearbeitung</label>
+          <label class="toggle"><input type="checkbox" id="set-auto-serien"> … Serienbilder stapeln (nichts geht verloren)</label>
+          <label class="f">Duplikate dabei
+            <select id="set-auto-action"><option value="album">ins Prüf-Album</option><option value="papierkorb">in den Papierkorb</option></select>
+          </label>
           <small>Landen unter ✓ Vorgemerkt – an Immich geht erst etwas, wenn du dort überträgst.</small>
           <small id="set-auto-info" class="muted"></small>
           <small class="muted">„Neu einlesen“ holt nur, was sich seit dem letzten Mal geändert hat; einmal pro Woche liest das Tool alles. Endgültig in Immich gelöschte Fotos verschwinden erst dann.</small>

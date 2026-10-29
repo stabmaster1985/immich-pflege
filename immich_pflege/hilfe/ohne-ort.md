@@ -59,6 +59,9 @@ Oben in der Zusammenfassung steht **„… ausgeblendet – ansehen“**. Dort s
 3. **Alle sicheren prüfen** unten öffnet alle sicheren Vorschläge in der Prüf-Ansicht, nach neuem Ort gruppiert. Einzelne Bilder oder ganze Orte abwählen, dann **… verorten**.
 
 Vorgemerktes verschwindet aus der Liste. An Immich geht es erst, wenn du es unter **Vorgemerkt** überträgst.
+
+Noch schneller: **⚡ Eindeutiges vormerken** oben merkt alle sicheren Orte auf einmal vor, auf Wunsch nach jedem Einlesen automatisch. In einem Ort sortiert **Größte Serien zuerst** so, dass ein Tipp möglichst viele Medien erledigt. Oben steht, wie viele du heute und in den letzten 7 Tagen verortet hast.
+
 4. Für **Ohne Vorschlag**: Mit dem **Monat** eingrenzen und **Ort für alle suchen …** wählen, z. B. „Hamburg“ für die Scans eines Urlaubs. Oder pro Serie über **Ort suchen …** einzeln.
 
 Die Ortssuche nutzt Immichs eigene Ortsdatenbank, ohne Internetdienst.

@@ -426,6 +426,24 @@ class Pflege:
                 cache = self._groups_cache = (key, groups)
         return cache[1]
 
+    def done_recently(self, types: tuple[str, ...]) -> dict[str, int]:
+        """Übertragene Medien laut Verlauf: heute und in den letzten 7 Tagen."""
+        now = datetime.now().astimezone()
+        today, week = now.date(), now - timedelta(days=7)
+        out = {"heute": 0, "woche": 0}
+        for e in self.history.entries:
+            if e.get("typ") not in types or e.get("rueckgaengig"):
+                continue
+            try:
+                t = datetime.fromisoformat(e["zeit"]).astimezone()
+            except (KeyError, ValueError):
+                continue
+            if t >= week:
+                out["woche"] += e.get("anzahl") or 0
+                if t.date() == today:
+                    out["heute"] += e.get("anzahl") or 0
+        return out
+
     def _staged_dup_ids(self) -> set[str]:
         """Vorgemerkt als Duplikat oder (Serienbild) als Stapel."""
         return self.staging.asset_ids("duplikat") | self.staging.asset_ids("stapel")
@@ -455,7 +473,7 @@ class Pflege:
 
     def duplicates_view(self, offset: int = 0, limit: int = 50, include_done: bool = True,
                         art: str | None = None, monat: str | None = None, cross_user: bool = False,
-                        ignored: bool = False) -> dict:
+                        ignored: bool = False, sort: str = "datum") -> dict:
         """Gruppen mit Filtern. ``ignored=True`` zeigt nur die als „kein Duplikat“ markierten."""
         lib = self.library()
         staged = self._staged_dup_ids()
@@ -466,6 +484,8 @@ class Pflege:
         if not include_done:
             base = [g for g in base if not g.done()]
         groups = self._filter_groups(base, art, monat, cross_user, include_optional=True)
+        if sort == "speicher":  # zuerst, was am meisten Platz frei macht
+            groups = sorted(groups, key=lambda g: -sum(a.file_size or 0 for a in g.assets if a.id != g.suggested_keep))
         counted = self._filter_groups(base, art, monat, cross_user)  # ohne RAW + JPG, außer gewählt
         page = groups[offset: offset + limit] if limit > 0 else groups[offset:]
         # Mengen je Art (für den aktuellen Monat) und je Monat (für die aktuelle Art)
@@ -483,7 +503,8 @@ class Pflege:
                           "offen": sum(1 for g in for_kinds if g.kind == k and not g.done())}
                       for k, label in ARTEN.items()},
             "monate": [{"key": k, "name": month_label(k), "anzahl": v} for k, v in sorted(months.items(), reverse=True)],
-            "filter": {"art": art, "monat": monat, "benutzeruebergreifend": cross_user},
+            "filter": {"art": art, "monat": monat, "benutzeruebergreifend": cross_user, "sortierung": sort},
+            "fortschritt": self.done_recently(("duplikat", "stapel")),
             "fingerabdruck": self.hash_status(),
             "offset": offset,
             "gruppen": [g.to_dict() for g in page],
@@ -612,7 +633,7 @@ class Pflege:
                          only_suggestions: bool = False, min_confidence: str | None = None,
                          ort: str | None = None, monat: str | None = None,
                          overview: bool = False, herkunft: str | None = None,
-                         benutzer: str | None = None) -> dict[str, Any]:
+                         benutzer: str | None = None, sort: str = "datum") -> dict[str, Any]:
         """Serien ohne Ort. ``overview`` liefert nur die Orte mit Mengen (ohne Serien).
         ``herkunft`` / ``benutzer``: nur die Medien dieser Herkunft bzw. dieses Benutzers."""
         if herkunft and herkunft not in HERKUNFT:
@@ -626,6 +647,8 @@ class Pflege:
         # Serien (und damit Orte, Monate, Zahlen) nur mit den Medien dieser Herkunft / dieses Benutzers
         base = self._member_filter(self._filter_series(an.series, only_suggestions, min_confidence), herkunft, benutzer)
         series = self._filter_series(base, ort=ort, monat=monat)
+        if sort == "menge":  # große Serien zuerst – ein Tipp erledigt viele Medien
+            series = sorted(series, key=lambda s: -len(s.members))
         # Herkunft und Benutzer zählen im gewählten Ort/Monat – jeweils ohne den eigenen Filter (wie bei Ort und Monat)
         scope = self._filter_series(self._filter_series(an.series, only_suggestions, min_confidence), ort=ort, monat=monat)
         members = [c for s in scope for c in s.members]
@@ -649,7 +672,8 @@ class Pflege:
             # Mengen je Ort (für den aktuellen Monat) und je Monat (für den aktuellen Ort)
             "orte": place_facets(self._filter_series(base, monat=monat)),
             "monate": month_facets(self._filter_series(base, ort=ort)),
-            "filter": {"ort": ort, "monat": monat, "herkunft": herkunft, "benutzer": benutzer},
+            "filter": {"ort": ort, "monat": monat, "herkunft": herkunft, "benutzer": benutzer, "sortierung": sort},
+            "fortschritt": self.done_recently(("ort",)),
             "serien_gesamt": len(series),
             "medien_gefiltert": sum(len(s.members) for s in series),
             "offset": offset,
@@ -1190,7 +1214,7 @@ class Pflege:
                             if a is None:
                                 skipped.append({"id": st["id"], "grund": "nicht mehr vorhanden"})
                             else:
-                                steps.append(PlannedStep(a, st["aktion"], st["grund"]))
+                                steps.append(PlannedStep(a, st["aktion"], st["grund"], lib.assets.get(st.get("behalten") or "")))
                         res = execute_steps(lib, self.clients, steps, self.settings.review_album)
                         res["uebersprungen"] = skipped
                     elif e["typ"] == "ort":
@@ -1277,7 +1301,7 @@ class Pflege:
         return KeepList(self.settings.data_dir / "aufraeumen_behalten.json")
 
     def cleanup_view(self, art: str | None = None, kategorie: str | None = None, ignored: bool = False,
-                     offset: int = 0, limit: int = 30) -> dict[str, Any]:
+                     offset: int = 0, limit: int = 30, sort: str = "standard") -> dict[str, Any]:
         if art and art not in CLEANUP_ARTEN:
             raise ActionError(f"Art muss {', '.join(CLEANUP_ARTEN)} sein")
         if kategorie and kategorie not in CLEANUP_KATEGORIEN:
@@ -1290,6 +1314,10 @@ class Pflege:
                 for k, (a, label) in CLEANUP_KATEGORIEN.items()}
         chosen = [i for i in base if (not art or CLEANUP_KATEGORIEN[i.kategorie][0] == art)
                   and (not kategorie or i.kategorie == kategorie)]
+        if sort == "speicher":
+            chosen = sorted(chosen, key=lambda i: -i.size)
+        elif sort == "menge":
+            chosen = sorted(chosen, key=lambda i: -len(i.assets))
         page = chosen[offset: offset + limit] if limit > 0 else chosen[offset:]
         hs = self.hash_status()
         return {
@@ -1298,7 +1326,8 @@ class Pflege:
                           "groesse": sum(c["groesse"] for c in cats.values() if c["art"] == k)}
                       for k, v in CLEANUP_ARTEN.items()},
             "kategorien": cats,
-            "filter": {"art": art, "kategorie": kategorie, "ignoriert": ignored},
+            "filter": {"art": art, "kategorie": kategorie, "ignoriert": ignored, "sortierung": sort},
+            "fortschritt": self.done_recently(("aufraeumen", "stapel", "zeit", "archiv")),
             "ausgeblendet": sum(1 for i in items if i.id in keep),
             "gesamt": len(chosen),
             "groesse": sum(i.size for i in chosen),
@@ -1476,6 +1505,75 @@ class Pflege:
                                                "alle_medien": [i for s in stacks for i in s["ids"]]},
                              media, n, key=f"{album_id}:{'ganz' if whole else ','.join(sorted(p.id for p in chosen))}")
             return {"vorgemerkt": len(stacks), "medien": n}
+
+    # ------------------------------------------------- Automatisch vormerken
+    AUTO_LABELS = {"orte": "Sichere Orte", "identisch": "Identische Duplikate", "messenger": "Messenger-Kopien",
+                   "bearbeitung": "Original + Bearbeitung", "serien": "Serienbilder stapeln"}
+
+    def _auto_dup_groups(self, kind: str) -> list[DuplicateGroup]:
+        return [g for g in self.duplicate_groups() if g.kind == kind and not g.done()]
+
+    def _auto_bursts(self) -> list[str]:
+        _, items = self.cleanup_items()
+        keep = self.keep_list().ids
+        return [i.id for i in items if i.kategorie == "serien" and i.id not in keep]
+
+    def auto_stage_preview(self, action: str = "album") -> dict[str, Any]:
+        """Was „Eindeutiges vormerken“ jetzt erfassen würde – je Art Einträge und Medien."""
+        out: dict[str, Any] = {}
+        loc = self.no_location_view(overview=True)
+        out["orte"] = {"anzahl": loc["nach_sicherheit"]["hoch"], "medien": loc["nach_sicherheit"]["hoch"]}
+        for kind in ("identisch", "messenger", "bearbeitung"):
+            groups = self._auto_dup_groups(kind)
+            steps = [s for g in groups for s in plan_group(g, g.suggested_keep, action) if s.action != "keine"]
+            out[kind] = {"anzahl": len(groups), "medien": len(steps),
+                         "papierkorb": sum(1 for s in steps if s.action == "papierkorb")}
+        series = self._auto_dup_groups("serie")
+        _, items = self.cleanup_items()
+        bursts = set(self._auto_bursts())
+        out["serien"] = {"anzahl": len(series) + len(bursts),
+                         "medien": sum(len(g.assets) for g in series) + sum(len(i.ids) for i in items if i.id in bursts)}
+        return {"arten": {k: {"name": self.AUTO_LABELS[k], **v} for k, v in out.items()}, "aktion": action}
+
+    def auto_stage(self, kinds: list[str], action: str = "album", label: str = "Eindeutiges") -> dict[str, Any]:
+        """Eindeutige Fälle gesammelt vormerken (je Art ein Eintrag). Übertragen wird erst unter Vorgemerkt –
+        mit denselben Schutzregeln und der Papierkorb-Bestätigung wie sonst."""
+        unknown = [k for k in kinds if k not in self.AUTO_LABELS]
+        if unknown or action not in AKTIONEN:
+            raise ActionError(f"Arten: {', '.join(self.AUTO_LABELS)}; Aktion: album oder papierkorb")
+        done: dict[str, int] = {}
+        with self._lock:
+            if "orte" in kinds:
+                try:
+                    done["orte"] = self.stage_no_location(label=f"⚡ {label}: sichere Orte", min_confidence="hoch")["vorgemerkt"]
+                except ActionError:
+                    done["orte"] = 0
+            lib = self.library()
+            for kind in ("identisch", "messenger", "bearbeitung"):
+                if kind not in kinds:
+                    continue
+                groups = self._auto_dup_groups(kind)
+                steps = [s for g in groups for s in plan_group(g, g.suggested_keep, action) if s.action != "keine"]
+                done[kind] = len(groups) if steps else 0
+                if not steps:
+                    continue
+                trash = sum(1 for s in steps if s.action == "papierkorb")
+                where = "Papierkorb" if trash == len(steps) else "Prüf-Album" if not trash else "Papierkorb/Prüf-Album"
+                media = [{**s.asset.summary(), "bleibt": False, "aktion": s.action} for s in steps[:8]]
+                self.staging.add("duplikat", f"⚡ {label}: {len(groups)} × {ARTEN[kind]} – {len(steps)} Kopien → {where}", {
+                    "aktion": action, "gruppen": [g.id for g in groups], "automatisch": kind,
+                    "alle_medien": sorted({i for g in groups for i in g.asset_ids}),
+                    "schritte": [s.to_dict() for s in steps]}, media, len(steps))
+            if "serien" in kinds:
+                n = 0
+                if self._auto_dup_groups("serie"):
+                    n += self.stage_duplicate_stacks(all_groups=True)["vorgemerkt"]
+                bursts = self._auto_bursts()
+                if bursts:
+                    n += self.stage_burst_stacks(bursts)["vorgemerkt"]
+                done["serien"] = n
+            log.info("Automatisch vorgemerkt (%s): %s", label, done)
+            return {"vorgemerkt": done, "gesamt": sum(done.values())}
 
     def stage_duplicate_stacks(self, groups: list[dict] | None = None, all_groups: bool = False) -> dict[str, Any]:
         """Serienbilder unter den Duplikaten stapeln statt wegräumen: alle bleiben, ``keep`` liegt oben."""

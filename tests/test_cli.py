@@ -64,7 +64,7 @@ def test_keep_override(svc, state):
     assert r.exit_code == 0, r.output
     steps = json.loads(r.stdout)["schritte"]
     assert steps == [{"id": ext["id"], "benutzer": "frank", "dateiname": "DSC09812.JPG",
-                      "aktion": "album", "grund": "externe Bibliothek – nie in den Papierkorb"}]
+                      "aktion": "album", "grund": "externe Bibliothek – nie in den Papierkorb", "behalten": upload["id"]}]
 
 
 def test_no_location_and_apply(svc, state):

@@ -363,6 +363,24 @@ async function doWatchScan(started) {
 /* --------------------------------------------------------- Duplikate */
 // Seiten nachladen ohne Doppelte: Beim Neuladen zählt nur die jüngste Anfrage, und solange sie läuft,
 // bleibt „Weitere anzeigen“ weg (sonst lädt das automatische Nachladen dieselbe Seite ein zweites Mal).
+// Sortierung (bleibt gespeichert) und „erledigt“-Zeile für Duplikate, Ohne Ort und Aufräumen
+function sortSel(st, key, options, tab) {
+  const sel = h("select", { onchange: (e) => {
+    st.sort = e.target.value;
+    try { localStorage.setItem("pflege-sort-" + key, st.sort); } catch (_) { /* egal */ }
+    loadTab(tab, true);
+  } }, ...options.map(([v, label]) => h("option", { value: v }, label)));
+  sel.value = st.sort || options[0][0];
+  return h("label", { class: "field grow" }, "Sortierung", sel);
+}
+function initSort(st, key, fallback) {
+  if (st.sort === undefined) { try { st.sort = localStorage.getItem("pflege-sort-" + key) || fallback; } catch (_) { st.sort = fallback; } }
+  return st.sort;
+}
+function progressText(p) {
+  return p && p.woche ? ` · ✓ erledigt: heute ${p.heute.toLocaleString("de-DE")}, 7 Tage ${p.woche.toLocaleString("de-DE")}` : "";
+}
+
 function pageGen(st, reset, moreSel) {
   if (reset) { st.gen = (st.gen || 0) + 1; st.resetting = true; $(moreSel).hidden = true; return st.gen; }
   return st.resetting ? -1 : (st.gen || 0);  // -1: Neuladen läuft noch, nichts nachladen
@@ -374,7 +392,7 @@ async function loadDuplicates(reset) {
   const gen = pageGen(d, reset, "#dup-more");
   if (gen < 0) return;
   const params = new URLSearchParams({ offset: d.groups.length, limit: PAGE_DUP, include_done: d.includeDone,
-    benutzeruebergreifend: d.crossUser, ignoriert: d.ignored });
+    benutzeruebergreifend: d.crossUser, ignoriert: d.ignored, sortierung: initSort(d, "dup", "datum") });
   if (d.art) params.set("art", d.art);
   if (d.monat) params.set("monat", d.monat);
   const r = await api("api/duplicates?" + params);
@@ -395,7 +413,7 @@ async function loadDuplicates(reset) {
   }
   $("#dup-summary").textContent = d.ignored
     ? `${n(r.gesamt, "ausgeblendete Gruppe", "ausgeblendete Gruppen")} („kein Duplikat“)`
-    : `${r.offen} offen · ${n(r.gesamt, "Gruppe", "Gruppen")} · ${r.benutzeruebergreifend} benutzerübergreifend`;
+    : `${r.offen} offen · ${n(r.gesamt, "Gruppe", "Gruppen")} · ${r.benutzeruebergreifend} benutzerübergreifend` + progressText(r.fortschritt);
   if (!d.art && !d.monat && !d.crossUser && !d.ignored) setCount("dup", r.offen);
   renderFingerprint(r.fingerabdruck);
   $("#dup-more").hidden = d.groups.length >= d.total;
@@ -445,6 +463,7 @@ function renderDupFilters(r) {
   $("#dup-filters").replaceChildren(
     h("label", { class: "field grow" }, "Art", artSel),
     h("label", { class: "field grow" }, "Monat", monthSel),
+    sortSel(d, "dup", [["datum", "Neueste zuerst"], ["speicher", "Meiste Ersparnis zuerst"]], "dup"),
     h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: d.crossUser,
       onchange: (e) => { d.crossUser = e.target.checked; loadTab("dup", true); } }), "nur benutzerübergreifend"),
     h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: d.ignored,
@@ -665,7 +684,8 @@ async function loadLocation(reset) {
   if (reset) { l.series = []; l.sel.clear(); l.open = new Set(); $("#loc-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
   const gen = pageGen(l, reset, "#loc-more");
   if (gen < 0) return;
-  const params = new URLSearchParams({ offset: l.series.length, limit: PAGE_SERIES, only_suggestions: l.only, overview });
+  const params = new URLSearchParams({ offset: l.series.length, limit: PAGE_SERIES, only_suggestions: l.only, overview,
+    sortierung: initSort(l, "loc", "datum") });
   if (l.hours) params.set("max_hours", l.hours);
   if (l.minConf) params.set("min_confidence", l.minConf);
   if (l.ort && l.ort !== "*") params.set("ort", l.ort);
@@ -701,7 +721,7 @@ async function loadLocation(reset) {
   const by = r.nach_sicherheit;
   $("#loc-summary").textContent = `${n(r.medien, "Medium", "Medien")} ohne Ort · ` +
     `Vorschläge: ${by.hoch} sicher, ${by.mittel} wahrscheinlich, ${by.niedrig} unsicher` +
-    (r.extern_erlaubt ? "" : " · ");
+    progressText(r.fortschritt) + (r.extern_erlaubt ? "" : " · ");
   if (!r.extern_erlaubt) $("#loc-summary").append(h("button", { type: "button", class: "linklike", onclick: unlockExternal }, "externe Bibliotheken gesperrt – freigeben?"));
   const tx = r.texterkennung;
   if (tx && tx.laeuft && tx.gesamt) {
@@ -760,6 +780,7 @@ function renderLocFilters(r) {
   $("#loc-filters").replaceChildren(...[
     h("label", { class: "field grow" }, "Ort", placeSel),
     h("label", { class: "field grow" }, "Monat", monthSel),
+    l.ort !== null ? sortSel(l, "loc", [["datum", "Neueste zuerst"], ["menge", "Größte Serien zuerst"]], "loc") : null,
     ...(inPlace ? [] : herkunftBar(r))].filter(Boolean));
 }
 
@@ -1954,6 +1975,8 @@ async function loadSettings() {
   $("#set-auto-time").value = d.auto_scan_time; lock("#set-auto-time", "auto_scan_time");
   $("#set-auto-hours").value = d.auto_scan_hours; lock("#set-auto-hours", "auto_scan_hours");
   $("#set-auto-stage").checked = d.auto_stage_locations; lock("#set-auto-stage", "auto_stage_locations");
+  for (const k of AUTO_MORE) { $("#set-auto-" + k).checked = d.auto_stage_more.includes(k); lock("#set-auto-" + k, "auto_stage_more"); }
+  $("#set-auto-action").value = d.auto_stage_action; lock("#set-auto-action", "auto_stage_action");
   $("#set-tz").value = d.timezone; lock("#set-tz", "timezone");
   updateAutoFields();
   $("#set-upd-check").checked = d.update_check; lock("#set-upd-check", "update_check");
@@ -2038,6 +2061,8 @@ function readSettingsForm() {
   put("auto_scan_time", $("#set-auto-time").value);
   put("auto_scan_hours", $("#set-auto-hours").value);
   put("auto_stage_locations", $("#set-auto-stage").checked);
+  put("auto_stage_more", AUTO_MORE.filter((k) => $("#set-auto-" + k).checked));
+  put("auto_stage_action", $("#set-auto-action").value);
   put("timezone", $("#set-tz").value.trim());
   put("update_check", $("#set-upd-check").checked);
   put("update_repo", $("#set-upd-repo").value.trim());
@@ -2362,6 +2387,7 @@ async function loadCleanup(reset) {
   if (gen < 0) return;
   const isTime = c.bereich === "zeit";
   const params = new URLSearchParams({ offset: c.items.length, limit: PAGE_CLN, ignoriert: c.ignored });
+  if (!isTime) params.set("sortierung", initSort(c, "cln", "standard"));
   if (c.kategorie) params.set(isTime ? "art" : "kategorie", c.kategorie);
   if (!isTime) params.set("art", c.bereich);
   const [r, counts] = await Promise.all([
@@ -2393,7 +2419,7 @@ async function loadCleanup(reset) {
     $("#cln-list").replaceChildren(h("p", { class: "empty" }, hint));
   }
   $("#cln-summary").textContent = c.ignored ? `${n(r.gesamt, "ausgeblendeter Eintrag", "ausgeblendete Einträge")}`
-    : `${n(r.gesamt, "Eintrag", "Einträge")} · ${fmtBig(r.groesse)} würden frei`;
+    : `${n(r.gesamt, "Eintrag", "Einträge")} · ${fmtBig(r.groesse)} würden frei` + progressText(r.fortschritt);
   for (const [k, a] of Object.entries(r.arten)) setCount(k, a.anzahl);
   setCount("zeit", Object.values(time.arten).reduce((s, x) => s + x, 0));
   $("#cln-more").hidden = c.items.length >= c.total;
@@ -2411,6 +2437,8 @@ function renderCleanupFilters(r, time) {
   cat.value = c.kategorie || "";
   $("#cln-filters").replaceChildren(...[
     cats.length > 1 ? h("label", { class: "field grow" }, "Art", cat) : null,
+    ["speicher", "serien", "qualitaet"].includes(c.bereich)
+      ? sortSel(c, "cln", [["standard", "Standard"], ["speicher", "Meiste Ersparnis zuerst"], ["menge", "Meiste Bilder zuerst"]], "cln") : null,
     h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: c.ignored,
       onchange: (e) => { c.ignored = e.target.checked; loadTab("cln", true); } }),
       `behaltene (${c.bereich === "zeit" ? time.ausgeblendet : r.ausgeblendet})`),
@@ -2928,6 +2956,43 @@ async function restoreTrash(ids, btn) {
 
 /* ----------------------------------------------------------- Übersicht */
 
+// Eindeutiges auf einen Schlag vormerken: je Art ein Eintrag unter Vorgemerkt, Kontrolle dort
+const AUTO_MORE = ["identisch", "messenger", "bearbeitung", "serien"];
+const AUTO_HINT = { orte: "nur „sicher“: GPS-Foto höchstens 30 min entfernt oder davor und danach derselbe Ort",
+  identisch: "Byte für Byte gleiche Dateien", messenger: "per Messenger verschickte/empfangene Kopie – das Original mit Kameradaten bleibt und übernimmt ihre Alben",
+  bearbeitung: "gleiche Aufnahme als Original und bearbeitete Fassung", serien: "Serien werden gestapelt, alle Fotos bleiben" };
+
+async function openAutoStage(btn) {
+  busy(btn, true);
+  let r;
+  try { r = await api("api/auto-stage"); } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  const boxes = {};
+  const rows = Object.entries(r.arten).map(([k, a]) => {
+    boxes[k] = h("input", { type: "checkbox", checked: a.anzahl > 0 && k !== "bearbeitung", disabled: !a.anzahl });
+    return h("label", { class: "auto-row" + (a.anzahl ? "" : " muted") }, boxes[k],
+      h("span", {}, h("b", {}, a.name), ` – ${a.anzahl ? (k === "orte" ? n(a.medien, "Medium", "Medien") : `${n(a.anzahl, k === "serien" ? "Serie" : "Gruppe", k === "serien" ? "Serien" : "Gruppen")}, ${n(a.medien, "Medium", "Medien")}`) : "nichts offen"}`,
+        h("div", { class: "muted small" }, AUTO_HINT[k])));
+  });
+  const action = h("select", {}, h("option", { value: "album" }, "ins Prüf-Album"), h("option", { value: "papierkorb" }, "in den Papierkorb"));
+  const ok = await confirmDialog({
+    title: "⚡ Eindeutiges vormerken",
+    body: [h("p", {}, "Merkt die sicheren Fälle auf einmal vor – je Art ein Eintrag. Unter ", h("b", {}, "Vorgemerkt"), " siehst du mit „Ansehen“ alles und nimmst einzelne heraus, bevor etwas an Immich geht."),
+      ...rows, h("label", { class: "f" }, "Duplikat-Kopien", action),
+      h("p", { class: "muted small" }, "Schutzregeln gelten wie immer: externe Medien und die des anderen Benutzers nur ins Prüf-Album; der Papierkorb wird beim Übertragen noch einmal bestätigt. Automatisch nach jedem Einlesen: ⚙ Einstellungen → Automatisch einlesen.")],
+    okLabel: "Vormerken",
+  });
+  if (!ok) return;
+  const arten = Object.keys(boxes).filter((k) => boxes[k].checked);
+  if (!arten.length) return;
+  try {
+    const res = await api("api/auto-stage", { method: "POST", body: { arten, aktion: action.value } });
+    toast(res.gesamt ? `Vorgemerkt: ${Object.entries(res.vorgemerkt).filter(([, v]) => v).map(([k, v]) => `${r.arten[k].name} ${v}`).join(", ")}` : "Nichts Neues vorzumerken");
+    S.dup.loaded = S.loc.loaded = S.cln.loaded = false;
+    await Promise.all([loadTab("stage", true), S.tab !== "stage" && S.tab !== "set" ? loadTab(S.tab, true) : null]);
+    loadCounts();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function loadOverview() {
   const [d, counts] = await Promise.all([api("api/dashboard"), api("api/nav-counts").catch(() => ({}))]);
   for (const [k, value] of Object.entries(counts)) if (value !== null) S.counts[k] = value;
@@ -2956,6 +3021,9 @@ async function loadOverview() {
     tiles,
     h("h2", { class: "stage-head" }, "Zu tun"),
     todo.childElementCount ? todo : h("p", { class: "muted" }, "Alles aufgeräumt 🎉"),
+    todo.childElementCount ? h("div", { class: "row-gap auto-cta" },
+      h("button", { type: "button", class: "btn primary", onclick: (e) => openAutoStage(e.currentTarget) }, "⚡ Eindeutiges vormerken"),
+      h("span", { class: "muted small" }, "sichere Orte, identische Duplikate, Messenger-Kopien, Serien – auf einen Schlag")) : null,
     h("h2", { class: "stage-head" }, "Benutzer"), users,
     h("h2", { class: "stage-head" }, "Aufnahmen je Jahr"), yearChart(d.jahre),
     d.erledigt.length ? h("h2", { class: "stage-head" }, "Erledigt je Monat") : null,
@@ -3880,6 +3948,7 @@ try { const v = localStorage.getItem("pflege-ki-anzahl"); if (v) $("#smart-size"
 $("#smart-go").addEventListener("click", () => { const q = $("#smart-q").value.trim(); if (q) loadSmart({ suche: q }); });
 $("#smart-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#smart-go").click(); } });
 document.querySelectorAll(".help-btn").forEach((b) => b.addEventListener("click", () => openHelp(b.dataset.help)));
+document.querySelectorAll(".auto-btn").forEach((b) => b.addEventListener("click", (e) => openAutoStage(e.currentTarget)));
 $("#rule-new").addEventListener("click", () => openRule(null));
 $("#rule-examples").addEventListener("click", () => addExamples().catch((e) => toast(e.message, true)));
 $("#rule-yaml").addEventListener("click", openYaml);

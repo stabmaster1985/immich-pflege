@@ -165,3 +165,43 @@ def test_duplicate_group_all_gone(web, state):
     by_id = {s["id"]: s["aktion"] for s in plan["schritte"]}
     assert all(by_id[m["id"]] == "album" for m in ext["medien"] if m["extern"])  # extern nie in den Papierkorb
     assert len(by_id) == len(ext["medien"])
+
+
+def test_messenger_copy_original_kept_and_takes_over_album(env, http, state):
+    """WhatsApp-Kopie im geteilten Gruppen-Album: das Original bleibt und kommt ins Album."""
+    did = "d0000000-0000-4000-8000-000000000077"
+    orig = state.add_asset("frank", "IMG_9000.HEIC", "2024-09-01T12:00:00.000Z", utc="2024-09-01T10:00:00.000Z",
+                           duplicate_id=did)
+    copy = state.add_asset("frank", "IMG-20240902-WA0007.jpg", "2024-09-02T08:00:00.000Z", utc="2024-09-02T06:00:00.000Z",
+                           duplicate_id=did, make=None, model=None, width=1600, height=1200)
+    album = state.add_album("julia", "Gruppe Wandern", [copy], shared={"frank": "editor"})
+    with TestClient(create_app(env, http=http, auto_scan_enabled=False)) as web:
+        g = web.get("/api/duplicates", params={"art": "messenger"}).json()["gruppen"][0]
+        assert g["art_text"] == "Messenger-Kopie" and g["behalten"] == orig  # trotz Album der Kopie
+        web.post("/api/staged/duplicates", json={"action": "papierkorb", "groups": [{"id": g["id"]}]})
+        r = web.post("/api/staged/apply", json={"confirm": "PAPIERKORB"}).json()
+        res = r["eintraege"][0]["ergebnis"]
+        assert res["papierkorb"] == 1 and res["alben_uebernommen"] == 1
+        assert orig in state.asset_ids_in_album(album)
+        # Rückgängig nimmt das Original wieder aus dem Album
+        hist = web.get("/api/history").json()["eintraege"][0]
+        web.post(f"/api/history/{hist['id']}/undo")
+        assert orig not in state.asset_ids_in_album(album)
+
+
+def test_auto_stage_preview_and_stage(web, state):
+    pre = web.get("/api/auto-stage").json()["arten"]
+    assert set(pre) == {"orte", "identisch", "messenger", "bearbeitung", "serien"}
+    assert pre["identisch"]["anzahl"] == 1 and pre["orte"]["anzahl"] >= 1
+    res = web.post("/api/auto-stage", json={"arten": ["identisch", "orte"], "aktion": "papierkorb"}).json()
+    assert res["vorgemerkt"]["identisch"] == 1 and res["vorgemerkt"]["orte"] >= 1
+    st = web.get("/api/staged").json()
+    dup = next(e for e in st["eintraege"] if e["typ"] == "duplikat")
+    assert dup["titel"].startswith("⚡") and dup["daten"]["automatisch"] == "identisch"
+    assert web.get("/api/duplicates", params={"art": "identisch"}).json()["gesamt"] == 0  # vorgemerkt -> weg
+    assert web.get("/api/auto-stage").json()["arten"]["identisch"]["anzahl"] == 0
+    assert writes(state) == []  # nichts an Immich
+    assert web.post("/api/auto-stage", json={"arten": ["quatsch"]}).status_code == 422
+    # zurücknehmen bringt die Gruppe zurück
+    web.delete(f"/api/staged/{dup['id']}")
+    assert web.get("/api/duplicates", params={"art": "identisch"}).json()["gesamt"] == 1
