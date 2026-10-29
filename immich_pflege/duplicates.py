@@ -315,10 +315,12 @@ class PlannedStep:
                 "aktion": self.action, "grund": self.reason}
 
 
-def plan_group(group: DuplicateGroup, keep_id: str, action: str) -> list[PlannedStep]:
+def plan_group(group: DuplicateGroup, keep_id: str | None, action: str) -> list[PlannedStep]:
+    """``keep_id=None``: keins behalten, alle weg. Die Schutzregeln bleiben: externe Medien und die des
+    anderen Benutzers (gemessen am vorgeschlagenen Behalten) kommen nur ins Prüf-Album."""
     if action not in AKTIONEN:
         raise ValueError(f"Unbekannte Aktion {action!r} (erlaubt: {', '.join(AKTIONEN)})")
-    keeper = group.asset(keep_id)
+    keeper = group.asset(keep_id or group.suggested_keep)
     steps: list[PlannedStep] = []
     for a in group.assets:
         if a.id == keep_id:
@@ -329,7 +331,7 @@ def plan_group(group: DuplicateGroup, keep_id: str, action: str) -> list[Planned
             elif a.owner != keeper.owner:
                 target, reason = "album", f"gehört {a.owner}, behalten wird bei {keeper.owner}"
             else:
-                steps.append(PlannedStep(a, "papierkorb", "Kopie"))
+                steps.append(PlannedStep(a, "papierkorb", "Kopie" if keep_id else "alle weg"))
                 continue
         else:
             target, reason = "album", "Kopie"

@@ -147,3 +147,21 @@ def test_stack_series_from_duplicates(env, http, state):
         assert e["typ"] == "stapel" and e["daten"]["stapel"][0]["ids"] == [ids[1], ids[0]]
         assert web.post("/api/staged/apply", json={}).json()["uebertragen"] == 1
         assert not any(c[0] == "DELETE" for c in state.calls)  # nichts gelöscht
+
+
+def test_duplicate_group_all_gone(web, state):
+    """„Alle weg“: keins behalten – Schutzregeln (extern, anderer Benutzer) gelten weiter."""
+    groups = web.get("/api/duplicates").json()["gruppen"]
+    g = next(x for x in groups if x["art"] == "aehnlich")  # zwei Uploads von Julia
+    plan = web.post("/api/duplicates/apply", json={"action": "papierkorb", "groups": [{"id": g["id"], "alle": True}],
+                                                    "dry_run": True}).json()
+    assert plan["papierkorb"] == len(g["medien"]) == 2
+    web.post("/api/staged/duplicates", json={"action": "papierkorb", "groups": [{"id": g["id"], "alle": True}]})
+    e = web.get("/api/staged").json()["eintraege"][0]
+    assert "alle 2 weg" in e["titel"] and not any(m["bleibt"] for m in e["medien"])
+    ext = next(x for x in groups if any(m["extern"] for m in x["medien"]) and x["id"] != g["id"])
+    plan = web.post("/api/duplicates/apply", json={"action": "papierkorb", "groups": [{"id": ext["id"], "alle": True}],
+                                                    "dry_run": True}).json()
+    by_id = {s["id"]: s["aktion"] for s in plan["schritte"]}
+    assert all(by_id[m["id"]] == "album" for m in ext["medien"] if m["extern"])  # extern nie in den Papierkorb
+    assert len(by_id) == len(ext["medien"])

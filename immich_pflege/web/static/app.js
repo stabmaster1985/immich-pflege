@@ -537,6 +537,13 @@ function renderGroup(g) {
     g.erledigt ? h("span", { class: "chip ok" }, "erledigt") : null,
     h("button", { type: "button", class: "btn small edit", onclick: () => ignoreGroup(g, S.dup.ignored) },
       S.dup.ignored ? "Wieder aufnehmen" : "Kein Duplikat"),
+    S.dup.ignored ? null : h("button", { type: "button", class: "btn small" + (keep === ALL_GONE ? " danger" : ""),
+      title: keep === ALL_GONE ? "Doch eins behalten (Vorschlag)" : "Keins behalten – alle weg",
+      onclick: () => {
+        if (keep === ALL_GONE) delete d.keep[g.id]; else { d.keep[g.id] = ALL_GONE; d.sel.add(g.id); }
+        card.replaceWith(renderGroup(g));
+        updateActionbar();
+      } }, keep === ALL_GONE ? "✓ Alle weg" : "Alle weg"),
   );
   const grid = h("div", { class: "grid" });
   for (const m of g.medien) {
@@ -566,7 +573,11 @@ function renderGroup(g) {
     )));
   }
   card.append(head);
-  if (g.art === "serie") {
+  if (keep === ALL_GONE) {
+    card.append(h("div", { class: "banner warn" }, "Keins wird behalten – alle gehen weg (Papierkorb oder Prüf-Album, je nach Knopf unten). "
+      + "Externe Medien und Medien des anderen Benutzers kommen trotzdem nur ins Prüf-Album. Bild antippen behält doch eins."));
+  }
+  if (g.art === "serie" && keep !== ALL_GONE) {
     card.append(h("div", { class: "banner serie-hint" },
       h("div", {}, h("b", {}, "Eher ein Serienbild: "), "fortlaufende Dateinamen, kurz hintereinander, nur ähnlich – also verschiedene Fotos, keine Kopien. Stapeln behält alle; oben liegt das mit ★ (antippen zum Ändern)."),
       g.benutzer.length === 1 ? h("button", { type: "button", class: "btn small primary",
@@ -576,8 +587,11 @@ function renderGroup(g) {
   return card;
 }
 
+// S.dup.keep[id] === ALL_GONE: keins behalten, alle weg
+const ALL_GONE = "*";
 function selectedGroups() {
-  return [...S.dup.sel].map((id) => ({ id, keep: S.dup.keep[id] || (S.dup.groups.find((g) => g.id === id) || {}).behalten }));
+  return [...S.dup.sel].map((id) => (S.dup.keep[id] === ALL_GONE ? { id, alle: true }
+    : { id, keep: S.dup.keep[id] || (S.dup.groups.find((g) => g.id === id) || {}).behalten }));
 }
 
 async function applyDuplicates(action, btn) {

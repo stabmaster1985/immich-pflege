@@ -505,8 +505,8 @@ class Pflege:
                 g = found.get(sel.get("id", ""))
                 if g is None:
                     raise ActionError(f"Gruppe {sel.get('id')!r} nicht gefunden – bitte neu einlesen")
-                keep = sel.get("keep") or g.suggested_keep
-                if keep not in {a.id for a in g.assets}:
+                keep = None if sel.get("alle") else sel.get("keep") or g.suggested_keep
+                if keep is not None and keep not in {a.id for a in g.assets}:
                     raise ActionError(f"Medium {keep!r} gehört nicht zu Gruppe {g.id}")
                 selection.append((g, keep))
         steps = []
@@ -793,9 +793,10 @@ class Pflege:
                 steps = [s for s in plan_group(g, keep, action) if s.action != "keine"]
                 if not steps:
                     continue
-                keeper = g.asset(keep)
+                keeper = g.asset(keep or g.suggested_keep)
                 trash = sum(1 for s in steps if s.action == "papierkorb")
-                title = (f"{keeper.file_name}: {len(steps)} {'Kopie' if len(steps) == 1 else 'Kopien'} → "
+                title = (f"{keeper.file_name}: " + (f"alle {len(steps)} weg → " if keep is None else
+                                                    f"{len(steps)} {'Kopie' if len(steps) == 1 else 'Kopien'} → ")
                          + ("Papierkorb" if trash == len(steps) else "Prüf-Album" if not trash else "Papierkorb/Prüf-Album"))
                 media = [{**a.summary(), "bleibt": a.id == keep,
                           "aktion": next((s.action for s in steps if s.asset.id == a.id), "bleibt")} for a in g.assets]

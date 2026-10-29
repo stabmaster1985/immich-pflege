@@ -53,6 +53,7 @@ class ScanRequest(BaseModel):
 class GroupSelection(BaseModel):
     id: str
     keep: Optional[str] = None
+    alle: bool = False  # keins behalten – alle weg (Schutzregeln gelten weiter)
 
 
 class DuplicatesApply(BaseModel):

@@ -26,6 +26,10 @@ Das Tool sucht doppelte Fotos und Videos über **beide Benutzer** und über **Up
 | **Serienbild – eher stapeln** | Nur ähnlich (Immich-KI oder Bild-Fingerabdruck), aber **fortlaufende Dateinamen** derselben Kamera und desselben Benutzers innerhalb von 10 Minuten, z. B. `IMG_1234`, `IMG_1235`, `IMG_1237` (Lücken bis 3 erlaubt). Also verschiedene Fotos einer Serie, keine Kopien. | **Stapeln**: alle bleiben, oben liegt das mit ★ (antippen zum Ändern). Zählt **nicht** als offen und fällt nie unter „Alle ins Album/Papierkorb“. Bei gewählter Art „Serienbild“ stapelt **Alle stapeln** alle auf einmal. |
 | **ähnlich** | Nur Immich-KI: ähnliches Motiv ohne fortlaufende Namen. | Einzeln prüfen. |
 
+## Alle weg statt eins behalten
+
+Normalerweise bleibt pro Gruppe genau ein Medium. Sind alle schlecht (z. B. eine verwackelte Serie), tippe an der Gruppe auf **Alle weg**: Dann wird keins behalten, alle Medien gehen beim Vormerken über **Papierkorb** bzw. **Ins Prüf-Album** weg. Die Schutzregeln gelten weiter: Medien aus **externen Bibliotheken** und die des **anderen Benutzers** kommen auch dann nur ins Prüf-Album. Ein Bild antippen oder **✓ Alle weg** erneut tippen behält doch wieder eins.
+
 ## Welches Medium bleibt
 
 Jede Stufe schlägt alle niedrigeren zusammen:
