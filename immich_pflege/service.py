@@ -18,7 +18,7 @@ from .folders import SyncedFolders, folder_missing, pending_sync, plan_folder, p
 from .albumcare import ARTEN as CARE_ARTEN, execute_care, find_issues, plan_delete, plan_merge
 from .covers import find_covers, plan_cover
 from .albums import (STATUS as ALBUM_STATUS, AlbumError, ExcludedMedia, Home, TripIgnoreList, execute_plan, overlaps,
-                     plan_title, plan_trip, suggest, twin_map)
+                     plan_title, same_name_album, plan_trip, suggest, twin_map)
 from .client import ImmichClient, ImmichError
 from .config import Settings
 from .duplicates import (AKTIONEN, ARTEN, OPTIONAL_KINDS, DuplicateGroup, IgnoreList, PlannedStep,
@@ -270,6 +270,7 @@ class Pflege:
                                    set(sel.get("ohne") or []), twins)
                 if not plan["anzahl"] and not plan["sync"]:
                     raise ActionError(f"„{plan['name']}“: alles schon im Album")
+                self._same_name_hint(plan)
                 title = (f"📁 Ordner {p['ordner']} → " + (f"„{plan['name']}“ ergänzen" if album_id else f"neues Album „{plan['name']}“")
                          + f" ({plan['anzahl']} Medien" + (f", {len(plan['ordner_ohne'])} abgewählt" if plan["ordner_ohne"] else "") + ")"
                          + (", danach automatisch aktuell halten" if plan["sync"] else ""))
@@ -1757,12 +1758,26 @@ class Pflege:
             plans.append(plan)
         return plans
 
+    def _same_name_hint(self, plan: dict[str, Any]) -> None:
+        """Neues Album mit einem Namen, den es schon gibt oder der schon vorgemerkt ist: beim Übertragen
+        kommt alles in dasselbe Album (siehe execute_plan)."""
+        if plan["aktion"] != "neu":
+            return
+        key = plan["name"].strip().lower()
+        if same_name_album(self.library(), plan["name"]):
+            plan["hinweise"].append(f"Album „{plan['name']}“ gibt es schon – die Medien kommen dort hinein, kein zweites Album")
+        elif any(e["daten"].get("aktion") == "neu" and e["daten"].get("name", "").strip().lower() == key
+                 and e.get("key") != plan.get("reise") for e in self.staging.of_type("album")):
+            plan["hinweise"].append(f"„{plan['name']}“ ist schon als neues Album vorgemerkt – "
+                                    "beim Übertragen kommt beides in dasselbe Album")
+
     def stage_albums(self, selection: list[dict]) -> dict[str, Any]:
         with self._lock:
             plans = self._album_plans(selection)
             for plan in plans:
                 if plan["ohne"]:  # abgewählte gehören nicht zur Reise – auch nach dem Übertragen nicht
                     self.album_excluded().update(plan["ohne"])
+                self._same_name_hint(plan)
                 media = plan.pop("beispiele")
                 self.staging.add("album", plan_title(plan), plan, media, plan["anzahl"], key=plan["reise"])
             return {"vorgemerkt": len(plans), "hinweise": [h for p in plans for h in p["hinweise"]]}

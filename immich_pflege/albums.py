@@ -423,7 +423,25 @@ def plan_title(plan: dict[str, Any]) -> str:
     return text
 
 
+def _norm_name(name: str) -> str:
+    return re.sub(r"\s+", " ", name or "").strip().lower()
+
+
+def same_name_album(lib: Library, name: str) -> dict[str, Any] | None:
+    """Vorhandenes Album mit gleichem Namen (Groß-/Kleinschreibung und Leerzeichen egal)."""
+    key = _norm_name(name)
+    return next((al for al in lib.albums.values() if _norm_name(al["name"]) == key), None)
+
+
 def execute_plan(lib: Library, clients: dict[str, ImmichClient], plan: dict[str, Any]) -> dict[str, Any]:
+    same = same_name_album(lib, plan["name"]) if plan["aktion"] == "neu" else None
+    if same and same["besitzer"] in clients:
+        # Album gleichen Namens gibt es schon (z. B. eben aus einer anderen Reise angelegt): dort hinein,
+        # statt ein zweites anzulegen. Wer noch nicht hineinschreiben darf, bekommt es geteilt.
+        users = set(plan["medien"]) | set(plan["teilen"])
+        plan = {**plan, "aktion": "ergaenzen", "album_id": same["id"], "besitzer": same["besitzer"],
+                "teilen": sorted(u for u in users if same["rollen"].get(u) not in WRITE_ROLES)}
+        log.info("Album „%s“ gibt es schon – wird ergänzt statt doppelt angelegt", plan["name"])
     owner = plan["besitzer"]
     if owner not in clients:
         raise AlbumError(f"Kein API-Key für den Besitzer {owner!r}")

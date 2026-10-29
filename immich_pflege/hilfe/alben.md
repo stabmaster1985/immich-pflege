@@ -46,6 +46,10 @@ Herausgenommene Bilder gehören danach **nicht mehr zu dieser Reise**. Die Reise
 
 Bei „Album ergänzen“ und „Schon in Alben“ öffnet **Album ansehen** den Inhalt des Albums direkt im Tool, ebenso **ansehen** bei den anderen Alben unter „Auch Fotos in“. Ganz oben stehen, mit **fehlt** markiert, die Medien der Reise, die noch nicht im Album liegen, darunter der bisherige Inhalt nach Monaten. Antippen öffnet ein Bild groß. **… fehlende ergänzen** merkt die Reise mit genau diesem Album als Ziel vor.
 
+## Mehrere Reisen in ein neues Album
+
+Eine Reise als **neues Album** vormerken und eine zweite ebenfalls als neues Album **mit gleichem Namen** (Groß-/Kleinschreibung und Leerzeichen egal): Beim Übertragen legt das Tool das Album nur **einmal** an, die zweite Reise kommt in dasselbe Album. Gibt es schon ein Album mit diesem Namen in Immich, wird es ergänzt statt ein zweites anzulegen. Wer noch nicht hineinschreiben darf, bekommt das Album geteilt. Unter Vorgemerkt steht dazu ein Hinweis am Eintrag.
+
 ## Was als „schon im Album“ zählt
 
 - Das Medium selbst liegt im Album, egal wem es gehört. Auch Julias Fotos, die du über die Partnerfreigabe in dein Album gelegt hast, zählen mit.

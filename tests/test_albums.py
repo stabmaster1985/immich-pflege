@@ -303,3 +303,17 @@ def test_deselect_in_staged_album_entry(web, state):
     web.post("/api/staged/apply", json={})
     album = next(a for a in state.albums.values() if a["albumName"] == "Toskana 2024")
     assert not set(drop) & state.asset_ids_in_album(album["id"])
+
+
+def test_two_new_albums_with_same_name_become_one(web, state):
+    trips = web.get("/api/album-suggestions").json()["reisen"]
+    kop, tosk = trip_named(trips, "Kopenhagen"), trip_named(trips, "Toskana")
+    web.post("/api/staged/albums", json={"trips": [{"id": kop["id"], "album": None, "name": "Urlaub"}]})
+    res = web.post("/api/staged/albums", json={"trips": [{"id": tosk["id"], "album": None, "name": " urlaub"}]}).json()
+    assert any("dasselbe Album" in h for h in res["hinweise"])
+    r = web.post("/api/staged/apply", json={}).json()
+    assert r["uebertragen"] == 2, r
+    same = [a for a in state.albums.values() if a["albumName"].strip().lower() == "urlaub"]
+    assert len(same) == 1
+    assert set(state.toskana) <= state.asset_ids_in_album(same[0]["id"])
+    assert len(state.asset_ids_in_album(same[0]["id"])) == kop["anzahl"] + len(state.toskana)
