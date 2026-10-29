@@ -74,11 +74,37 @@ ARTEN = {
     "format": "anderes Format",  # z. B. IMG_1234.HEIC + IMG_1234.JPG
     "bearbeitung": "Original + Bearbeitung",  # z. B. IMG_1234.HEIC + IMG_E1234.HEIC
     "raw_paar": "RAW + JPG",  # Kamera-RAW und JPG derselben Aufnahme – oft gewollt
+    "serie": "Serienbild – eher stapeln",  # nur ähnlich, aber fortlaufende Dateinamen kurz hintereinander
     "aehnlich": "ähnlich",  # nur Immich-KI: ähnliches Motiv, z. B. auch Serienbilder
 }
 STRONG_SOURCES = {"pruefsumme", "name_zeit", "bildhash", "format", "bearbeitung", "raw_paar"}
 # Arten, die nicht als „offen“ zählen und nur bei ausdrücklicher Auswahl unter „Alle …“ fallen
-OPTIONAL_KINDS = {"raw_paar"}
+OPTIONAL_KINDS = {"raw_paar", "serie"}
+SIMILAR_SOURCES = {"immich", "bildhash"}  # nur „sieht ähnlich aus“, keine gemeinsame Datei
+NUMBER_RE = re.compile(r"^(.*?)(\d+)$")
+SERIES_NUMBER_GAP = 3  # Lücken in der Nummerierung erlaubt (gelöschte Fehlversuche)
+SERIES_SPAN_S = 10 * 60  # alle Aufnahmen innerhalb von 10 Minuten
+
+
+def numbered_series(assets: list[Asset]) -> bool:
+    """Fortlaufend nummerierte Aufnahmen derselben Kamera kurz hintereinander, z. B. IMG_1234, IMG_1235,
+    IMG_1237: verschiedene Fotos einer Serie, keine Kopien."""
+    if len({a.owner for a in assets}) != 1 or len({(a.make, a.model) for a in assets}) != 1:
+        return False
+    prefixes, numbers = set(), []
+    for a in assets:
+        m = NUMBER_RE.match(split_name(a.file_name)[0])
+        if not m:
+            return False
+        prefixes.add(m.group(1))
+        numbers.append(int(m.group(2)))
+    numbers.sort()
+    if len(prefixes) != 1 or len(set(numbers)) != len(numbers):
+        return False
+    if any(b - a > SERIES_NUMBER_GAP for a, b in zip(numbers, numbers[1:])):
+        return False
+    times = [a.taken_utc for a in assets if a.taken_utc]
+    return len(times) == len(assets) and (max(times) - min(times)).total_seconds() <= SERIES_SPAN_S
 
 
 class UnionFind:
@@ -145,6 +171,8 @@ class DuplicateGroup:
         for kind in ("raw_paar", "bearbeitung", "format"):
             if kind in self.sources:
                 return kind
+        if self.sources <= SIMILAR_SOURCES and numbered_series(self.assets):
+            return "serie"
         if self.sources & STRONG_SOURCES:
             return "sehr_wahrscheinlich"
         return "aehnlich"

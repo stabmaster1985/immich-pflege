@@ -59,7 +59,7 @@ class DuplicatesApply(BaseModel):
     action: Literal["album", "papierkorb"]
     groups: Optional[list[GroupSelection]] = None
     all: bool = False
-    art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "aehnlich"]] = None
+    art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "serie", "aehnlich"]] = None
     monat: Optional[str] = None
     benutzeruebergreifend: bool = False
     confirm: Optional[str] = None
@@ -76,9 +76,14 @@ class StageDuplicates(BaseModel):
     action: Literal["album", "papierkorb"]
     groups: Optional[list[GroupSelection]] = None
     all: bool = False
-    art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "aehnlich"]] = None
+    art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "serie", "aehnlich"]] = None
     monat: Optional[str] = None
     benutzeruebergreifend: bool = False
+
+
+class StageDuplicateStacks(BaseModel):
+    groups: Optional[list[GroupSelection]] = None  # keep = liegt oben
+    all: bool = False  # alle Serienbild-Gruppen
 
 
 class StagedApply(BaseModel):
@@ -577,7 +582,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.get("/api/duplicates")
     def duplicates(offset: int = Query(0, ge=0), limit: int = Query(50, ge=0, le=5000),
                    include_done: bool = True,
-                   art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "aehnlich"]] = None,
+                   art: Optional[Literal["identisch", "sehr_wahrscheinlich", "format", "bearbeitung", "raw_paar", "serie", "aehnlich"]] = None,
                    monat: Optional[str] = None, benutzeruebergreifend: bool = False,
                    ignoriert: bool = False):
         return svc().duplicates_view(offset, limit, include_done, art, monat, benutzeruebergreifend, ignoriert)
@@ -846,6 +851,11 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         groups = [g.model_dump() for g in body.groups] if body.groups else None
         return svc().stage_duplicates(body.action, groups, body.all, body.art, body.monat,
                                       body.benutzeruebergreifend)
+
+    @app.post("/api/staged/duplicate-stacks")
+    def stage_duplicate_stacks(body: StageDuplicateStacks):
+        groups = [g.model_dump() for g in body.groups] if body.groups else None
+        return svc().stage_duplicate_stacks(groups, body.all)
 
     @app.get("/api/no-location/media")
     def no_location_media(min_confidence: Literal["hoch", "mittel", "niedrig"] = "hoch",

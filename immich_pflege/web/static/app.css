@@ -572,3 +572,6 @@ dialog.review[open] { display: flex; flex-direction: column; }
 .leaflet-container { font: inherit; }
 .rv-view .rv-mhead input { display: none; }
 .rv-view .rv-mhead { cursor: default; }
+.banner.serie-hint { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.banner.serie-hint > div { flex: 1 1 220px; }

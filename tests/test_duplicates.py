@@ -145,7 +145,7 @@ def test_group_kinds():
     a = asset(name="IMG_1.JPG", local="2024-01-01T10:00:00Z")
     b = asset(name="IMG_1.JPG", local="2024-01-01T10:00:00Z", library_id=EXT)
     assert find_groups(library(a, b))[0].kind == "sehr_wahrscheinlich"
-    c, d = asset(), asset()
+    c, d = asset(name="Strand.JPG"), asset(name="Meer.JPG")
     lib = library(c, d, duplicates=[ImmichDuplicate("frank", "x", [c.id, d.id], [c.id])])
     g = find_groups(lib)[0]
     assert g.kind == "aehnlich" and g.to_dict()["art_text"] == "ähnlich"
@@ -209,3 +209,20 @@ def test_raw_jpg_pair_and_no_photo_video_pairs():
     photo = asset(name="IMG_0001.HEIC", local=T)
     video = asset(name="IMG_0001.MOV", local=T, type="VIDEO")
     assert find_groups(library(photo, video)) == []
+
+
+def test_numbered_series_is_not_a_duplicate():
+    """Fortlaufende Nummern kurz hintereinander, nur ähnlich: Serienbild – eher stapeln."""
+    def immich_group(*xs):
+        lib = library(*xs, duplicates=[ImmichDuplicate(xs[0].owner, "x", [x.id for x in xs], [xs[0].id])])
+        return find_groups(lib)[0]
+
+    a = asset(name="IMG_1234.HEIC", utc="2024-07-16T10:00:00Z")
+    b = asset(name="IMG_1235.HEIC", utc="2024-07-16T10:00:03Z")
+    c = asset(name="IMG_1238.HEIC", utc="2024-07-16T10:01:00Z")  # Lücke von 3 erlaubt (gelöschte)
+    assert immich_group(a, b, c).kind == "serie"
+    assert immich_group(a, asset(name="IMG_1240.HEIC", utc="2024-07-16T10:00:05Z")).kind == "aehnlich"  # zu weit
+    assert immich_group(a, asset(name="IMG_1235.HEIC", utc="2024-07-16T11:00:00Z")).kind == "aehnlich"  # 1 h später
+    assert immich_group(a, asset(name="DSC_1235.JPG", utc="2024-07-16T10:00:03Z")).kind == "aehnlich"  # andere Kamera
+    assert immich_group(a, asset(owner="julia", name="IMG_1235.HEIC", utc="2024-07-16T10:00:03Z")).kind == "aehnlich"
+    assert immich_group(a, asset(name="IMG_1234 2.JPG", utc="2024-07-16T10:00:03Z")).kind == "aehnlich"  # Kopie

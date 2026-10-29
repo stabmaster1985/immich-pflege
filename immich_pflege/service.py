@@ -426,8 +426,12 @@ class Pflege:
                 cache = self._groups_cache = (key, groups)
         return cache[1]
 
+    def _staged_dup_ids(self) -> set[str]:
+        """Vorgemerkt als Duplikat oder (Serienbild) als Stapel."""
+        return self.staging.asset_ids("duplikat") | self.staging.asset_ids("stapel")
+
     def duplicate_groups(self, include_ignored: bool = False) -> list[DuplicateGroup]:
-        staged = self.staging.asset_ids("duplikat")
+        staged = self._staged_dup_ids()
         groups = [g for g in self.all_groups() if not (g.asset_ids & staged)]
         if include_ignored:
             return groups
@@ -454,7 +458,7 @@ class Pflege:
                         ignored: bool = False) -> dict:
         """Gruppen mit Filtern. ``ignored=True`` zeigt nur die als „kein Duplikat“ markierten."""
         lib = self.library()
-        staged = self.staging.asset_ids("duplikat")
+        staged = self._staged_dup_ids()
         all_groups = [g for g in self.all_groups() if not (g.asset_ids & staged)]
         ignore = self.ignore_list()
         n_ignored = sum(1 for g in all_groups if ignore.contains(g))
@@ -1470,6 +1474,38 @@ class Pflege:
             self.staging.add("stapel", title, {"stapel": stacks, "album": album_id, "aus_album": remove_from_album,
                                                "alle_medien": [i for s in stacks for i in s["ids"]]},
                              media, n, key=f"{album_id}:{'ganz' if whole else ','.join(sorted(p.id for p in chosen))}")
+            return {"vorgemerkt": len(stacks), "medien": n}
+
+    def stage_duplicate_stacks(self, groups: list[dict] | None = None, all_groups: bool = False) -> dict[str, Any]:
+        """Serienbilder unter den Duplikaten stapeln statt wegräumen: alle bleiben, ``keep`` liegt oben."""
+        from .stacking import order
+        with self._lock:
+            found = {g.id: g for g in self.duplicate_groups()}
+            if all_groups:
+                selection = [(g, g.suggested_keep) for g in found.values() if g.kind == "serie"]
+            else:
+                if not groups:
+                    raise ActionError("Keine Gruppen ausgewählt")
+                selection = []
+                for sel in groups:
+                    g = found.get(sel.get("id", ""))
+                    if g is None:
+                        raise ActionError(f"Gruppe {sel.get('id')!r} nicht gefunden – bitte neu einlesen")
+                    selection.append((g, sel.get("keep") or g.suggested_keep))
+            stacks = []
+            for g, keep in selection:
+                if len(g.users) > 1:
+                    raise ActionError("Stapeln geht nur mit Medien desselben Benutzers – Immich stapelt nur eigene")
+                ordered = order(g.assets, self.hash_store, keep)
+                stacks.append({"user": ordered[0].owner, "ids": [a.id for a in ordered]})
+            if not stacks:
+                raise ActionError("Nichts zu stapeln")
+            n = sum(len(s["ids"]) for s in stacks)
+            lib = self.library()
+            self.staging.add("stapel", f"📚 Serienbilder aus Duplikaten: {len(stacks)} Stapel aus {n} Medien",
+                             {"stapel": stacks, "album": None, "aus_album": False,
+                              "alle_medien": [i for s in stacks for i in s["ids"]]},
+                             [{**lib.assets[s["ids"][0]].summary(), "oben": True} for s in stacks[:8]], n)
             return {"vorgemerkt": len(stacks), "medien": n}
 
     def stage_burst_stacks(self, ids: list[str], keep: dict[str, str] | None = None) -> dict[str, Any]:

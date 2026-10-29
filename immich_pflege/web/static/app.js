@@ -442,7 +442,23 @@ function renderDupFilters(r) {
 const SOURCE_LABEL = { immich: "Immich-KI", pruefsumme: "Prüfsumme", name_zeit: "Name + Zeit", bildhash: "Bild-Fingerabdruck",
   format: "Format", bearbeitung: "Bearbeitung", raw_paar: "RAW + JPG" };
 const KIND_CLASS = { identisch: "conf-hoch", sehr_wahrscheinlich: "conf-mittel", format: "conf-mittel",
-  bearbeitung: "conf-mittel", raw_paar: "conf-niedrig", aehnlich: "conf-niedrig" };
+  bearbeitung: "conf-mittel", raw_paar: "conf-niedrig", serie: "accent", aehnlich: "conf-niedrig" };
+
+// Serienbilder (fortlaufende Dateinamen, nur ähnlich): stapeln statt wegräumen – alle bleiben
+async function stackDuplicates(groups, btn, all = false) {
+  const ok = await confirmDialog({ title: all ? "Alle Serienbilder stapeln?" : `${n(groups.length, "Serie", "Serien")} stapeln?`,
+    body: [h("p", {}, "Alle Fotos bleiben erhalten und werden in Immich zu einem Stapel zusammengefasst. Oben liegt das mit ★ markierte, die anderen erscheinen nur noch beim Aufklappen."),
+      h("p", { class: "muted" }, "Noch geht nichts an Immich – übertragen wird erst unter Vorgemerkt.")],
+    okLabel: "Stapeln vormerken" });
+  if (!ok) return;
+  busy(btn, true);
+  try {
+    const r = await api("api/staged/duplicate-stacks", { method: "POST", body: all ? { all: true } : { groups } });
+    toast(`${n(r.vorgemerkt, "Stapel", "Stapel")} aus ${n(r.medien, "Medium", "Medien")} vorgemerkt`);
+    S.dup.sel.clear();
+    await afterStage("dup");
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
 
 async function ignoreGroup(g, undo) {
   if (!undo) {
@@ -514,7 +530,7 @@ function renderGroup(g) {
     h("label", {}, h("input", {
       type: "checkbox", checked: d.sel.has(g.id),
       onchange: (e) => { e.target.checked ? d.sel.add(g.id) : d.sel.delete(g.id); card.classList.toggle("selected", e.target.checked); updateActionbar(); },
-    }), `${g.medien.length} Kopien`),
+    }), `${g.medien.length} ${g.art === "serie" ? "Fotos" : "Kopien"}`),
     h("span", { class: "chip " + (KIND_CLASS[g.art] || ""), title: "Art der Übereinstimmung" }, g.art_text),
     ...g.quellen.map((q) => h("span", { class: "chip" }, SOURCE_LABEL[q] || q)),
     g.benutzeruebergreifend ? h("span", { class: "chip accent" }, g.benutzer.join(" + ")) : null,
@@ -525,9 +541,10 @@ function renderGroup(g) {
   const grid = h("div", { class: "grid" });
   for (const m of g.medien) {
     const isKeep = m.id === keep;
-    const badge = isKeep ? "★ bleibt" : (m.im_pruef_album ? "im Prüf-Album" : "weg");
+    const serie = g.art === "serie";
+    const badge = serie ? (isKeep ? "★ oben" : "im Stapel") : isKeep ? "★ bleibt" : (m.im_pruef_album ? "im Prüf-Album" : "weg");
     grid.append(tile({
-      class: "tile " + (isKeep ? "keep" : "drop"),
+      class: "tile " + (isKeep || serie ? "keep" : "drop"),
       "aria-pressed": isKeep ? "true" : "false",
       title: m.pfad,
       onclick: () => {
@@ -548,7 +565,14 @@ function renderGroup(g) {
       openLinks(m),
     )));
   }
-  card.append(head, grid);
+  card.append(head);
+  if (g.art === "serie") {
+    card.append(h("div", { class: "banner serie-hint" },
+      h("div", {}, h("b", {}, "Eher ein Serienbild: "), "fortlaufende Dateinamen, kurz hintereinander, nur ähnlich – also verschiedene Fotos, keine Kopien. Stapeln behält alle; oben liegt das mit ★ (antippen zum Ändern)."),
+      g.benutzer.length === 1 ? h("button", { type: "button", class: "btn small primary",
+        onclick: (e) => stackDuplicates([{ id: g.id, keep }], e.currentTarget) }, "Stapeln") : null));
+  }
+  card.append(grid);
   return card;
 }
 
@@ -3465,13 +3489,20 @@ function updateActionbar() {
         $("#dup-list").replaceChildren(...S.dup.groups.map(renderGroup));
         updateActionbar();
       } }, "Keine"));
+      const series = S.dup.groups.filter((g) => S.dup.sel.has(g.id) && g.art === "serie");
+      if (series.length) buttons.push(h("button", { class: "btn small", type: "button",
+        onclick: (e) => stackDuplicates(series.map((g) => ({ id: g.id, keep: S.dup.keep[g.id] || g.behalten })), e.currentTarget) }, `Stapeln (${series.length})`));
       buttons.push(h("button", { class: "btn small primary", type: "button", onclick: (e) => applyDuplicates("album", e.currentTarget) }, "Ins Prüf-Album"));
       buttons.push(h("button", { class: "btn small danger", type: "button", onclick: (e) => applyDuplicates("papierkorb", e.currentTarget) }, "Papierkorb"));
     } else {
       const open = S.dup.open || 0;
       info.textContent = open ? "Aktuelle Auswahl:" : "Nichts offen";
-      buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !open, onclick: (e) => applyAllDuplicates("album", e.currentTarget) }, `Alle ins Album (${open})`));
-      buttons.push(h("button", { class: "btn small danger", type: "button", disabled: !open, onclick: (e) => applyAllDuplicates("papierkorb", e.currentTarget) }, "Papierkorb …"));
+      if (S.dup.art === "serie") {
+        info.textContent = S.dup.groups.length ? "Serienbilder:" : "Nichts offen";
+        buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !S.dup.groups.length,
+          onclick: (e) => stackDuplicates([], e.currentTarget, true) }, "Alle stapeln"));
+      } else buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !open, onclick: (e) => applyAllDuplicates("album", e.currentTarget) }, `Alle ins Album (${open})`),
+        h("button", { class: "btn small danger", type: "button", disabled: !open, onclick: (e) => applyAllDuplicates("papierkorb", e.currentTarget) }, "Papierkorb …"));
     }
   } else if (S.tab === "loc") {
     const cnt = S.loc.sel.size;

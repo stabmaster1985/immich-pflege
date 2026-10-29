@@ -23,7 +23,8 @@ Das Tool sucht doppelte Fotos und Videos über **beide Benutzer** und über **Up
 | **anderes Format** | Dieselbe Aufnahme als HEIC und JPG, z. B. exportiert oder „Maximale Kompatibilität“. | Meist reicht das Original. |
 | **Original + Bearbeitung** | Das iPhone legt beim Bearbeiten `IMG_E…` neben das Original. | Je nach Einstellung eine Fassung behalten. |
 | **RAW + JPG** | Kamera speichert beide Formate. Das ist oft gewollt. | Zählt **nicht** als offen und fällt nur unter „Alle …“, wenn du die Art ausdrücklich wählst. Mit „Kein Duplikat“ dauerhaft ausblenden. |
-| **ähnlich** | Nur Immich-KI: ähnliches Motiv. Das können auch Serienbilder sein, die du behalten willst. | Einzeln prüfen. |
+| **Serienbild – eher stapeln** | Nur ähnlich (Immich-KI oder Bild-Fingerabdruck), aber **fortlaufende Dateinamen** derselben Kamera und desselben Benutzers innerhalb von 10 Minuten, z. B. `IMG_1234`, `IMG_1235`, `IMG_1237` (Lücken bis 3 erlaubt). Also verschiedene Fotos einer Serie, keine Kopien. | **Stapeln**: alle bleiben, oben liegt das mit ★ (antippen zum Ändern). Zählt **nicht** als offen und fällt nie unter „Alle ins Album/Papierkorb“. Bei gewählter Art „Serienbild“ stapelt **Alle stapeln** alle auf einmal. |
+| **ähnlich** | Nur Immich-KI: ähnliches Motiv ohne fortlaufende Namen. | Einzeln prüfen. |
 
 ## Welches Medium bleibt
 

@@ -130,3 +130,20 @@ def test_view_and_deselect_media_of_staged_entry(web, state):
     assert r["uebrig"] == 0
     assert {x["typ"] for x in web.get("/api/staged").json()["eintraege"]} == {"ort"}
     assert web.get("/api/staged/unbekannt/media").status_code == 400
+
+
+def test_stack_series_from_duplicates(env, http, state):
+    did = "d0000000-0000-4000-8000-000000000099"
+    ids = [state.add_asset("frank", f"IMG_{n}.HEIC", f"2024-08-01T10:00:0{i}.000Z", utc=f"2024-08-01T08:00:0{i}.000Z",
+                           duplicate_id=did) for i, n in enumerate((4711, 4712))]
+    with TestClient(create_app(env, http=http, auto_scan_enabled=False)) as web:
+        r = web.get("/api/duplicates", params={"art": "serie"}).json()
+        assert r["arten"]["serie"]["anzahl"] == 1 and r["gruppen"][0]["art_text"] == "Serienbild – eher stapeln"
+        g = r["gruppen"][0]
+        res = web.post("/api/staged/duplicate-stacks", json={"groups": [{"id": g["id"], "keep": ids[1]}]}).json()
+        assert res == {"vorgemerkt": 1, "medien": 2}
+        assert web.get("/api/duplicates", params={"art": "serie"}).json()["gesamt"] == 0
+        e = web.get("/api/staged").json()["eintraege"][0]
+        assert e["typ"] == "stapel" and e["daten"]["stapel"][0]["ids"] == [ids[1], ids[0]]
+        assert web.post("/api/staged/apply", json={}).json()["uebertragen"] == 1
+        assert not any(c[0] == "DELETE" for c in state.calls)  # nichts gelöscht

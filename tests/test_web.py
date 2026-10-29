@@ -82,7 +82,7 @@ def test_album_all(web, state):
 def test_duplicate_filters_and_kinds(web):
     r = web.get("/api/duplicates").json()
     assert {k: v["anzahl"] for k, v in r["arten"].items()} == {"identisch": 1, "sehr_wahrscheinlich": 1, "format": 0, "bearbeitung": 0,
-                                                                "raw_paar": 0, "aehnlich": 1}
+                                                                "raw_paar": 0, "serie": 0, "aehnlich": 1}
     assert r["monate"] == [{"key": "2024-07", "name": "Juli 2024", "anzahl": 3}]
     assert web.get("/api/duplicates?art=identisch").json()["gesamt"] == 1
     assert web.get("/api/duplicates?benutzeruebergreifend=true").json()["gesamt"] == 1
