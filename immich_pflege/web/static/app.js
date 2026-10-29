@@ -361,19 +361,31 @@ async function doWatchScan(started) {
 
 
 /* --------------------------------------------------------- Duplikate */
+// Seiten nachladen ohne Doppelte: Beim Neuladen zählt nur die jüngste Anfrage, und solange sie läuft,
+// bleibt „Weitere anzeigen“ weg (sonst lädt das automatische Nachladen dieselbe Seite ein zweites Mal).
+function pageGen(st, reset, moreSel) {
+  if (reset) { st.gen = (st.gen || 0) + 1; st.resetting = true; $(moreSel).hidden = true; return st.gen; }
+  return st.resetting ? -1 : (st.gen || 0);  // -1: Neuladen läuft noch, nichts nachladen
+}
+
 async function loadDuplicates(reset) {
   const d = S.dup;
   if (reset) { d.groups = []; d.sel.clear(); d.keep = {}; $("#dup-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
+  const gen = pageGen(d, reset, "#dup-more");
+  if (gen < 0) return;
   const params = new URLSearchParams({ offset: d.groups.length, limit: PAGE_DUP, include_done: d.includeDone,
     benutzeruebergreifend: d.crossUser, ignoriert: d.ignored });
   if (d.art) params.set("art", d.art);
   if (d.monat) params.set("monat", d.monat);
   const r = await api("api/duplicates?" + params);
+  if (gen !== d.gen) return;  // inzwischen neu geladen
+  if (reset) { d.resetting = false; d.groups = []; }
   if (d.monat && !r.monate.some((m) => m.key === d.monat)) { d.monat = null; return loadDuplicates(true); }
   if (reset) $("#dup-list").replaceChildren();
   d.total = r.gesamt; d.open = r.offen; d.loaded = true; d.info = r;
   renderDupFilters(r);
   for (const g of r.gruppen) {
+    if (d.groups.some((x) => x.id === g.id)) continue;  // schon da (Liste hat sich zwischen den Seiten verschoben)
     d.groups.push(g);
     $("#dup-list").append(renderGroup(g));
   }
@@ -651,6 +663,8 @@ async function loadLocation(reset) {
   const l = S.loc;
   const overview = l.ort === null;
   if (reset) { l.series = []; l.sel.clear(); l.open = new Set(); $("#loc-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
+  const gen = pageGen(l, reset, "#loc-more");
+  if (gen < 0) return;
   const params = new URLSearchParams({ offset: l.series.length, limit: PAGE_SERIES, only_suggestions: l.only, overview });
   if (l.hours) params.set("max_hours", l.hours);
   if (l.minConf) params.set("min_confidence", l.minConf);
@@ -659,6 +673,8 @@ async function loadLocation(reset) {
   if (l.herkunft) params.set("herkunft", l.herkunft);
   if (l.benutzer) params.set("benutzer", l.benutzer);
   const r = await api("api/no-location?" + params);
+  if (gen !== l.gen) return;  // inzwischen neu geladen
+  if (reset) { l.resetting = false; l.series = []; }
   l.loaded = true; l.info = r;
   // gewählter Ort/Monat existiert nicht mehr (z. B. nach Übernehmen) -> zurück zur Übersicht
   if (l.ort && l.ort !== "*" && !r.orte.some((o) => o.key === l.ort)) { l.ort = null; l.monat = null; return loadLocation(true); }
@@ -676,6 +692,7 @@ async function loadLocation(reset) {
     l.total = r.serien_gesamt;
     if (reset && l.ort !== "*") $("#loc-list").append(renderPlaceHeader(r));
     for (const ser of r.serien) {
+      if (l.series.some((x) => x.id === ser.id)) continue;
       l.series.push(ser);
       $("#loc-list").append(renderSeries(ser));
     }
@@ -2341,6 +2358,8 @@ async function loadCleanup(reset) {
   if (c.bereich === "stapel") return loadStacks();
   if (c.bereich === "alben") return loadAlbumCare();
   if (reset) { c.items = []; c.sel.clear(); c.keep = {}; c.edit = {}; $("#cln-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
+  const gen = pageGen(c, reset, "#cln-more");
+  if (gen < 0) return;
   const isTime = c.bereich === "zeit";
   const params = new URLSearchParams({ offset: c.items.length, limit: PAGE_CLN, ignoriert: c.ignored });
   if (c.kategorie) params.set(isTime ? "art" : "kategorie", c.kategorie);
@@ -2349,20 +2368,22 @@ async function loadCleanup(reset) {
     api((isTime ? "api/timefix?" : "api/cleanup?") + params),
     api(isTime ? "api/cleanup?limit=0" : "api/timefix?limit=0"),
   ]);
+  if (gen !== c.gen) return;  // inzwischen neu geladen
+  if (reset) { c.resetting = false; c.items = []; }
   const cln = isTime ? counts : r;
   const time = isTime ? r : counts;
   if (reset) $("#cln-list").replaceChildren();
   c.info = r; c.total = r.gesamt; c.loaded = true;
   renderCleanupFilters(cln, time);
   if (isTime) {
-    for (const it of r.eintraege) { c.items.push(it); $("#cln-list").append(renderTimeFix(it)); }
+    for (const it of r.eintraege) { if (!c.items.some((x) => x.id === it.id)) { c.items.push(it); $("#cln-list").append(renderTimeFix(it)); } }
     if (!c.items.length) $("#cln-list").replaceChildren(h("p", { class: "empty" }, c.ignored ? "Nichts ausgeblendet." : "Keine falschen Zeiten gefunden 🎉"));
     $("#cln-summary").textContent = `${n(r.gesamt, "Eintrag", "Einträge")}`;
     $("#cln-more").hidden = c.items.length >= c.total;
     updateActionbar();
     return;
   }
-  for (const it of r.eintraege) { c.items.push(it); $("#cln-list").append(renderCleanupItem(it)); }
+  for (const it of r.eintraege) { if (!c.items.some((x) => x.id === it.id)) { c.items.push(it); $("#cln-list").append(renderCleanupItem(it)); } }
   if (!c.items.length) {
     const fp = r.fingerabdruck;
     const hint = c.bereich === "qualitaet" && fp.aktiv && (fp.laeuft || fp.fehlend)
@@ -2982,10 +3003,14 @@ async function loadAlbums(reset) {
   const a = S.alb;
   if (a.quelle === "ordner") return loadFolders();
   if (reset) { a.trips = []; a.sel.clear(); a.choice = {}; a.ohne = {}; a.open = {}; $("#alb-list").replaceChildren(h("p", { class: "empty" }, "Lade …")); }
+  const gen = pageGen(a, reset, "#alb-more");
+  if (gen < 0) return;
   const params = new URLSearchParams({ offset: a.trips.length, limit: PAGE_ALB, ignoriert: a.ignored });
   if (a.status) params.set("status", a.status);
   if (a.jahr) params.set("jahr", a.jahr);
   const r = await api("api/album-suggestions?" + params);
+  if (gen !== a.gen) return;  // inzwischen neu geladen
+  if (reset) { a.resetting = false; a.trips = []; }
   if (r.laedt) {
     // Album-Inhalte werden nach dem Einlesen im Hintergrund gelesen – gleich noch einmal fragen
     $("#alb-list").replaceChildren(h("div", { class: "banner warn" },
@@ -3001,6 +3026,7 @@ async function loadAlbums(reset) {
   a.total = r.gesamt; a.info = r; a.loaded = true;
   renderAlbumFilters(r);
   for (const t of r.reisen) {
+    if (a.trips.some((x) => x.id === t.id)) continue;
     a.trips.push(t);
     $("#alb-list").append(renderTrip(t));
   }

@@ -299,7 +299,7 @@ def find_groups(lib: Library, image_pairs: Iterable[tuple[str, str]] = (),
         )
         _score_group(g, edit_keep)
         groups.append(g)
-    groups.sort(key=lambda g: (g.assets[0].local_date_time or ""), reverse=True)
+    groups.sort(key=lambda g: (g.assets[0].local_date_time or "", g.id), reverse=True)  # stabil fürs Blättern
     return groups
 
 
