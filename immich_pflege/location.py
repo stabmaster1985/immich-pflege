@@ -124,6 +124,7 @@ class Suggestion:
     delta_s: float | None = None
     source: Asset | None = None
     method: str = "naechstes"  # naechstes | zwischen | serie | manuell
+    around: tuple[tuple[Asset, float] | None, tuple[Asset, float] | None] = (None, None)  # GPS-Fotos davor/danach
 
     def same_place(self, other: "Suggestion") -> bool:
         return km(self.latitude, self.longitude, other.latitude, other.longitude) <= SAME_PLACE_KM
@@ -142,7 +143,32 @@ class Suggestion:
         if self.source:
             out.update({"quelle_id": self.source.id, "quelle_benutzer": self.source.owner,
                         "quelle_datei": self.source.file_name})
+        out.update(around_dict(*self.around))
         return out
+
+
+def _gps_point(side: tuple[Asset, float] | None) -> dict[str, Any] | None:
+    if not side:
+        return None
+    a, delta = side
+    return {"id": a.id, "breite": float(a.latitude), "laenge": float(a.longitude), "ort": a.place,
+            "datei": a.file_name, "benutzer": a.owner, "abstand_text": format_delta(delta)}
+
+
+def around_dict(prev: tuple[Asset, float] | None, nxt: tuple[Asset, float] | None) -> dict[str, Any]:
+    """GPS-Fotos davor und danach, ihre Entfernung und – wenn sie auseinanderliegen – die Stelle auf der
+    Luftlinie, an der man zur Aufnahmezeit gewesen wäre (nach Zeit aufgeteilt)."""
+    out: dict[str, Any] = {"vorher": _gps_point(prev), "nachher": _gps_point(nxt)}
+    if prev and nxt:
+        (a, da), (b, db) = prev, nxt
+        dist = km(a.latitude, a.longitude, b.latitude, b.longitude)
+        out["strecke_km"] = round(dist, 1)
+        if dist > SAME_PLACE_KM and da + db > 0:
+            f = da / (da + db)
+            out["unterwegs"] = {"breite": round(a.latitude + f * (b.latitude - a.latitude), 6),
+                                "laenge": round(a.longitude + f * (b.longitude - a.longitude), 6),
+                                "anteil": round(f, 2)}
+    return out
 
 
 def _from(src: Asset, delta: float, confidence: str, reason: str, method: str = "naechstes") -> Suggestion:
@@ -192,6 +218,12 @@ class GpsIndex:
         if not asset.taken_utc or not self.times:
             return None
         prev, nxt = self.neighbors(asset)
+        s = self._suggest(prev, nxt, max_hours)
+        if s:  # Nachbarn (je höchstens 12 h) für Karte, Entfernung und Strecke
+            s.around = tuple(x if x and x[1] <= BRACKET_MAX_S else None for x in (prev, nxt))
+        return s
+
+    def _suggest(self, prev, nxt, max_hours: float) -> Suggestion | None:
         window = max_hours * 3600
         sides = [(s, label) for s, label in ((prev, "vorher"), (nxt, "nachher")) if s]
         within = [(s, label) for s, label in sides if s[1] <= window]
@@ -507,6 +539,8 @@ def place_facets(series: list[Series], samples: int = 4) -> list[dict[str, Any]]
                                     "beispiele": [], "zeitraum": [None, None]})
         g["anzahl"] += len(s.members)
         g["serien"] += 1
+        if s.suggestion and "breite" not in g:  # für die Karte
+            g["breite"], g["laenge"] = round(s.suggestion.latitude, 6), round(s.suggestion.longitude, 6)
         for c in s.members:
             if c.applicable:
                 g["mit_vorschlag"] += 1

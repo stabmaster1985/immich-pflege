@@ -80,6 +80,14 @@ class StagingStore:
         """Medien je Eintrag (für das Wiedererkennen vorgemerkter Reisen)."""
         return [set(e["daten"].get("alle_medien", [])) for e in self.of_type(typ)]
 
+    def get(self, entry_id: str) -> dict[str, Any] | None:
+        return next((e for e in self.entries if e["id"] == entry_id), None)
+
+    def save(self) -> None:
+        """Nach dem Ändern eines Eintrags (z. B. einzelne Medien abgewählt)."""
+        with self._lock:
+            self._save()
+
     def of_type(self, typ: str) -> list[dict[str, Any]]:
         return [e for e in self.entries if e["typ"] == typ]
 

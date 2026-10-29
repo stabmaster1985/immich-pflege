@@ -114,10 +114,15 @@ class ImmichClient:
     def search_ids(self, **filters: Any) -> set[str]:
         return {a["id"] for a in self.search_metadata(**filters)}
 
-    def smart_search(self, query: str, size: int = 100) -> list[dict]:
+    def smart_search(self, query: str, size: int = 100, page: int = 1) -> list[dict]:
         """KI-Suche (CLIP) – Treffer nach Passgenauigkeit sortiert, ohne feste Grenze."""
-        data = self.request("POST", "/search/smart", json={"query": query, "size": size, "page": 1})
-        return ((data or {}).get("assets") or {}).get("items") or []
+        return self.smart_search_page(query, size, page)[0]
+
+    def smart_search_page(self, query: str, size: int = 100, page: int = 1) -> tuple[list[dict], bool]:
+        """Eine Seite der KI-Suche und ob es weitere gibt."""
+        data = self.request("POST", "/search/smart", json={"query": query, "size": size, "page": page})
+        assets = (data or {}).get("assets") or {}
+        return assets.get("items") or [], bool(assets.get("nextPage"))
 
     def ocr(self, asset_id: str) -> list[dict]:
         """Texterkennung eines Bilds: Textfelder mit Text und Ecken (0–1); leer, wenn nichts erkannt."""
@@ -125,6 +130,9 @@ class ImmichClient:
 
     def search_places(self, name: str) -> list[dict]:
         return self.request("GET", "/search/places", params={"name": name}) or []
+
+    def reverse_geocode(self, lat: float, lon: float) -> list[dict]:
+        return self.request("GET", "/map/reverse-geocode", params={"lat": lat, "lon": lon}) or []
 
     def search_person(self, name: str) -> list[dict]:
         return self.request("GET", "/search/person", params={"name": name}) or []

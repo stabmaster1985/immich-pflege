@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from collections import Counter
 from dataclasses import replace
@@ -34,7 +35,7 @@ from .location import (HERKUNFT, LEVELS, LocationChange, NoPlaceList, analyze, e
                        level_at_least, month_facets, month_key, month_label, place_facets, place_key, resolve_locations)
 from .rules import (Resolver, Rule, RuleError, apply as apply_rules, dump_rules, evaluate_rule, load_rules, parse_rules,
                     preview as preview_rules, tag_ids)
-from .suggestions import BEGRIFFE, SMART_SIZE, HiddenList, data_suggestions, smart_results
+from .suggestions import BEGRIFFE, SMART_SIZE, HiddenList, SmartHidden, data_suggestions, smart_results
 from .stacking import execute_stacks, propose as propose_stacks, whole_album
 from .staging import StagingStore
 
@@ -860,11 +861,25 @@ class Pflege:
         resolver = Resolver(self.clients)
         exclude = {i for u in self.clients for i in resolver.tagged_assets(u, tag)}
         exclude |= {i for e in self.staging.of_type("tag") for ids in (e["daten"].get("medien") or {}).values() for i in ids}
+        hidden = self.smart_hidden().ids(tag)
         try:
-            ids = smart_results(self.clients, lib, query.strip(), exclude, size or SMART_SIZE)
+            ids = smart_results(self.clients, lib, query.strip(), exclude | hidden, size or SMART_SIZE)
         except ImmichError as exc:
             raise ActionError(f"KI-Suche nicht möglich (ist das maschinelle Lernen in Immich aktiv?): {exc}") from exc
-        return {"begriff": begriff, "suche": query, "tag": tag, "medien": [lib.assets[i].summary() for i in ids]}
+        return {"begriff": begriff, "suche": query, "tag": tag, "medien": [lib.assets[i].summary() for i in ids],
+                "ausgeblendet": len(hidden & set(lib.assets))}
+
+    def smart_hidden(self) -> SmartHidden:
+        return SmartHidden(self.settings.data_dir / "ki_ausgeblendet.json")
+
+    def smart_hide(self, tag: str, ids: list[str], undo: bool = False) -> dict[str, Any]:
+        """KI-Treffer, die zu diesem Tag nicht passen, künftig nicht mehr zeigen (``undo``: wieder zeigen)."""
+        if not tag.strip():
+            raise ActionError("Tag fehlt")
+        return {"ausgeblendet": self.smart_hidden().update(tag, ids, remove=undo)}
+
+    def smart_hidden_media(self, tag: str) -> dict[str, Any]:
+        return {"tag": tag, "medien": self._review_media(sorted(self.smart_hidden().ids(tag)))}
 
     def stage_suggestions(self, ids: list[str]) -> dict[str, Any]:
         view = {s["id"]: s for s in self.suggestions_view()["vorschlaege"]}
@@ -1046,6 +1061,108 @@ class Pflege:
     def staged_view(self) -> dict[str, Any]:
         return {**self.staging.summary(), "eintraege": self.staging.entries}
 
+    def _staged_entry(self, entry_id: str) -> dict[str, Any]:
+        e = self.staging.get(entry_id)
+        if e is None:
+            raise ActionError("Eintrag nicht (mehr) vorgemerkt – bitte neu laden")
+        return e
+
+    def _staged_ids(self, e: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
+        """Alle Medien eines vorgemerkten Eintrags und je Medium ein kurzes Merkmal (z. B. 🗑, neuer Ort)."""
+        d, typ = e["daten"], e["typ"]
+        by_user = lambda m: [i for ids in m.values() for i in ids]  # noqa: E731
+        marks: dict[str, str] = {}
+        if typ in ("duplikat", "aufraeumen"):
+            ids = [s["id"] for s in d["schritte"]]
+            marks = {s["id"]: "🗑" if s["aktion"] == "papierkorb" else "Prüf-Album" for s in d["schritte"]}
+        elif typ == "ort":
+            ids = [ch["asset_id"] for ch in d["aenderungen"]]
+            marks = {ch["asset_id"]: ch.get("place") or "" for ch in d["aenderungen"]}
+        elif typ in ("album", "archiv"):
+            ids = by_user(d["medien"])
+        elif typ == "zeit":
+            ids = [i for ch in d["aenderungen"] for i in ch["ids"]]
+        elif typ == "stapel":
+            ids = [i for s in d["stapel"] for i in s["ids"]]
+            marks = {s["ids"][0]: "oben" for s in d["stapel"]}
+        elif typ == "tag" and "medien" in d:
+            ids = by_user(d["medien"])
+        elif typ == "tag" and "regel" in d:
+            ids = sorted(set().union(*self._rule_missing(d["regel"])[1].values()))
+        elif typ == "tag" and "regel_def" in d:
+            ids = self._suggestion_ids(e["key"], "tag")[2]
+        else:
+            raise ActionError("Dieser Eintrag betrifft ganze Alben, keine einzelnen Medien")
+        return ids, marks
+
+    def staged_media(self, entry_id: str) -> dict[str, Any]:
+        """Alle Medien eines vorgemerkten Eintrags für die Prüf-Ansicht."""
+        e = self._staged_entry(entry_id)
+        ids, marks = self._staged_ids(e)
+        media = self._review_media(ids)
+        for m in media:
+            if marks.get(m["id"]):
+                m["marke"] = marks[m["id"]]
+        return {"id": e["id"], "typ": e["typ"], "titel": e["titel"], "medien": media}
+
+    def staged_without(self, entry_id: str, without: list[str]) -> dict[str, Any]:
+        """Einzelne Medien aus einem vorgemerkten Eintrag nehmen. Ist danach nichts mehr übrig, fällt er weg."""
+        with self._lock:
+            e = self._staged_entry(entry_id)
+            d, typ = e["daten"], e["typ"]
+            ids, _ = self._staged_ids(e)
+            off = set(without) & set(ids)
+            if not off:
+                return {"entfernt": 0, "uebrig": len(ids)}
+            if typ == "tag" and "regel" in d:  # Regel → feste Auswahl (ein Eintrag je Tag)
+                self.staging.remove([e["id"]])
+                try:
+                    self.stage_rule_selection(d["regel"], sorted(off))
+                except ActionError:
+                    pass  # alles abgewählt
+                return {"entfernt": len(off), "uebrig": len(ids) - len(off)}
+            if typ == "tag" and "regel_def" in d:
+                try:
+                    self.stage_suggestion_selection(e["key"], sorted(off))
+                except ActionError:
+                    self.staging.remove([e["id"]])
+                return {"entfernt": len(off), "uebrig": len(ids) - len(off)}
+            keep = lambda m: {u: r for u, v in m.items() if (r := [i for i in v if i not in off])}  # noqa: E731
+            if typ in ("duplikat", "aufraeumen"):
+                d["schritte"] = [s for s in d["schritte"] if s["id"] not in off]
+            elif typ == "ort":
+                d["aenderungen"] = [ch for ch in d["aenderungen"] if ch["asset_id"] not in off]
+            elif typ in ("album", "archiv", "tag"):
+                d["medien"] = keep(d["medien"])
+                if typ == "archiv":
+                    d["alle_medien"] = [i for i in d["alle_medien"] if i not in off]
+                if typ == "album":
+                    d["anzahl"] = sum(len(v) for v in d["medien"].values())
+                    if d.get("ordner"):
+                        d["ordner_ohne"] = sorted(set(d.get("ordner_ohne") or []) | off)
+                    else:  # abgewählte gehören nicht zur Reise – wie in der Prüf-Ansicht
+                        d["ohne"] = sorted(set(d.get("ohne") or []) | off)
+                        self.album_excluded().update(off)
+            elif typ == "zeit":
+                d["aenderungen"] = [ch for ch in ({**ch, "ids": [i for i in ch["ids"] if i not in off]}
+                                                  for ch in d["aenderungen"]) if ch["ids"]]
+                d["alle_medien"] = [i for i in d["alle_medien"] if i not in off]
+            elif typ == "stapel":
+                d["stapel"] = [s for s in ({**s, "ids": [i for i in s["ids"] if i not in off]} for s in d["stapel"])
+                               if len(s["ids"]) > 1]
+                d["alle_medien"] = [i for s in d["stapel"] for i in s["ids"]]
+            left = len(self._staged_ids(e)[0])
+            if not left and not (typ == "album" and d.get("sync")):
+                self.staging.remove([e["id"]])
+                return {"entfernt": len(off), "uebrig": 0}
+            old, e["anzahl"] = e["anzahl"], left
+            e["titel"] = plan_title(d) if typ == "album" and d.get("reise") else \
+                re.sub(rf"\b{old}\b(?= (Medi|Kopie|Stapel))", str(left), e["titel"], count=1)
+            e["medien"] = [m for m in e["medien"] if m.get("id") not in off]
+            e["fehler"] = None
+            self.staging.save()
+            return {"entfernt": len(off), "uebrig": left}
+
     def apply_staged(self, entry_ids: list[str] | None = None, confirm: str | None = None) -> dict[str, Any]:
         """Vorgemerktes an Immich übertragen. Erfolgreiche Einträge verschwinden aus der Liste."""
         with self._lock:
@@ -1116,6 +1233,20 @@ class Pflege:
             out.append({"name": p.get("name"), "region": region,
                         "breite": p.get("latitude"), "laenge": p.get("longitude")})
         return out
+
+    def place_name(self, lat: float, lon: float) -> dict[str, Any]:
+        """Ortsname für einen Punkt auf der Karte (Immichs eigene Ortsdaten)."""
+        if not self.clients:
+            raise NotConfigured()
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise ActionError("Koordinaten außerhalb des gültigen Bereichs")
+        try:
+            hits = next(iter(self.clients.values())).reverse_geocode(lat, lon)
+        except ImmichError:
+            hits = []
+        p = hits[0] if hits else {}
+        return {"name": p.get("city"), "region": ", ".join(x for x in (p.get("state"), p.get("country")) if x),
+                "breite": lat, "laenge": lon}
 
     # ------------------------------------------------------------- Aufräumen
     def _hash_key(self) -> int:
@@ -1548,6 +1679,23 @@ class Pflege:
         ignore = self.album_ignore_list()
         out = [(t, ignore.contains(t.ids)) for t in trips if not overlaps(t.ids, staged)]
         return lib, homes, out
+
+    def album_media(self, album_id: str, trip_id: str | None = None) -> dict[str, Any]:
+        """Inhalt eines Albums zum Ansehen; mit ``trip_id`` stehen die noch fehlenden Medien der Reise vorn."""
+        lib = self.library()
+        album = lib.albums.get(album_id)
+        if album is None:
+            raise ActionError("Album nicht gefunden – bitte neu einlesen")
+        missing: list[dict[str, Any]] = []
+        if trip_id:
+            trip = next((t for t, _ in self._trips()[2] if t.id == trip_id), None)
+            if trip is not None:
+                missing = self._review_media([a.id for a in trip.missing(album)])
+                for m in missing:
+                    m["fehlt"], m["marke"] = True, "fehlt"
+        inside = self._review_media(album["medien"])
+        return {"id": album_id, "name": album["name"], "besitzer": album.get("besitzer"), "anzahl": len(inside),
+                "fehlend": len(missing), "medien": missing + inside}
 
     def albums_view(self, status: str | None = None, ignored: bool = False, jahr: str | None = None,
                     offset: int = 0, limit: int = 20) -> dict[str, Any]:

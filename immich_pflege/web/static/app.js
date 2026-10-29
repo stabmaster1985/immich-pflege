@@ -629,6 +629,10 @@ async function loadLocation(reset) {
   if (reset) $("#loc-list").replaceChildren();
   if (overview) {
     l.total = 0;
+    if (r.orte.some((o) => o.breite !== undefined)) {
+      $("#loc-list").append(h("div", { class: "row-gap map-all" },
+        h("button", { type: "button", class: "btn small", onclick: () => placesMap(r.orte) }, "🗺 Alle Orte auf der Karte")));
+    }
     $("#loc-list").append(...r.orte.map(renderPlaceCard));
   } else {
     l.total = r.serien_gesamt;
@@ -642,7 +646,8 @@ async function loadLocation(reset) {
   const by = r.nach_sicherheit;
   $("#loc-summary").textContent = `${n(r.medien, "Medium", "Medien")} ohne Ort · ` +
     `Vorschläge: ${by.hoch} sicher, ${by.mittel} wahrscheinlich, ${by.niedrig} unsicher` +
-    (r.extern_erlaubt ? "" : " · externe Bibliotheken gesperrt");
+    (r.extern_erlaubt ? "" : " · ");
+  if (!r.extern_erlaubt) $("#loc-summary").append(h("button", { type: "button", class: "linklike", onclick: unlockExternal }, "externe Bibliotheken gesperrt – freigeben?"));
   const tx = r.texterkennung;
   if (tx && tx.laeuft && tx.gesamt) {
     $("#loc-summary").append(` · ⟳ Texterkennung: ${tx.fertig.toLocaleString("de-DE")} von ${tx.gesamt.toLocaleString("de-DE")} Bildern geprüft`);
@@ -658,6 +663,29 @@ async function loadLocation(reset) {
   setCount("ort", r.mit_vorschlag);
   $("#loc-more").hidden = overview || l.series.length >= l.total;
   updateActionbar();
+}
+
+// Externe Bibliotheken sind anfangs gesperrt: Immich schreibt den Ort zusätzlich in eine .xmp-Datei neben
+// dem Original – dafür muss der Ordner in Immich beschreibbar eingebunden sein.
+async function unlockExternal() {
+  const ok = await confirmDialog({
+    title: "Externe Bibliotheken freigeben?",
+    body: [h("p", {}, "Dann bekommen auch Medien aus externen Bibliotheken (z. B. Kamera-Ordner auf der Festplatte) einen Ort."),
+      h("p", {}, "Immich speichert den Ort in seiner Datenbank und schreibt ihn zusätzlich in eine ", h("b", {}, ".xmp-Datei"),
+        " neben dem Original. Dafür muss der Ordner im Immich-Container ", h("b", {}, "beschreibbar"), " eingebunden sein (in der docker-compose.yml ohne ",
+        h("code", {}, ":ro"), "). Ist er nur lesbar, kann Immich die .xmp-Datei nicht anlegen und der Ort beim erneuten Einlesen der Datei verloren gehen."),
+      h("p", { class: "muted" }, "Die Originaldateien selbst ändert Immich nicht. Zurück geht es jederzeit unter Einstellungen → Fotos ohne Ort.")],
+    okLabel: "Freigeben", checkLabel: "Der Ordner ist in Immich beschreibbar eingebunden",
+  });
+  if (!ok) return;
+  try {
+    await api("api/settings", { method: "PUT", body: { location_include_external: true } });
+    S.set.loaded = false;
+    await loadTab("loc", true);
+    if (S.loc.info && !S.loc.info.extern_erlaubt) toast("Per .env festgelegt (LOCATION_INCLUDE_EXTERNAL=false) – bitte dort ändern", true);
+    else toast("Externe Bibliotheken freigegeben");
+    loadCounts();
+  } catch (e) { toast(e.message, true); }
 }
 
 function renderLocFilters(r) {
@@ -822,6 +850,8 @@ function renderPlaceCard(o) {
     h("button", { type: "button", class: "strip strip-btn", onclick: open, "aria-label": o.name + " ansehen" }, o.beispiele.map((m) => thumb(m))),
     h("div", { class: "row-gap" },
       h("button", { type: "button", class: "btn small", onclick: open }, "Ansehen"),
+      o.breite !== undefined ? h("button", { type: "button", class: "btn small", onclick: () => openMap({ titel: "🗺 " + o.name,
+        sub: n(o.anzahl, "Medium", "Medien"), punkte: [{ breite: o.breite, laenge: o.laenge, art: "vorschlag", text: o.name }] }) }, "🗺 Karte") : null,
       !special && o.mit_vorschlag ? h("button", { type: "button", class: "btn small primary", onclick: (e) => applyPlace(o, e.currentTarget) },
         `Alle vormerken (${o.mit_vorschlag})`) : null));
   return card;
@@ -883,10 +913,13 @@ function renderSeries(ser) {
   const withSugg = ser.medien.filter(selectable);
   let placeLine;
   if (v) {
-    placeLine = h("div", { class: "series-place" }, h("b", {}, "📍 " + (v.ort || `${v.breite.toFixed(4)}, ${v.laenge.toFixed(4)}`)), " ", confChip(ser.sicherheit),
-      h("div", { class: "muted small" }, v.grund));
+    placeLine = h("div", { class: "series-place" },
+      h("button", { type: "button", class: "linklike place-link", title: "Auf der Karte zeigen", onclick: () => seriesMap(ser) },
+        "📍 " + (v.ort || `${v.breite.toFixed(4)}, ${v.laenge.toFixed(4)}`)), " ", confChip(ser.sicherheit),
+      h("div", { class: "muted small" }, v.grund + (v.strecke_km > 1.5 ? ` · davor und danach ${fmtKm(v.strecke_km)} auseinander` : "")));
   } else if (!editable.length) {
-    placeLine = h("div", { class: "series-place muted" }, "Nur externe Medien – in den Einstellungen gesperrt");
+    placeLine = h("div", { class: "series-place muted" }, "Nur externe Medien – gesperrt. ",
+      h("button", { type: "button", class: "linklike", onclick: unlockExternal }, "Freigeben?"));
   } else if (ser.mehrere_orte) {
     placeLine = h("div", { class: "series-place muted" }, "Mehrere Orte in dieser Serie – einzeln prüfen");
   } else {
@@ -901,6 +934,7 @@ function renderSeries(ser) {
     buttons.append(h("button", { type: "button", class: "btn small", onclick: () => openPlaceSearch({ series: [ser.id], count: editable.length, label: fmtRange(ser) }) },
       "Ort suchen …"));
   }
+  if (v || editable.length) buttons.append(h("button", { type: "button", class: "btn small", onclick: () => seriesMap(ser) }, "🗺 Karte"));
   card.append(
     h("div", { class: "card-head" }, h("div", {}, h("h2", {}, fmtRange(ser)),
       h("span", { class: "muted" }, `${n(ser.anzahl, "Medium", "Medien")} · ${ser.benutzer.join(" & ")}`))),
@@ -915,8 +949,11 @@ function renderSeries(ser) {
     const can = selectable(m);
     const sel = l.sel.has(m.id);
     let info;
-    if (mv && !m.aenderbar) info = h("div", { class: "nosug" }, `📍 ${mv.ort || "Ort"} · extern gesperrt`);
-    else if (mv) info = h("div", {}, h("span", { class: "sug" }, `📍 ${mv.ort || mv.breite.toFixed(3) + ", " + mv.laenge.toFixed(3)}`), " ", confChip(mv.sicherheit));
+    if (mv && !m.aenderbar) info = h("div", { class: "nosug" }, `📍 ${mv.ort || "Ort"} · `,
+      h("button", { type: "button", class: "linklike", title: "Externe Bibliotheken freigeben",
+        onclick: (e) => { e.stopPropagation(); unlockExternal(); } }, "extern gesperrt"));
+    else if (mv) info = h("div", {}, h("button", { type: "button", class: "sug linklike", title: "Auf der Karte zeigen",
+      onclick: (e) => { e.stopPropagation(); mediumMap(m); } }, `📍 ${mv.ort || mv.breite.toFixed(3) + ", " + mv.laenge.toFixed(3)}`), " ", confChip(mv.sicherheit));
     else info = h("div", { class: "nosug" }, "kein Vorschlag");
     grid.append(tile({
       class: "tile" + (can ? "" : " locked") + (sel ? " selected" : ""), "aria-pressed": sel ? "true" : "false",
@@ -1080,6 +1117,192 @@ async function choosePlace(p) {
   else if (t.series) body.series = t.series;
   else body.ids = t.ids;
   await doApplyLocation(body, $("#ab-buttons button.primary") || document.createElement("button"), `${p.name} (von Hand) · ${t.label}`);
+}
+
+/* -------------------------------------------------------------- Karte */
+// Leaflet liegt im Tool (static/vendor), die Kartenkacheln kommen von OpenStreetMap
+let leafletLoad = null;
+function loadLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (!leafletLoad) {
+    leafletLoad = new Promise((ok, fail) => {
+      const css = document.createElement("link");
+      css.rel = "stylesheet"; css.href = "static/vendor/leaflet/leaflet.css";
+      const js = document.createElement("script");
+      js.src = "static/vendor/leaflet/leaflet.js";
+      js.onload = ok;
+      js.onerror = () => { leafletLoad = null; fail(new Error("Karte konnte nicht geladen werden")); };
+      document.head.append(css, js);
+    });
+  }
+  return leafletLoad;
+}
+
+const MAP_COLOR = { vorschlag: "#2563eb", vorher: "#16a34a", nachher: "#ea580c", unterwegs: "#9333ea", wahl: "#dc2626", ort: "#2563eb" };
+const MAP = { map: null, layer: null, cfg: null, pick: null };
+
+function kmBetween(a, b) {
+  const r = Math.PI / 180, dp = (b.breite - a.breite) * r, dl = (b.laenge - a.laenge) * r;
+  const x = Math.sin(dp / 2) ** 2 + Math.cos(a.breite * r) * Math.cos(b.breite * r) * Math.sin(dl / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(x));
+}
+function fmtKm(v) { return v < 1 ? `${Math.round(v * 1000)} m` : `${v.toFixed(v < 10 ? 1 : 0).replace(".", ",")} km`; }
+function fmtCoord(p) { return `${p.breite.toFixed(5)}, ${p.laenge.toFixed(5)}`; }
+
+// Punkte eines Ortsvorschlags: Vorschlag, GPS-Fotos davor/danach und die geschätzte Stelle unterwegs
+function suggestionPoints(v) {
+  const pts = [];
+  if (v.vorher) pts.push({ ...v.vorher, art: "vorher", text: `Davor (${v.vorher.abstand_text}): ${v.vorher.ort || v.vorher.datei}`, foto: v.vorher.id });
+  if (v.nachher) pts.push({ ...v.nachher, art: "nachher", text: `Danach (${v.nachher.abstand_text}): ${v.nachher.ort || v.nachher.datei}`, foto: v.nachher.id });
+  if (v.unterwegs) pts.push({ ...v.unterwegs, art: "unterwegs", text: "Geschätzt unterwegs (nach Zeit auf der Strecke)" });
+  const dup = pts.some((p) => (p.art === "vorher" || p.art === "nachher") && Math.abs(p.breite - v.breite) < 1e-6 && Math.abs(p.laenge - v.laenge) < 1e-6);
+  if (!dup) pts.unshift({ breite: v.breite, laenge: v.laenge, art: "vorschlag", text: `Vorschlag: ${v.ort || fmtCoord(v)}`, vorschlag: true });
+  else pts.forEach((p) => { if (p.breite === v.breite && p.laenge === v.laenge) { p.text += " – Vorschlag"; p.vorschlag = true; } });
+  return pts;
+}
+
+// cfg: { titel, sub, punkte: [{breite, laenge, art, text, foto?, onclick?}], strecke: [A, B]?, target? }
+// Mit target lässt sich per Tipp auf die Karte ein Ort wählen und vormerken.
+async function openMap(cfg) {
+  try { await loadLeaflet(); } catch (e) { toast(e.message, true); return; }
+  MAP.cfg = cfg; MAP.pick = null;
+  $("#map-title").textContent = cfg.titel;
+  $("#map-sub").textContent = cfg.sub || (cfg.target ? "Tippe auf die Karte, um einen Ort zu wählen." : "");
+  const dlg = $("#map-dlg");
+  if (!dlg.open) dlg.showModal();
+  if (!MAP.map) {
+    MAP.map = L.map("map", { zoomControl: true });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19,
+      attribution: "© OpenStreetMap-Mitwirkende" }).addTo(MAP.map);
+    MAP.map.on("click", (e) => { if (MAP.cfg.target) pickPoint({ breite: e.latlng.lat, laenge: e.latlng.lng }); });
+  }
+  MAP.map.invalidateSize();
+  if (MAP.layer) MAP.layer.remove();
+  MAP.layer = L.layerGroup().addTo(MAP.map);
+  const pts = cfg.punkte || [];
+  if (cfg.strecke) L.polyline(cfg.strecke.map((p) => [p.breite, p.laenge]), { color: "#9333ea", weight: 3, dashArray: "6 6" }).addTo(MAP.layer);
+  for (const p of pts) {
+    const mk = L.circleMarker([p.breite, p.laenge], { radius: p.vorschlag ? 11 : p.art === "ort" ? 9 : 8, color: p.vorschlag && p.art !== "vorschlag" ? MAP_COLOR.vorschlag : "#fff", weight: p.vorschlag && p.art !== "vorschlag" ? 4 : 2,
+      fillColor: MAP_COLOR[p.art] || MAP_COLOR.ort, fillOpacity: .95 }).addTo(MAP.layer);
+    if (p.text) mk.bindTooltip(p.text, { direction: "top", offset: [0, -6] });
+    mk.on("click", (ev) => {
+      L.DomEvent.stopPropagation(ev);
+      if (p.onclick) { p.onclick(); return; }
+      if (MAP.cfg.target) pickPoint({ breite: p.breite, laenge: p.laenge, name: p.ort || null });
+    });
+  }
+  if (pts.length > 1) MAP.map.fitBounds(L.latLngBounds(pts.map((p) => [p.breite, p.laenge])).pad(0.25), { maxZoom: 15 });
+  else if (pts.length) MAP.map.setView([pts[0].breite, pts[0].laenge], 13);
+  else MAP.map.setView([51.2, 10.4], 6);
+  renderMapInfo();
+}
+
+function routeLink(a, b) {
+  return `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${a.breite},${a.laenge};${b.breite},${b.laenge}`;
+}
+
+// Route über die Straße: fragt den freien OSRM-Dienst (nur auf Knopfdruck), sonst bleibt die Luftlinie
+async function showRoute(a, b, btn, out) {
+  busy(btn, true);
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${a.laenge},${a.breite};${b.laenge},${b.breite}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    const r = await res.json();
+    if (!res.ok || !r.routes || !r.routes.length) throw new Error("Keine Route gefunden");
+    const rt = r.routes[0];
+    L.geoJSON(rt.geometry, { style: { color: "#2563eb", weight: 4, opacity: .8 } }).addTo(MAP.layer);
+    out.textContent = `Route mit dem Auto: ${fmtKm(rt.distance / 1000)} · etwa ${fmtDur(rt.duration)}`;
+    btn.hidden = true;
+  } catch (e) {
+    out.textContent = "Route nicht berechenbar (" + e.message + ") – der Link öffnet sie bei OpenStreetMap.";
+    busy(btn, false);
+  }
+}
+
+function renderMapInfo() {
+  const cfg = MAP.cfg;
+  const box = $("#map-info");
+  const parts = [];
+  const legend = [...new Set((cfg.punkte || []).map((p) => p.art))].filter((a) => a !== "ort");
+  if (legend.length) {
+    const label = { vorschlag: "Vorschlag", vorher: "GPS-Foto davor", nachher: "GPS-Foto danach", unterwegs: "geschätzt unterwegs" };
+    const sugg = (cfg.punkte || []).find((p) => p.vorschlag);
+    parts.push(h("div", { class: "map-legend" }, ...legend.map((a) => h("span", {}, h("i", { style: `background:${MAP_COLOR[a]}` }),
+      (label[a] || a) + (sugg && sugg.art === a && a !== "vorschlag" ? " = Vorschlag" : "")))));
+  }
+  if (cfg.strecke) {
+    const [a, b] = cfg.strecke;
+    const out = h("span", { class: "muted small" });
+    parts.push(h("div", { class: "map-line" },
+      h("b", {}, `Luftlinie davor → danach: ${fmtKm(kmBetween(a, b))}`), " ",
+      h("button", { type: "button", class: "btn small", onclick: (e) => showRoute(a, b, e.currentTarget, out) }, "Route berechnen"), " ",
+      h("a", { href: routeLink(a, b), target: "_blank", rel: "noopener", class: "small" }, "In OpenStreetMap ↗"), " ", out));
+  }
+  const fotos = (cfg.punkte || []).filter((p) => p.foto);
+  if (fotos.length) {
+    parts.push(h("div", { class: "strip map-photos" }, fotos.map((p) => {
+      const img = thumb({ id: p.foto, dateiname: p.datei });
+      return h("figure", { class: "stage-fig" }, img, h("figcaption", {}, p.art === "vorher" ? "davor" : "danach"));
+    })));
+  }
+  if (MAP.pick) {
+    const p = MAP.pick;
+    const near = (cfg.punkte || []).filter((x) => x.art !== "ort").map((x) => `${{ vorschlag: "Vorschlag", vorher: "davor", nachher: "danach", unterwegs: "unterwegs" }[x.art]} ${fmtKm(kmBetween(p, x))}`);
+    parts.push(h("div", { class: "map-pick" },
+      h("div", {}, h("b", {}, "📍 " + (p.name || "Gewählter Punkt")), p.region ? h("span", { class: "muted" }, " · " + p.region) : null,
+        h("div", { class: "muted small" }, fmtCoord(p) + (near.length ? " · Abstand: " + near.join(", ") : ""))),
+      h("button", { type: "button", class: "btn primary", onclick: (e) => stagePicked(e.currentTarget) },
+        `Hier vormerken (${n(cfg.target.count, "Medium", "Medien")})`)));
+  } else if (cfg.target) {
+    parts.push(h("p", { class: "muted small" }, "Tippe auf die Karte oder einen Punkt, um den Ort für " + n(cfg.target.count, "Medium", "Medien") + " zu wählen."));
+  }
+  box.replaceChildren(...parts);
+}
+
+async function pickPoint(p) {
+  MAP.pick = { ...p };
+  if (MAP.pickMarker) MAP.pickMarker.remove();
+  MAP.pickMarker = L.circleMarker([p.breite, p.laenge], { radius: 10, color: "#fff", weight: 3, fillColor: MAP_COLOR.wahl, fillOpacity: 1 }).addTo(MAP.layer);
+  renderMapInfo();
+  try {
+    const r = await api(`api/places/reverse?breite=${p.breite}&laenge=${p.laenge}`);
+    if (MAP.pick && MAP.pick.breite === p.breite && MAP.pick.laenge === p.laenge) {
+      MAP.pick.name = p.name || r.name; MAP.pick.region = r.region;
+      renderMapInfo();
+    }
+  } catch (_) { /* ohne Namen geht es auch */ }
+}
+
+async function stagePicked(btn) {
+  const t = MAP.cfg.target, p = MAP.pick;
+  const body = { place: { breite: +p.breite.toFixed(6), laenge: +p.laenge.toFixed(6), name: p.name || null } };
+  if (t.ort) { body.ort = t.ort; if (t.monat) body.monat = t.monat; }
+  else if (t.series) body.series = t.series;
+  else body.ids = t.ids;
+  if (await doApplyLocation(body, btn, `${p.name || fmtCoord(p)} (Karte) · ${t.label}`)) $("#map-dlg").close();
+}
+
+function seriesMap(ser) {
+  const v = ser.vorschlag;
+  const editable = ser.medien.filter((m) => m.aenderbar).length;
+  openMap({ titel: `🗺 ${fmtRange(ser)}`, sub: v ? `Vorschlag: ${v.ort || fmtCoord(v)} · ${v.grund}` : null,
+    punkte: v ? suggestionPoints(v) : [], strecke: v && v.vorher && v.nachher && v.strecke_km > 0 ? [v.vorher, v.nachher] : null,
+    target: editable ? { series: [ser.id], count: editable, label: fmtRange(ser) } : null });
+}
+
+function mediumMap(m) {
+  const v = m.vorschlag;
+  openMap({ titel: `🗺 ${m.dateiname}`, sub: `${fmtTaken(m.aufnahme)} · ${v.grund}`, punkte: suggestionPoints(v),
+    strecke: v.vorher && v.nachher && v.strecke_km > 0 ? [v.vorher, v.nachher] : null,
+    target: m.aenderbar ? { ids: [m.id], count: 1, label: m.dateiname } : null });
+}
+
+// Alle Orte der Übersicht auf einer Karte; Antippen öffnet den Ort
+function placesMap(orte) {
+  const pts = orte.filter((o) => o.breite !== undefined).map((o) => ({ breite: o.breite, laenge: o.laenge, art: "ort",
+    text: `${o.name}: ${n(o.anzahl, "Medium", "Medien")}`,
+    onclick: () => { $("#map-dlg").close(); S.loc.ort = o.key; loadTab("loc", true); window.scrollTo(0, 0); } }));
+  openMap({ titel: "🗺 Orte ohne Ort-Angabe", sub: `${n(pts.length, "Ort", "Orte")} mit Vorschlag – antippen öffnet den Ort`, punkte: pts });
 }
 
 /* -------------------------------------------------------------- Tags */
@@ -1261,7 +1484,11 @@ function rvGrouper(cfg) {
 
 function openReview(cfg) {
   try { RV.size = localStorage.getItem("pflege-rv-size") || "m"; } catch (_) { /* egal */ }
-  Object.assign(RV, { cfg, medien: cfg.medien, off: new Set(cfg.ohne || []), mode: "waehlen" });
+  const only = !!cfg.nurAnsehen;  // nur ansehen: ohne Auswahl, Antippen öffnet groß
+  Object.assign(RV, { cfg, medien: cfg.medien, off: new Set(cfg.ohne || []), mode: only ? "ansehen" : "waehlen" });
+  $("#review").classList.toggle("rv-view", only);
+  $("#rv-all").parentElement.querySelectorAll("button").forEach((b) => { b.hidden = only; });
+  $('[data-rv-mode="waehlen"]').parentElement.hidden = only;
   const key = rvGrouper(cfg);
   const groups = new Map();
   cfg.medien.forEach((m, i) => {
@@ -1362,8 +1589,10 @@ function rvCount() {
   const total = RV.medien.length, chosen = total - RV.medien.filter((m) => RV.off.has(m.id)).length;
   const de = (x) => x.toLocaleString("de-DE");
   const noun = RV_NOUN[RV.cfg.gruppe] || ["Gruppe", "Gruppen"];
-  $("#rv-count").textContent = `${de(chosen)} von ${de(total)} ausgewählt · ${RV.groups.length} ${RV.groups.length === 1 ? noun[0] : noun[1]}`;
-  $("#rv-foot-info").textContent = chosen === total ? "alle ausgewählt" : `${de(total - chosen)} abgewählt`;
+  const groupsText = `${RV.groups.length} ${RV.groups.length === 1 ? noun[0] : noun[1]}`;
+  $("#rv-count").textContent = RV.cfg.nurAnsehen ? `${de(total)} ${total === 1 ? "Medium" : "Medien"} · ${groupsText}`
+    : `${de(chosen)} von ${de(total)} ausgewählt · ${groupsText}`;
+  $("#rv-foot-info").textContent = RV.cfg.nurAnsehen ? (RV.cfg.fuss || "") : chosen === total ? "alle ausgewählt" : `${de(total - chosen)} abgewählt`;
   $("#rv-actions").replaceChildren(...RV.cfg.aktionen.map((a) => h("button", { type: "button", class: "btn " + (a.klasse || ""), disabled: !chosen && !a.leer,
     onclick: async (e) => {
       const btn = e.currentTarget;
@@ -1406,13 +1635,18 @@ async function hideSuggestion(s, undo) {
   } catch (e) { toast(e.message, true); }
 }
 
-const SMART_REVIEW = 400;  // Treffer je Benutzer für die Prüf-Ansicht
+const SMART_REVIEW = 400;  // Treffer je Benutzer für die Prüf-Ansicht (Standard, oben wählbar)
+
+function smartSize() {
+  try { return +localStorage.getItem("pflege-ki-anzahl") || SMART_REVIEW; } catch (_) { return SMART_REVIEW; }
+}
 
 async function loadSmart(q) {
   const g = S.sug;
+  g.lastQuery = q;
   const box = $("#smart-box");
   box.replaceChildren(h("p", { class: "empty" }, "Frage Immichs KI-Suche …"));
-  const params = new URLSearchParams({ anzahl: SMART_REVIEW });
+  const params = new URLSearchParams({ anzahl: smartSize() });
   if (q.begriff) params.set("begriff", q.begriff);
   if (q.suche) params.set("suche", q.suche);
   if (q.tag) params.set("tag", q.tag);
@@ -1426,21 +1660,56 @@ async function loadSmart(q) {
   document.querySelectorAll("#smart-terms .chip-btn").forEach((b) => b.classList.toggle("on", b.textContent === q.begriff));
   const again = h("button", { type: "button", class: "btn small", onclick: () => openSmartReview(r) }, "Wieder öffnen");
   box.replaceChildren(h("p", { class: "muted small" }, r.medien.length ? `${r.medien.length} Treffer für „${r.suche}“ ` : "Keine neuen Treffer – alles schon getaggt?",
-    r.medien.length ? again : null));
+    r.medien.length ? again : null, " ", smartHiddenLink(r)));
   if (r.medien.length) openSmartReview(r);
+}
+
+function smartHiddenLink(r) {
+  return r.ausgeblendet ? h("button", { type: "button", class: "linklike small", onclick: (e) => openSmartHidden(r.tag, e.currentTarget) },
+    `${r.ausgeblendet} für „${r.tag}“ ausgeblendet – ansehen`) : "";
+}
+
+// Ausgeblendete KI-Treffer eines Tags: ansehen und einzelne wieder zeigen
+async function openSmartHidden(tag, btn) {
+  busy(btn, true);
+  let r;
+  try { r = await api("api/suggestions/smart/hidden?tag=" + encodeURIComponent(tag)); } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  openReview({
+    titel: `Ausgeblendet für „${tag}“`, medien: r.medien, gruppe: "monat", ohne: r.medien.map((m) => m.id),
+    hinweis: "Diese Treffer zeigt die KI-Suche für diesen Tag nicht mehr. Wähle die aus, die wieder erscheinen sollen.",
+    aktionen: [{ klasse: "primary", text: (k) => `${k} wieder zeigen`, run: async (ids) => {
+      await api("api/suggestions/smart/hide", { method: "POST", body: { tag, ids, undo: true } });
+      toast(`${n(ids.length, "Treffer erscheint", "Treffer erscheinen")} wieder`);
+      if (S.sug.lastQuery) loadSmart(S.sug.lastQuery);
+    } }],
+  });
 }
 
 // KI-Treffer prüfen: nach Passgenauigkeit sortiert, in Blöcken zu 50. Anfangs ist nichts gewählt –
 // das erste Bild antippen, das nicht mehr passt; alles davor wird gewählt. Danach einzeln nachbessern.
-function openSmartReview(r) {
+function openSmartReview(r, off = null) {
   const g = S.sug;
   const tagIn = h("input", { type: "text", value: g.tag, "aria-label": "Tag", oninput: (e) => { g.tag = e.target.value; rvCount(); } });
   openReview({
     titel: `KI-Suche: ${r.begriff || r.suche}`, medien: r.medien, gruppe: "rang", rang: true,
-    ohne: r.medien.map((m) => m.id),
-    hinweis: "Sortiert nach Passgenauigkeit. Tippe auf das erste Bild, das nicht mehr passt – alles davor wird gewählt. Danach unter „abwählen“ einzeln nachbessern.",
+    ohne: off ? r.medien.map((m) => m.id).filter((id) => off.has(id)) : r.medien.map((m) => m.id),
+    hinweis: "Sortiert nach Passgenauigkeit. Tippe auf das erste Bild, das nicht mehr passt – alles davor wird gewählt. Danach unter „abwählen“ einzeln nachbessern."
+      + " „Ausblenden“ nimmt die gewählten Bilder für diesen Tag dauerhaft aus der Suche.",
     extra: h("label", { class: "field rv-tag" }, "Tag", tagIn),
     aktionen: [
+      { text: (k) => `${k} ausblenden`, run: async (ids) => {
+        const tag = g.tag.trim();
+        if (!tag) { toast("Bitte einen Tag eintragen", true); return false; }
+        const res = await api("api/suggestions/smart/hide", { method: "POST", body: { tag, ids } });
+        toast(`${n(ids.length, "Treffer", "Treffer")} ausgeblendet – erscheinen für „${tag}“ nicht mehr`);
+        const gone = new Set(ids);
+        const keepOff = new Set([...RV.off].filter((id) => !gone.has(id)));
+        Object.assign(r, { medien: r.medien.filter((m) => !gone.has(m.id)), ausgeblendet: res.ausgeblendet });
+        const mode = RV.mode;
+        openSmartReview(r, keepOff);
+        RV.mode = mode; renderReview();
+        return false;  // Prüf-Ansicht bleibt offen
+      } },
       { text: (k) => `${k} archivieren`, run: async (ids) => {
         const res = await api("api/staged/archive", { method: "POST", body: { ids, label: r.begriff || r.suche } });
         toast(`${n(res.vorgemerkt, "Medium", "Medien")} zum Archivieren vorgemerkt`);
@@ -2769,12 +3038,14 @@ function renderTrip(t) {
     if (t.album) found.append(albumLinks(t.album));
   } else if (t.status === "ergaenzen") {
     found.append(`Passendes Album gefunden: ${albumLabel(t.album)} – enthält ${t.album.in_reise} von ${t.anzahl}, ${t.fehlend} fehlen. `, albumLinks(t.album));
-  } else {
+  }
+  if (t.album) found.append(" ", h("button", { type: "button", class: "btn small", onclick: (e) => openAlbumView(t.album, t, e.currentTarget) }, "Album ansehen")); else {
     found.append(`Kein passendes Album – geprüft: ${n(S.alb.info.alben, "Album", "Alben")} beider Benutzer.`);
   }
   const others = t.kandidaten.filter((k) => !t.album || k.id !== t.album.id);
   if (others.length) found.append(h("div", { class: "muted small" }, (t.status === "vorhanden" && !t.album ? "" : "Auch Fotos in: "),
-    ...others.map((k, i) => h("span", { class: "alb-other" }, (i ? " · " : "") + `„${k.name}“ (${k.in_reise}) `, albumLinks(k)))));
+    ...others.map((k, i) => h("span", { class: "alb-other" }, (i ? " · " : "") + `„${k.name}“ (${k.in_reise}) `,
+      h("button", { type: "button", class: "linklike small", onclick: (e) => openAlbumView(k, t, e.currentTarget) }, "ansehen"), " ", albumLinks(k)))));
   card.append(found);
 
   if (t.beispiele.length) {
@@ -2811,6 +3082,30 @@ function renderTrip(t) {
       h("button", { type: "button", class: "btn small primary", onclick: (e) => stageTrips([t], e.currentTarget) }, "Vormerken"),
       h("button", { type: "button", class: "btn small", onclick: () => ignoreTrip(t, false) }, "Kein Album")));
   return card;
+}
+
+// Album im Tool ansehen: was schon drin ist, und vorn die Medien der Reise, die noch fehlen
+async function openAlbumView(al, t, btn) {
+  busy(btn, true);
+  let r;
+  try { r = await api(`api/albums/${encodeURIComponent(al.id)}/media` + (t ? "?reise=" + encodeURIComponent(t.id) : "")); }
+  catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  const month = rvGrouper({});
+  const canAdd = t && r.fehlend && al.besitzer !== "anderer Benutzer" && !S.alb.ignored;
+  openReview({
+    titel: `🖼 „${r.name}“`, medien: r.medien, nurAnsehen: true,
+    gruppe: (m) => (m.fehlt ? ["fehlt", `Fehlt noch im Album (aus „${t.name}“)`] : month(m)),
+    hinweis: `${n(r.anzahl, "Medium", "Medien")} im Album` + (r.fehlend ? ` · ${n(r.fehlend, "Medium", "Medien")} der Reise fehlen noch (oben, markiert)` : "")
+      + ". Antippen öffnet groß.",
+    fuss: r.besitzer ? `gehört ${r.besitzer}` : "",
+    aktionen: [
+      canAdd ? { klasse: "primary", leer: true, text: () => `${n(r.fehlend, "fehlendes", "fehlende")} ergänzen`, run: async () => {
+        S.alb.choice[t.id] = { album: al.id, name: "" };
+        await stageTrips([t], $("#rv-actions button.primary"));
+      } } : null,
+      { leer: true, text: () => "Schließen", run: async () => {} },
+    ].filter(Boolean),
+  });
 }
 
 function tripSelText(t) {
@@ -3061,12 +3356,34 @@ function stageEntry(x) {
       h("div", { class: "grow" }, h("div", { class: "se-title" }, x.titel),
         h("div", { class: "muted small" }, `${n(x.anzahl, "Medium", "Medien")} · vorgemerkt ${fmtDateTime(x.erstellt)}` + (trash ? ` · 🗑 ${trash}` : ""))),
       h("div", { class: "se-actions" },
+        x.typ !== "albenpflege" ? h("button", { type: "button", class: "btn small", title: "Alle Medien ansehen, einzelne abwählen",
+          onclick: (ev) => openStagedReview(x, ev.currentTarget) }, "Ansehen") : null,
         h("button", { type: "button", class: "btn small", title: "Zurücknehmen", onclick: (ev) => unstage(x, ev.currentTarget) }, "↩"),
         h("button", { type: "button", class: "btn small primary", onclick: (ev) => applyStaged([x.id], ev.currentTarget) }, "Übertragen"))),
     x.fehler ? h("div", { class: "banner err" }, "Letzte Übertragung fehlgeschlagen: " + x.fehler) : null,
     x.typ === "album" && x.daten.hinweise && x.daten.hinweise.length ? h("div", { class: "banner warn" }, x.daten.hinweise.join(" · ")) : null,
     x.typ === "album" && x.daten.album_id ? h("div", { class: "small" }, "Album ansehen: ", albumLinks({ id: x.daten.album_id, name: x.daten.name })) : null,
     x.medien.length ? stageMedia(x) : null);
+}
+
+// Vorgemerkten Eintrag ansehen: alle Medien, einzelne abwählen (fallen aus dem Eintrag)
+async function openStagedReview(x, btn) {
+  busy(btn, true);
+  let r;
+  try { r = await api(`api/staged/${encodeURIComponent(x.id)}/media`); } catch (e) { toast(e.message, true); return; } finally { busy(btn, false); }
+  openReview({
+    titel: x.titel, medien: r.medien, gruppe: "monat",
+    hinweis: "Antippen nimmt ein Medium aus dem Eintrag. Unter „ansehen“ öffnet es groß.",
+    aktionen: [{ klasse: "primary", leer: true, text: (k) => (k === r.medien.length ? "Schließen" : k ? `${k.toLocaleString("de-DE")} behalten, Rest herausnehmen` : "Ganzen Eintrag zurücknehmen"),
+      run: async (ids, ohne) => {
+        if (!ohne.length) return;
+        const res = await api(`api/staged/${encodeURIComponent(x.id)}/ohne`, { method: "POST", body: { ohne } });
+        toast(res.uebrig ? `${n(res.entfernt, "Medium", "Medien")} herausgenommen` : "Alles abgewählt – Eintrag zurückgenommen");
+        const src = STAGE_SOURCE[x.typ];
+        await Promise.all([loadTab("stage", true), S[src] && S[src].loaded ? loadTab(src, true) : null]);
+        loadCounts();
+      } }],
+  });
 }
 
 async function unstageGroup(g, btn) {
@@ -3427,6 +3744,7 @@ $("#set-btn").append(icon("gear"));
 $("#scan-btn").addEventListener("click", () => rescan());
 $("#v-close").addEventListener("click", () => $("#viewer").close());
 $("#rv-close").addEventListener("click", () => $("#review").close());
+$("#map-close").addEventListener("click", () => $("#map-dlg").close());
 $("#rv-all").addEventListener("click", () => setAllReview(true));
 $("#rv-jump").addEventListener("change", (e) => {
   const sec = $("#rv-body").querySelectorAll(".rv-month")[+e.target.value];  // Gruppe
@@ -3486,6 +3804,8 @@ const autoMore = new IntersectionObserver((entries) => {
 }, { rootMargin: "0px 0px 400px 0px" });
 ["#dup-more", "#loc-more", "#cln-more", "#alb-more"].forEach((sel) => autoMore.observe($(sel)));
 $("#tags-reload").addEventListener("click", () => loadTab("tags", true));
+$("#smart-size").addEventListener("change", (e) => { try { localStorage.setItem("pflege-ki-anzahl", e.target.value); } catch (_) { /* egal */ } });
+try { const v = localStorage.getItem("pflege-ki-anzahl"); if (v) $("#smart-size").value = v; } catch (_) { /* egal */ }
 $("#smart-go").addEventListener("click", () => { const q = $("#smart-q").value.trim(); if (q) loadSmart({ suche: q }); });
 $("#smart-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#smart-go").click(); } });
 document.querySelectorAll(".help-btn").forEach((b) => b.addEventListener("click", () => openHelp(b.dataset.help)));

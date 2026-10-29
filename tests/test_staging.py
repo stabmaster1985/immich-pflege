@@ -104,3 +104,29 @@ def test_staging_survives_restart(env, http):
         a.post("/api/staged/duplicates", json={"action": "album", "groups": [{"id": gid}]})
     with TestClient(create_app(env, http=http, auto_scan_enabled=False)) as b:
         assert b.get("/api/staged").json()["anzahl"] == 1
+
+
+def test_view_and_deselect_media_of_staged_entry(web, state):
+    over = web.get("/api/no-location?overview=true").json()
+    web.post("/api/staged/no-location", json={"ort": over["orte"][0]["key"], "label": "San Gimignano"})
+    gid = next(g["id"] for g in web.get("/api/duplicates").json()["gruppen"] if g["art"] == "aehnlich")
+    web.post("/api/staged/duplicates", json={"action": "papierkorb", "groups": [{"id": gid}]})
+    entries = {e["typ"]: e for e in web.get("/api/staged").json()["eintraege"]}
+
+    ort = web.get(f"/api/staged/{entries['ort']['id']}/media").json()
+    assert len(ort["medien"]) == 2 and all(m["marke"] for m in ort["medien"])
+    drop = ort["medien"][0]["id"]
+    r = web.post(f"/api/staged/{entries['ort']['id']}/ohne", json={"ohne": [drop]}).json()
+    assert r == {"entfernt": 1, "uebrig": 1}
+    e = next(x for x in web.get("/api/staged").json()["eintraege"] if x["typ"] == "ort")
+    assert e["anzahl"] == 1 and [ch["asset_id"] for ch in e["daten"]["aenderungen"]] != [drop]
+    assert drop in {m["id"] for s in web.get("/api/no-location?only_suggestions=false").json()["serien"]
+                    for m in s["medien"]}  # wieder in der Übersicht
+
+    dup = web.get(f"/api/staged/{entries['duplikat']['id']}/media").json()
+    assert [m["marke"] for m in dup["medien"]] == ["🗑"]
+    # alles abgewählt -> Eintrag fällt weg
+    r = web.post(f"/api/staged/{entries['duplikat']['id']}/ohne", json={"ohne": [dup["medien"][0]["id"]]}).json()
+    assert r["uebrig"] == 0
+    assert {x["typ"] for x in web.get("/api/staged").json()["eintraege"]} == {"ort"}
+    assert web.get("/api/staged/unbekannt/media").status_code == 400

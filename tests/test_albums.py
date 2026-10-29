@@ -279,3 +279,27 @@ def test_album_check_names_same_named_album(web, state):
     photo = next(i for i in state.asset_ids_in_album(julia_album))
     r = web.get("/api/album-check", params={"asset": photo, "album": frank_album}).json()
     assert not r["im_album_immich"] and "von julia" in r["text"] and "demselben Namen" in r["text"]
+
+
+def test_album_view_with_missing_first(web, state):
+    tosk = trip_named(web.get("/api/album-suggestions").json()["reisen"], "Toskana")
+    r = web.get(f"/api/albums/{tosk['album']['id']}/media", params={"reise": tosk["id"]}).json()
+    assert r["name"] == "Toskana 2024" and r["fehlend"] == tosk["fehlend"] == 26
+    assert all(m.get("fehlt") for m in r["medien"][:26]) and not any(m.get("fehlt") for m in r["medien"][26:])
+    assert len(r["medien"]) == 26 + r["anzahl"]
+    assert web.get("/api/albums/gibtsnicht/media").status_code == 400
+
+
+def test_deselect_in_staged_album_entry(web, state):
+    tid = trip_named(web.get("/api/album-suggestions").json()["reisen"], "Toskana")["id"]
+    web.post("/api/staged/albums", json={"trips": [{"id": tid}]})
+    entry = web.get("/api/staged").json()["eintraege"][0]
+    media = web.get(f"/api/staged/{entry['id']}/media").json()["medien"]
+    drop = [m["id"] for m in media[:3]]
+    assert web.post(f"/api/staged/{entry['id']}/ohne", json={"ohne": drop}).json()["uebrig"] == len(media) - 3
+    e = web.get("/api/staged").json()["eintraege"][0]
+    assert e["anzahl"] == len(media) - 3 and set(drop) <= set(e["daten"]["ohne"])
+    assert str(len(media) - 3) in e["titel"]
+    web.post("/api/staged/apply", json={})
+    album = next(a for a in state.albums.values() if a["albumName"] == "Toskana 2024")
+    assert not set(drop) & state.asset_ids_in_album(album["id"])

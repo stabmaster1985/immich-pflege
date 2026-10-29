@@ -122,6 +122,20 @@ def test_smart_search_size_for_review(web, state):
     assert len(few["medien"]) == 6  # 3 je Benutzer
     many = web.get("/api/suggestions/smart", params={"begriff": "Hund", "anzahl": 400}).json()
     assert len(many["medien"]) > 120
-    assert web.get("/api/suggestions/smart", params={"begriff": "Hund", "anzahl": 5000}).status_code == 422
+    assert web.get("/api/suggestions/smart", params={"begriff": "Hund", "anzahl": 5001}).status_code == 422
     calls = [c for c in state.calls if c[1] == "/api/search/smart"]
     assert calls  # Immich wurde gefragt
+
+
+def test_smart_search_skips_excluded_and_pages(web, state):
+    """Schon getaggte/ausgeblendete zählen nicht mit – dahinter wird weitergeblättert."""
+    first = web.get("/api/suggestions/smart", params={"begriff": "Hund", "anzahl": 3}).json()
+    ids = [m["id"] for m in first["medien"]]
+    assert web.post("/api/suggestions/smart/hide", json={"tag": first["tag"], "ids": ids}).json()["ausgeblendet"] == len(ids)
+    again = web.get("/api/suggestions/smart", params={"begriff": "Hund", "anzahl": 3}).json()
+    assert len(again["medien"]) == 6 and not set(ids) & {m["id"] for m in again["medien"]}
+    assert again["ausgeblendet"] == len(ids)
+    hidden = web.get("/api/suggestions/smart/hidden", params={"tag": first["tag"].upper()}).json()
+    assert {m["id"] for m in hidden["medien"]} == set(ids)
+    web.post("/api/suggestions/smart/hide", json={"tag": first["tag"], "ids": ids, "undo": True})
+    assert web.get("/api/suggestions/smart", params={"begriff": "Hund", "anzahl": 3}).json()["ausgeblendet"] == 0

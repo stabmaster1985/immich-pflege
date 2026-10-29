@@ -46,7 +46,7 @@ Verpasst der Container den Termin, holt er ihn beim nächsten Start nach, solang
 ## Fotos ohne Ort
 
 - **Zeitfenster:** Wie weit ein Foto mit GPS zeitlich entfernt sein darf (Standard ±2 Stunden).
-- **Externe Bibliotheken:** Standardmäßig werden sie nicht geändert.
+- **Externe Bibliotheken:** Standardmäßig werden sie nicht geändert. Zum Freigeben muss der Ordner in Immich beschreibbar eingebunden sein (ohne `:ro`), weil Immich den Ort zusätzlich in eine `.xmp`-Datei neben dem Original schreibt.
 - **Screenshots ausblenden:** Screenshots und Bildschirmaufnahmen tauchen nicht auf.
 
 ## Zugang

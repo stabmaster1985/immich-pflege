@@ -34,11 +34,13 @@ Immich versteht Bildinhalte (maschinelles Lernen, „Smart Search“). Das Tool 
 
 Die KI-Suche liefert **keine feste Trefferzahl**, sondern alles nach Passgenauigkeit sortiert: oben die besten, weiter unten immer unpassender. Deshalb:
 
-1. Begriff antippen. Die Prüf-Ansicht öffnet sich mit den passendsten Treffern von euch beiden (je Benutzer bis zu 400), in Blöcken zu 50. Schon getaggte und vorgemerkte fehlen. **Anfangs ist nichts ausgewählt.**
+1. Begriff antippen (oder einen eigenen eingeben und **Suchen**). Die Prüf-Ansicht öffnet sich mit den passendsten Treffern von euch beiden, in Blöcken zu 50. Wie viele es je Person sind, stellst du neben dem Suchfeld unter **Treffer je Person** ein (200 bis 5.000, Standard 400). Schon getaggte, vorgemerkte und ausgeblendete fehlen; dafür blättert das Tool in Immichs Rangliste weiter, so dass trotzdem die gewählte Zahl neuer Treffer kommt. **Anfangs ist nichts ausgewählt.**
 2. Auf das **erste Bild tippen, das nicht mehr passt** (Modus „ab hier abwählen“). Alles davor wird ausgewählt, der Rest abgewählt.
 3. Unter **abwählen** einzelne Ausreißer davor herausnehmen oder spätere Treffer dazunehmen.
 4. Tag oben prüfen (Vorschlag z. B. `Tiere/Hund`) und unten **… taggen** oder **… archivieren**.
 5. Den Begriff erneut antippen: Dann kommen die nächsten Treffer.
+
+**Unpassende dauerhaft ausblenden:** Fehltreffer (z. B. ein Wolf bei „Hund“) auswählen und **… ausblenden** tippen. Sie verschwinden sofort und erscheinen für diesen Tag nie wieder, die Prüf-Ansicht bleibt offen. Unter den Treffern steht danach „… für „Tiere/Hund“ ausgeblendet – ansehen“: Dort lassen sich einzelne wieder zeigen.
 
 Voraussetzung: In Immich ist das maschinelle Lernen (Smart Search) aktiv.
 

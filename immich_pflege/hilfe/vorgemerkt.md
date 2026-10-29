@@ -10,8 +10,9 @@ In der Oberfläche geht keine Änderung sofort an Immich. Was du unter **Aufräu
    - Orte: unter jedem Bild steht der neue Ort.
    - Alben: neues Album oder welches ergänzt wird, mit wem es geteilt wird, Beispielbilder.
    - Tags: Regel, Tags und Beispielbilder.
-3. **Zurücknehmen** (↩ am Eintrag) legt einen Eintrag wieder in die Übersicht zurück. Er wird dort neu bewertet.
-4. **Übertragen** führt einen einzelnen Eintrag in Immich aus, **Alle übertragen** in der Aktionsleiste alle auf einmal. Geht etwas in den Papierkorb, musst du das vorher ausdrücklich bestätigen.
+3. **Ansehen** am Eintrag öffnet **alle** betroffenen Medien in der Prüf-Ansicht (nicht nur die Beispielbilder). Bilder antippen nimmt sie aus dem Eintrag, unter „groß ansehen“ öffnest du sie in voller Größe. **… behalten, Rest herausnehmen** speichert das. Die herausgenommenen Medien kommen zurück in ihre Übersicht (bei Reisen gelten sie wie dort abgewählte als „gehört nicht zur Reise“). Ist alles abgewählt, fällt der ganze Eintrag weg. Bei Tag-Regeln wird aus der Regel dabei eine feste Auswahl.
+4. **Zurücknehmen** (↩ am Eintrag) legt einen Eintrag wieder in die Übersicht zurück. Er wird dort neu bewertet.
+5. **Übertragen** führt einen einzelnen Eintrag in Immich aus, **Alle übertragen** in der Aktionsleiste alle auf einmal. Geht etwas in den Papierkorb, musst du das vorher ausdrücklich bestätigen.
 
 Erfolgreich Übertragenes verschwindet aus der Liste. Schlägt ein Eintrag fehl, z. B. weil Immich nicht erreichbar war, bleibt er mit der Fehlermeldung stehen und kann später erneut übertragen werden.
 

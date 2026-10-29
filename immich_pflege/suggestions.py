@@ -28,7 +28,9 @@ MIN_COUNTRY = 10  # so viele Fotos braucht ein Land für einen Vorschlag
 MIN_CAMERA = 30
 MIN_SOURCE = 10
 SMART_SIZE = 120  # Treffer je Benutzer, die die KI-Suche holt (Standard)
-SMART_MAX = 1000  # mehr gibt Immich pro Abfrage nicht her
+SMART_MAX = 5000  # höchstens so viele neue Treffer je Benutzer
+SMART_PAGE = 1000  # mehr gibt Immich pro Abfrage nicht her
+SMART_SCAN = 20000  # so weit wird in der Rangliste höchstens geblättert (schon getaggte übersprungen)
 WHATSAPP_RE = r"-WA\d{4}"
 
 # Begriffe für die KI-Suche: Anzeige, Suchtext (englisch – Immichs Standardmodell versteht Englisch am
@@ -94,18 +96,66 @@ def data_suggestions(lib: Library) -> list[dict[str, Any]]:
 
 def smart_results(clients: dict[str, ImmichClient], lib: Library, query: str,
                   exclude: set[str], size: int = SMART_SIZE) -> list[str]:
-    """Treffer der KI-Suche beider Benutzer, abwechselnd nach Rang zusammengeführt (nur eigene Medien)."""
+    """Treffer der KI-Suche beider Benutzer, abwechselnd nach Rang zusammengeführt (nur eigene Medien).
+
+    Schon getaggte, vorgemerkte und ausgeblendete (``exclude``) werden übersprungen und weiter hinten
+    nachgeholt – so kommen beim nächsten Suchen wirklich die nächsten Treffer."""
+    size = max(1, min(size, SMART_MAX))
     per_user: list[list[str]] = []
     for name, client in clients.items():
-        ids = [raw["id"] for raw in client.smart_search(query, max(1, min(size, SMART_MAX)))
-               if raw.get("id") in lib.assets and lib.assets[raw["id"]].owner == name]
-        per_user.append([i for i in ids if i not in exclude])
+        ids: list[str] = []
+        page, scanned = 1, 0
+        while len(ids) < size and scanned < SMART_SCAN:
+            items, more = client.smart_search_page(query, SMART_PAGE if size > SMART_PAGE // 2 else min(SMART_PAGE, size * 2), page)
+            scanned += len(items)
+            ids += [raw["id"] for raw in items if raw.get("id") in lib.assets and lib.assets[raw["id"]].owner == name
+                    and raw["id"] not in exclude and raw["id"] not in ids]
+            if not more or not items:
+                break
+            page += 1
+        per_user.append(ids[:size])
     merged: list[str] = []
     for rank in range(max((len(x) for x in per_user), default=0)):
         for ids in per_user:
             if rank < len(ids) and ids[rank] not in merged:
                 merged.append(ids[rank])
     return merged
+
+
+class SmartHidden:
+    """Treffer der KI-Suche, die zu einem Tag nicht passen und nicht mehr erscheinen sollen
+    (DATA_DIR/ki_ausgeblendet.json, je Tag)."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self._lock = threading.Lock()
+        self.data: dict[str, list[str]] = {}
+        try:
+            if path.exists():
+                self.data = json.loads(path.read_text(encoding="utf-8")).get("ausgeblendet", {})
+        except (OSError, ValueError) as exc:
+            log.warning("%s unlesbar: %s", path, exc)
+
+    @staticmethod
+    def key(tag: str) -> str:
+        return tag.strip().strip("/").lower()
+
+    def ids(self, tag: str) -> set[str]:
+        return set(self.data.get(self.key(tag), []))
+
+    def update(self, tag: str, ids: Iterable[str], remove: bool = False) -> int:
+        with self._lock:
+            k = self.key(tag)
+            cur = set(self.data.get(k, []))
+            cur = cur - set(ids) if remove else cur | set(ids)
+            if cur:
+                self.data[k] = sorted(cur)
+            else:
+                self.data.pop(k, None)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"ausgeblendet": self.data}, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(self.path)
+            return len(cur)
 
 
 class HiddenList:

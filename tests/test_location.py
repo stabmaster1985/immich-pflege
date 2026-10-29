@@ -176,3 +176,33 @@ def test_series_without_suggestion_merged_per_day():
     src = gps(utc="2023-03-01T08:00:00Z")
     an = analyze(library(src, *scans), 2, False)
     assert [len(s.members) for s in sorted(an.series, key=lambda s: s.members[0].asset.taken_utc)] == [1, 2, 3]
+
+
+def test_suggestion_carries_neighbors_distance_and_position_on_the_way():
+    """Für Karte und Entfernung: GPS-Fotos davor/danach, Luftlinie und geschätzte Stelle unterwegs."""
+    before = gps(utc="2024-07-16T10:00:00Z", at=SIENA, city="Siena")
+    after = gps(utc="2024-07-16T11:00:00Z", at=FLORENZ, city="Florenz")
+    lost = asset(utc="2024-07-16T10:15:00Z")
+    s = GpsIndex([before, after]).suggest(lost, 2).to_dict()
+    assert s["vorher"]["id"] == before.id and s["nachher"]["id"] == after.id
+    assert s["vorher"]["abstand_text"] == "15 min" and s["nachher"]["abstand_text"] == "45 min"
+    assert 50 < s["strecke_km"] < 51
+    way = s["unterwegs"]  # ein Viertel der Zeit -> ein Viertel der Strecke
+    assert way["anteil"] == 0.25 and abs(way["breite"] - (SIENA[0] + 0.25 * (FLORENZ[0] - SIENA[0]))) < 1e-5
+    # am selben Ort: keine Stelle unterwegs
+    same = GpsIndex([before, gps(utc="2024-07-16T11:00:00Z")]).suggest(lost, 2).to_dict()
+    assert same["strecke_km"] == 0 and "unterwegs" not in same
+
+
+def test_reverse_place_name(env, http):
+    from fastapi.testclient import TestClient
+
+    from immich_pflege.web.app import create_app
+    with TestClient(create_app(env, http=http, auto_scan_enabled=False)) as web:
+        _reverse(web)
+
+
+def _reverse(web):
+    assert web.get("/api/places/reverse", params={"breite": 43.3, "laenge": 11.3}).json()["name"] == "Siena"
+    assert web.get("/api/places/reverse", params={"breite": 10, "laenge": 10}).json()["name"] is None
+    assert web.get("/api/places/reverse", params={"breite": 100, "laenge": 10}).status_code == 400

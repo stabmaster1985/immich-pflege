@@ -295,10 +295,16 @@ def create_app(state: MockState) -> FastAPI:
         body = await record(request, user) or {}
         words = set(re.findall(r"\w+", body.get("query", "").lower()))
         items = sorted(visible(user), key=lambda a: (-len(words & set(a["_motiv"].split())), a["localDateTime"] or ""))
-        size = int(body.get("size", 100))
-        return {"assets": {"total": len(items[:size]), "count": len(items[:size]), "items": [public(a) for a in items[:size]],
-                           "nextPage": None, "facets": []},
+        size, page = int(body.get("size", 100)), int(body.get("page", 1))
+        chunk = items[(page - 1) * size: page * size]
+        return {"assets": {"total": len(chunk), "count": len(chunk), "items": [public(a) for a in chunk],
+                           "nextPage": str(page + 1) if page * size < len(items) else None, "facets": []},
                 "albums": {"total": 0, "count": 0, "items": [], "facets": []}}
+
+    @app.get("/api/map/reverse-geocode")
+    async def reverse_geocode(request: Request, lat: float, lon: float):
+        auth(request)
+        return [{"city": "Siena", "state": "Toskana", "country": "Italien"}] if 42 < lat < 45 else []
 
     @app.get("/api/search/places")
     async def search_places(request: Request, name: str = ""):

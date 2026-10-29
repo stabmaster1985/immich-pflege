@@ -159,6 +159,12 @@ class SuggestionStage(BaseModel):
     ids: list[str]
 
 
+class SmartHide(BaseModel):
+    tag: str
+    ids: list[str]
+    undo: bool = False
+
+
 class SuggestionSelection(BaseModel):
     ohne: list[str] = Field(default_factory=list)  # abgewählte Medien
     aktion: Literal["tag", "archiv"] = "tag"
@@ -633,6 +639,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     def places(q: str = Query("", max_length=100)):
         return svc().search_places(q)
 
+    @app.get("/api/places/reverse")
+    def place_name(breite: float, laenge: float):
+        return svc().place_name(breite, laenge)
+
     # ------------------------------------------------------------- Tags
     @app.get("/api/tags")
     def tags(rules: Optional[list[str]] = Query(None)):
@@ -674,8 +684,16 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
 
     @app.get("/api/suggestions/smart")
     def suggestions_smart(begriff: Optional[str] = None, suche: Optional[str] = None, tag: Optional[str] = None,
-                          anzahl: Optional[int] = Query(None, ge=1, le=1000)):
+                          anzahl: Optional[int] = Query(None, ge=1, le=5000)):
         return svc().smart_view(begriff, suche, tag, anzahl)
+
+    @app.post("/api/suggestions/smart/hide")
+    def suggestions_smart_hide(body: SmartHide):
+        return svc().smart_hide(body.tag, body.ids, body.undo)
+
+    @app.get("/api/suggestions/smart/hidden")
+    def suggestions_smart_hidden(tag: str):
+        return svc().smart_hidden_media(tag)
 
     @app.post("/api/staged/suggestions")
     def stage_suggestions(body: SuggestionStage):
@@ -754,6 +772,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/staged/folder-albums")
     def stage_folder_albums(body: FoldersStage):
         return svc().stage_folders([f.model_dump(exclude_unset=True) for f in body.ordner])
+
+    @app.get("/api/albums/{album_id}/media")
+    def album_media(album_id: str, reise: Optional[str] = None):
+        return svc().album_media(album_id, reise)
 
     @app.get("/api/album-check")
     def album_check(asset: str, album: str):
@@ -841,6 +863,14 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/staged/tags")
     def stage_tags(body: TagsApply):
         return svc().stage_tags(body.rules or [])
+
+    @app.get("/api/staged/{entry_id}/media")
+    def staged_media(entry_id: str):
+        return svc().staged_media(entry_id)
+
+    @app.post("/api/staged/{entry_id}/ohne")
+    def staged_without(entry_id: str, body: SuggestionSelection):
+        return svc().staged_without(entry_id, body.ohne)
 
     @app.delete("/api/staged/{entry_id}")
     def unstage(entry_id: str):

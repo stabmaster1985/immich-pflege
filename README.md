@@ -5,7 +5,7 @@ Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen 
 | Funktion | Was passiert |
 |---|---|
 | **Duplikate** | Findet doppelte Medien über beide Benutzer und über Uploads und externe Bibliotheken hinweg: per Prüfsumme, Dateiname + Aufnahmezeit, Bild-Fingerabdruck (z. B. WhatsApp-Kopien) und Immichs eigener Erkennung. Jede Gruppe hat eine Art (identisch, sehr wahrscheinlich, ähnlich) und einen Behalten-Vorschlag. Nicht behaltene Kopien kommen ins Album „Duplikat-Prüfung“ oder in den Papierkorb. |
-| **Ohne Ort** | Medien ohne GPS bekommen einen Ortsvorschlag mit Sicherheit (sicher, wahrscheinlich, unsicher) aus den GPS-Fotos beider Benutzer, zusammengefasst nach Ort und Serie. Für den Rest gibt es die Ortssuche von Immich. Screenshots werden ausgeblendet. |
+| **Ohne Ort** | Medien ohne GPS bekommen einen Ortsvorschlag mit Sicherheit (sicher, wahrscheinlich, unsicher) aus den GPS-Fotos beider Benutzer, zusammengefasst nach Ort und Serie. **Karte** mit Vorschlag, GPS-Fotos davor/danach, Luftlinie, geschätzter Stelle unterwegs und Route; Ort per Tipp auf die Karte wählen. Für den Rest gibt es die Ortssuche von Immich. Screenshots werden ausgeblendet. |
 | **Aufräumen** | Speicherfresser (große Videos, Bildschirmaufnahmen, doppelte Live-Photo-Videos), Serienbilder (das schärfste bleibt oder alles stapeln), **Stapeln aus eigenen Alben**, **Alben aufräumen** (doppelte von beiden Benutzern zusammenführen, leere/Mini-Alben, bessere Titelbilder), unscharfe und dunkle Fotos, falsche Aufnahmezeiten samt Kamera-Zeitversatz, verwaiste Dateien der externen Bibliothek, Papierkorb-Übersicht. |
 | **Alben** | Erkennt Reisen (weg von zu Hause, beide Benutzer zusammen) und schlägt Alben vor. Vorher wird gegen alle vorhandenen Alben beider Benutzer abgeglichen: schon vorhanden, ergänzen oder neu. Neue Alben werden mit dem anderen Benutzer geteilt. Außerdem **Alben aus Ordnern** der externen Bibliothek, auf Wunsch automatisch aktuell gehalten. |
 | **Tags** | Fertige Vorschläge zum Abhaken (Länder, Kameras, Screenshots, WhatsApp) und Suche mit Immichs KI (Hund, Strand, Quittung …): erstes unpassendes Bild antippen, alles davor wird getaggt. Eigene Regeln für Sonderfälle. Tags werden nur ergänzt, nie entfernt. **Archivieren** nimmt Screenshots, WhatsApp-Bilder, Quittungen u. Ä. aus der Zeitleiste, ohne zu löschen. |
@@ -127,7 +127,7 @@ Das Menü ist nach Aufgaben sortiert. Auf dem Handy liegt es unten, am großen B
 | **Alben** | Reisen, Ordner, Alben aufräumen |
 | **Vorgemerkt** | Vormerkliste und Verlauf mit Rückgängig |
 
-Oben rechts: **Einlesen** und **⚙ Einstellungen**. **Prüf-Ansicht:** Überall, wo viele Bilder auf einmal vorgemerkt werden, öffnet **Prüfen** alle betroffenen Bilder als dichtes Raster, auch Tausende. Die Bilder sind nach Monat, Tag, Ort oder Passgenauigkeit gruppiert. Du wählst einzelne Bilder oder ganze Gruppen ab, und vorgemerkt wird genau die Auswahl. Das gilt für Tag-Vorschläge, eigene Regeln, KI-Suche, Archivieren, sichere Orte, Aufräumen, Falsche Zeit, Reisen und Ordner-Alben (abgewählte Dateien bleiben auch beim automatischen Abgleich draußen). **Großansicht:** Kleine Vorschaubilder antippen, bei großen Kacheln auf **Groß**, in der KI-Suche auf ⤢. Dann wischen oder mit den Pfeiltasten durch die ganze Gruppe blättern. Jeder Punkt hat eine eigene Adresse (z. B. `…:2222/#serien`), der Zurück-Knopf funktioniert. Unten erscheint bei Bedarf eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet. Sie lässt sich **als App auf den Startbildschirm legen** (Safari: „Zum Home-Bildschirm“, Chrome: „App installieren“ – als eigenes Fenster nur über HTTPS).
+Oben rechts: **Einlesen** und **⚙ Einstellungen**. **Prüf-Ansicht:** Überall, wo viele Bilder auf einmal vorgemerkt werden, öffnet **Prüfen** alle betroffenen Bilder als dichtes Raster, auch Tausende. Die Bilder sind nach Monat, Tag, Ort oder Passgenauigkeit gruppiert. Du wählst einzelne Bilder oder ganze Gruppen ab, und vorgemerkt wird genau die Auswahl. Das gilt für Tag-Vorschläge, eigene Regeln, KI-Suche, Archivieren, sichere Orte, Aufräumen, Falsche Zeit, Reisen und Ordner-Alben (abgewählte Dateien bleiben auch beim automatischen Abgleich draußen). **Großansicht:** Kleine Vorschaubilder antippen, bei großen Kacheln auf **Groß**, in der KI-Suche auf ⤢. Dann wischen oder mit den Pfeiltasten durch die ganze Gruppe blättern. Jeder Punkt hat eine eigene Adresse (z. B. `…:2222/#serien`), der Zurück-Knopf funktioniert. Unten erscheint bei Bedarf eine Aktionsleiste mit Bestätigungsdialogen. Die Oberfläche ist fürs Handy gebaut, folgt hellem und dunklem Modus und lädt nichts aus dem Internet (Ausnahme: die Kartenbilder von OpenStreetMap, erst wenn du eine Karte öffnest, und die Route auf Knopfdruck). Sie lässt sich **als App auf den Startbildschirm legen** (Safari: „Zum Home-Bildschirm“, Chrome: „App installieren“ – als eigenes Fenster nur über HTTPS).
 
 **Jede Seite hat oben ein „?“** mit einer ausführlichen Erklärung: wie Treffer und Vorschläge entstehen, nach welchen Kriterien bewertet wird und wo die Grenzen liegen. Dieselben Texte liegen im Repository:
 
@@ -228,7 +228,11 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | POST | `/api/staged/cleanup` | Aufräumen vormerken: `action` (`album`/`papierkorb`, bei Serien auch `stapel`), `ids` oder `kategorie`, optional `keep` {Eintrag: Medium} |
 | POST | `/api/cleanup/keep` | „Behalten“/„Passt so“: `{"ids": [...]}`, mit `"undo": true` zurück |
 | GET | `/api/suggestions` | Tag-Vorschläge aus den Daten (`ausgeblendet=true` für ausgeblendete) und Begriffe der KI-Suche |
-| GET | `/api/suggestions/smart` | KI-Suche: `begriff` (aus der Liste) oder `suche` (eigener Text), optional `tag`, `anzahl` (Treffer je Benutzer, bis 1000; Standard 120) |
+| GET | `/api/suggestions/smart` | KI-Suche: `begriff` (aus der Liste) oder `suche` (eigener Text), optional `tag`, `anzahl` (neue Treffer je Benutzer, bis 5000; Standard 120). Schon getaggte, vorgemerkte und ausgeblendete werden übersprungen; `ausgeblendet` = Anzahl ausgeblendeter zum Tag |
+| POST | `/api/suggestions/smart/hide` | KI-Treffer für einen Tag ausblenden: `tag`, `ids`, `undo: true` zeigt sie wieder |
+| GET | `/api/suggestions/smart/hidden` | ausgeblendete KI-Treffer eines `tag` |
+| GET | `/api/places/reverse` | Ortsname zu `breite`/`laenge` (Immichs Ortsdaten) |
+| GET | `/api/albums/{id}/media` | Inhalt eines Albums; mit `reise` stehen die noch fehlenden Medien der Reise vorn (`fehlt: true`) |
 | POST | `/api/staged/suggestions`, `/api/staged/smart` | Vorschläge (`ids`) bzw. KI-Treffer (`tag`, `ids`) vormerken |
 | POST | `/api/staged/archive` | Archivieren vormerken: `vorschlag` (ID) oder `ids`, optional `label` |
 | GET | `/api/suggestions/{id}/media` | alle Treffer eines Vorschlags zum Prüfen (`aktion`: `tag` oder `archiv`), neueste zuerst |
@@ -261,6 +265,8 @@ Die API-Dokumentation zum Ausprobieren liegt unter `http://<server>:2222/api/doc
 | POST | `/api/history/{id}/undo` | Übertragung rückgängig machen |
 | POST | `/api/staged/tags` | Regeln vormerken: `{"rules": [...]}` |
 | DELETE | `/api/staged/{id}` | Eintrag zurücknehmen |
+| GET | `/api/staged/{id}/media` | alle Medien eines vorgemerkten Eintrags (mit `marke`, z. B. 🗑 oder neuer Ort) |
+| POST | `/api/staged/{id}/ohne` | einzelne Medien aus einem vorgemerkten Eintrag nehmen: `ohne` (fällt alles weg, verschwindet der Eintrag) |
 | POST | `/api/staged/apply` | Vorgemerktes übertragen: `ids` (ohne = alle), bei Papierkorb `confirm: "PAPIERKORB"` |
 
 Fehler kommen als `{"fehler": "…"}` zurück: 400 bei ungültiger Anfrage, 409 solange das Tool noch nicht eingerichtet ist, 422 bei fehlerhaften Regeln oder Einstellungen (mit `details`), 502 wenn Immich nicht erreichbar ist.

@@ -555,3 +555,20 @@ dialog.review[open] { display: flex; flex-direction: column; }
 @media (max-width: 599px) {
   .stage-group > summary .sg-actions { width: 100%; justify-content: flex-end; }
 }
+
+/* Karte */
+.map-dlg .map { flex: 1; min-height: 240px; background: var(--line); }
+.map-info { padding: 10px 14px calc(env(safe-area-inset-bottom) + 12px); background: var(--card); border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 8px; max-height: 42dvh; overflow-y: auto; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .8rem; color: var(--muted); }
+.map-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--line); }
+.map-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.map-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.map-photos .stage-fig { width: 76px; }
+.place-link { font-weight: 700; color: var(--fg); text-decoration: underline dotted; text-underline-offset: 3px; }
+.sug.linklike { padding: 0; }
+.map-all { margin: 0 0 10px; }
+.leaflet-container { font: inherit; }
+.rv-view .rv-mhead input { display: none; }
+.rv-view .rv-mhead { cursor: default; }

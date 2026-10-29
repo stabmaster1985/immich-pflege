@@ -112,6 +112,11 @@
       <div class="toolbar">
         <label class="field grow">Eigener Begriff <input type="search" id="smart-q" placeholder="z. B. dog on the beach" autocomplete="off"></label>
         <button id="smart-go" class="btn small" type="button">Suchen</button>
+        <label class="field">Treffer je Person
+          <select id="smart-size">
+            <option value="200">200</option><option value="400" selected>400</option><option value="1000">1.000</option>
+            <option value="2000">2.000</option><option value="5000">5.000</option>
+          </select></label>
       </div>
       <div id="smart-box"></div>
       <details id="rules-details">
@@ -402,6 +407,15 @@
         <button value="ok" id="confirm-ok" class="btn primary" type="submit">OK</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="map-dlg" class="review map-dlg" aria-label="Karte">
+    <div class="rv-head">
+      <div class="rv-title"><h2 id="map-title"></h2><div id="map-sub" class="muted small"></div></div>
+      <button type="button" id="map-close" class="btn small" aria-label="Schließen">✕</button>
+    </div>
+    <div id="map" class="map"></div>
+    <div id="map-info" class="map-info"></div>
   </dialog>
 
   <dialog id="review" class="review" aria-label="Treffer prüfen">

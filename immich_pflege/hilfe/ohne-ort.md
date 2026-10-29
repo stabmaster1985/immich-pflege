@@ -65,10 +65,23 @@ Die Ortssuche nutzt Immichs eigene Ortsdatenbank, ohne Internetdienst.
 
 Mit **App ↗** und **Web ↗** unter jedem Bild öffnest du das Original in Immich, um es dir genauer anzusehen.
 
+## Karte, Entfernung und Route
+
+Der vorgeschlagene Ort ist antippbar, ebenso **🗺 Karte** an jeder Serie und **🗺 Alle Orte auf der Karte** in der Übersicht. Die Karte zeigt:
+
+- **Vorschlag** (blau): der Ort, den das Tool setzen würde.
+- **GPS-Foto davor** (grün) und **danach** (orange): die Nachbarfotos mit Ort (je bis zu 12 Stunden entfernt), mit Vorschaubild darunter.
+- **Luftlinie** zwischen beiden. Liegen sie auseinander, zeigt **geschätzt unterwegs** (lila) die Stelle auf der Strecke, an der ihr zur Aufnahmezeit gewesen wärt (nach der Zeit aufgeteilt: nach einem Viertel der Zeit ein Viertel der Strecke). Die Entfernung steht auch an der Serie („davor und danach 50 km auseinander“).
+- **Route berechnen:** die Strecke über die Straße mit Länge und Fahrzeit (fragt dafür auf Knopfdruck den freien Routendienst von OSRM). **In OpenStreetMap ↗** öffnet die Route dort.
+
+**Ort selbst wählen:** Auf die Karte tippen (oder auf einen der Punkte). Das Tool zeigt den Ortsnamen und die Abstände zu Vorschlag, davor und danach. **Hier vormerken** übernimmt diesen Punkt für die Serie bzw. das Medium.
+
+Die Kartenbilder kommen von OpenStreetMap; sie werden erst geladen, wenn du eine Karte öffnest.
+
 ## Was ausgeblendet wird
 
 - **Screenshots und Bildschirmaufnahmen:** Erkannt am Dateinamen (Screenshot, Bildschirmfoto, Bildschirmaufnahme, RPReplay …), als PNG ohne Kameradaten (so speichert das iPhone Screenshots) oder an der Bildschirmgröße (siehe Herkunft). Ausblenden abschaltbar unter ⚙ Einstellungen.
-- **Externe Bibliotheken** werden standardmäßig nicht geändert. Das lässt sich ebenfalls in den Einstellungen freigeben.
+- **Externe Bibliotheken** werden standardmäßig nicht geändert („extern gesperrt“). Antippen oder ⚙ Einstellungen → Fotos ohne Ort gibt sie frei. Immich speichert den Ort in seiner Datenbank und schreibt ihn zusätzlich in eine `.xmp`-Datei neben dem Original. Dafür muss der Ordner der externen Bibliothek **im Immich-Container beschreibbar** eingebunden sein (in der `docker-compose.yml` ohne `:ro`). Ist er nur lesbar, kann Immich die `.xmp`-Datei nicht schreiben, und der Ort kann beim erneuten Einlesen der Datei verloren gehen. Die Originaldateien ändert Immich nicht.
 
 ## Wo es danebenliegen kann
 
