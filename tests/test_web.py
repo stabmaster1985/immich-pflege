@@ -381,3 +381,18 @@ def test_thumbnail_retries_when_rejected_temporarily(web):
     with patch("immich_pflege.service.THUMB_RETRY_S", (0, 0)), patch("immich_pflege.client.ImmichClient.thumbnail", flaky):
         r = web.get(f"/thumb/{asset_id}")
     assert r.status_code == 200 and tries == ["thumbnail", "thumbnail"]
+
+
+def test_key_permissions_reported(web, state):
+    """Fehlt dem API-Key ein Recht (z. B. asset.view), sagt „Verbindung testen“ welches und wofür."""
+    state.key_permissions["frank"] = ["asset.read", "asset.update"]
+    r = web.post("/api/settings/test", json={}).json()
+    frank, julia = r["schluessel"]["frank"], r["schluessel"]["julia"]
+    assert julia["rechte_alle"] is True and julia["rechte_fehlend"] == []
+    missing = {p["recht"] for p in frank["rechte_fehlend"]}
+    assert frank["rechte_alle"] is False and "asset.view" in missing and "asset.read" not in missing
+    web.get("/api/duplicates")
+    aid = next(i for i, a in state.assets.items() if state.user_by_id(a["ownerId"])["name"].lower() == "frank")
+    with __import__("unittest.mock").mock.patch("immich_pflege.service.THUMB_RETRY_S", (0, 0)):
+        resp = web.get(f"/thumb/{aid}")
+    assert resp.status_code == 403 and "asset.view" in resp.text

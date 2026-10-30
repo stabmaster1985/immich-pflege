@@ -47,6 +47,7 @@ class MockState:
     paging: str = "cursor"  # "cursor" (v3.2) oder "page" (älter)
     version: tuple[int, int, int] = (3, 2, 4)
     calls: list[tuple[str, str, str, Any]] = field(default_factory=list)
+    key_permissions: dict[str, list[str]] = field(default_factory=dict)  # Benutzername -> Rechte (fehlt = all)
 
     # ------------------------------------------------------------ Aufbau
     def add_user(self, name: str, key: str) -> str:
@@ -245,6 +246,14 @@ def create_app(state: MockState) -> FastAPI:
     @app.get("/api/users/me")
     async def me(request: Request):
         return auth(request)
+
+    def perms(user: dict[str, Any]) -> list[str]:
+        return state.key_permissions.get(user["name"].lower(), ["all"])
+
+    @app.get("/api/api-keys/me")
+    async def my_api_key(request: Request):
+        user = auth(request)
+        return {"id": "k-" + user["id"], "name": "pflege", "permissions": perms(user)}
 
     @app.post("/api/search/metadata")
     async def search(request: Request):
@@ -554,6 +563,8 @@ def create_app(state: MockState) -> FastAPI:
         a = state.assets.get(asset_id)
         if a is None or a["ownerId"] != user["id"]:
             raise HTTPException(400, "Not found or no asset.view access")
+        if "all" not in perms(user) and "asset.view" not in perms(user):
+            raise HTTPException(403, "Missing required permission: asset.view")
         if a.get("_no_thumb"):
             raise HTTPException(404, "Asset media not found")
         if a["type"] == "IMAGE":

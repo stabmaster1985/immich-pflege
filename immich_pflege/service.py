@@ -61,6 +61,45 @@ def n_media(count: int) -> str:
     return f"{count} {'Medium' if count == 1 else 'Medien'}"
 
 
+# Rechte, die das Tool vom API-Key braucht (Immich-Namen) – und wofür
+KEY_PERMISSIONS = {
+    "asset.read": "Medien lesen und suchen",
+    "asset.view": "Vorschaubilder",
+    "asset.download": "Original als Ersatz, wenn Immich keine Vorschau hat",
+    "asset.update": "Ort, Zeit, Archivieren",
+    "asset.delete": "Papierkorb",
+    "album.read": "Alben lesen",
+    "album.create": "Alben anlegen",
+    "album.update": "Titelbild",
+    "album.delete": "Alben löschen/zusammenführen",
+    "albumAsset.create": "Medien in Alben legen",
+    "albumAsset.delete": "Medien aus Alben nehmen (Rückgängig)",
+    "albumUser.create": "Alben teilen",
+    "tag.read": "Tags lesen",
+    "tag.create": "Tags anlegen",
+    "tag.asset": "Medien taggen",
+    "stack.create": "Stapeln",
+    "stack.delete": "Stapel auflösen (Rückgängig)",
+    "duplicate.read": "Immichs Duplikate lesen",
+    "person.read": "Regeln mit Personen",
+    "job.create": "Vorschau neu erzeugen lassen",
+}
+
+
+def key_permissions(client: ImmichClient) -> dict[str, Any]:
+    """Rechte des API-Keys (Immich ≥ 1.135: GET /api-keys/me): {rechte_alle, rechte_fehlend: [{recht, wofuer}]}.
+    Ältere Immich-Versionen kennen die Abfrage nicht – dann nichts melden."""
+    try:
+        info = client.my_api_key()
+    except ImmichError:
+        return {}
+    perms = set(info.get("permissions") or [])
+    if not perms or "all" in perms:
+        return {"rechte_alle": True, "rechte_fehlend": []}
+    missing = [{"recht": p, "wofuer": why} for p, why in KEY_PERMISSIONS.items() if p not in perms]
+    return {"rechte_alle": False, "rechte_fehlend": missing, "key_name": info.get("name")}
+
+
 def check_server(clients: dict[str, ImmichClient]) -> dict[str, Any]:
     """Erreichbarkeit, Version und Gültigkeit jedes API-Keys prüfen."""
     result: dict[str, Any] = {"erreichbar": False, "version": None, "schluessel": {}, "warnungen": []}
@@ -74,7 +113,8 @@ def check_server(clients: dict[str, ImmichClient]) -> dict[str, Any]:
                     result["warnungen"].append(
                         f"Immich {result['version']} erkannt – getestet ist das Tool mit 3.x")
             me = client.me()
-            result["schluessel"][name] = {"ok": True, "konto": me.get("email") or me.get("name")}
+            result["schluessel"][name] = {"ok": True, "konto": me.get("email") or me.get("name"),
+                                          **key_permissions(client)}
         except ImmichError as exc:
             result["schluessel"][name] = {"ok": False, "fehler": str(exc)}
             if exc.status in (401, 403):
@@ -99,6 +139,7 @@ class Pflege:
         self._lock = threading.RLock()
         self._thumb_regen: set[str] = set()  # schon in Immich neu angestoßene Vorschauen (je Programmlauf)
         self._thumb_slots = threading.BoundedSemaphore(THUMB_PARALLEL)
+        self._key_warnings: list[dict[str, Any]] | None = None
         self._scan_lock = threading.RLock()
         self.scanning = False
         self.progress = ""  # was beim Einlesen gerade passiert (für die Oberfläche)
@@ -156,6 +197,7 @@ class Pflege:
         with self._scan_lock:
             self.scanning = True
             self.progress = "Einlesen startet"
+            self._key_warnings = None  # nach dem Einlesen die Key-Rechte neu prüfen
             try:
                 previous = self.cached_library()
                 if previous and not full:
@@ -1992,6 +2034,19 @@ class Pflege:
             return out
 
     # ------------------------------------------------------------ Übersicht
+    def key_warnings(self) -> list[dict[str, Any]]:
+        """Fehlende Rechte der API-Keys (einmal je Programmlauf abgefragt, für die Startseite)."""
+        if self._key_warnings is None:
+            out = []
+            for name, client in self.clients.items():
+                info = key_permissions(client)
+                if info.get("rechte_fehlend"):
+                    out.append({"benutzer": name, "fehlend": info["rechte_fehlend"]})
+                    log.warning("API-Key von %s: es fehlen Rechte %s", name,
+                                ", ".join(p["recht"] for p in info["rechte_fehlend"]))
+            self._key_warnings = out
+        return self._key_warnings
+
     def dashboard(self) -> dict[str, Any]:
         """Kennzahlen für die Übersicht und den Wochenbericht (nur aus dem Zwischenspeicher)."""
         lib = self.library()
@@ -2151,10 +2206,8 @@ class Pflege:
                             continue
                         errors.append(f"{name}/{s}: {exc}")
                         break
-                if own_error is not None and own_error.status in (401, 403) and last is own_error:
-                    break  # Key des Besitzers abgewiesen: andere Größen bringen nichts
             if own_error is not None and own_error.status in (401, 403):
-                break
+                break  # Key des Besitzers abgewiesen (Recht fehlt): andere Größen bringen nichts
         log.warning("Vorschaubild %s nicht ladbar: %s", asset_id, " | ".join(errors))
         last = own_error or last
         if last is not None and last.status == 404 and owner:

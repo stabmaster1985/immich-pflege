@@ -148,7 +148,8 @@ async function thumbFailed(img) {
     if (r.ok) { img.classList.remove("thumb-err"); const s = img.getAttribute("src"); img.src = s + (s.includes("?") ? "&" : "?") + "ok=1"; return; }  // klappt inzwischen
     const detail = (await r.text()).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
     img.dataset.detail = detail;
-    why = r.ok ? "" : (r.status === 403 ? "von Immich abgewiesen" : r.status === 400 ? "kein Zugriff oder unbekannt (gehört es einem anderen Konto?)" : r.status === 404 ? "Immich hat keine Vorschau – wird neu erzeugt, später neu laden" : "Immich-Fehler") + ` (HTTP ${r.status})`;
+    why = r.ok ? "" : (r.status === 403 && /permission/i.test(detail) ? "dem API-Key fehlt ein Recht – ⚙ Einstellungen → Verbindung testen"
+      : r.status === 403 ? "von Immich abgewiesen" : r.status === 400 ? "kein Zugriff oder unbekannt (gehört es einem anderen Konto?)" : r.status === 404 ? "Immich hat keine Vorschau – wird neu erzeugt, später neu laden" : "Immich-Fehler") + ` (HTTP ${r.status})`;
   } catch (_) { why = "keine Verbindung"; }
   img.alt = "Vorschau fehlt" + (why ? ": " + why : "");
   img.title = img.alt + (img._m && img._m.dateiname ? " – " + img._m.dateiname : "") + (img.dataset.detail ? "\n" + img.dataset.detail : "");
@@ -2132,7 +2133,12 @@ async function testConnection(btn) {
     const lines = [h("li", { class: r.erreichbar ? "test-ok" : "test-bad" },
       r.erreichbar ? `✓ Immich erreichbar${r.version ? " – Version " + r.version : ""}` : `✗ ${r.immich_url} nicht erreichbar`)];
     for (const [name, k] of Object.entries(r.schluessel)) {
-      lines.push(h("li", { class: k.ok ? "test-ok" : "test-bad" }, k.ok ? `✓ ${name}: ${k.konto}` : `✗ ${name}: ${k.fehler}`));
+      lines.push(h("li", { class: k.ok ? "test-ok" : "test-bad" }, k.ok ? `✓ ${name}: ${k.konto}` + (k.rechte_alle ? " · Key mit allen Rechten" : "") : `✗ ${name}: ${k.fehler}`));
+      if (k.rechte_fehlend && k.rechte_fehlend.length) {
+        lines.push(h("li", { class: "test-bad" }, `⚠ ${name}: dem API-Key${k.key_name ? ` „${k.key_name}“` : ""} fehlen Rechte:`,
+          h("ul", {}, k.rechte_fehlend.map((p) => h("li", {}, h("code", {}, p.recht), " – " + p.wofuer))),
+          h("div", { class: "small" }, "In Immich unter Konto-Einstellungen → API-Schlüssel den Key bearbeiten und die Rechte ergänzen (oder „Alle“ wählen). Danach hier nichts ändern – der Key bleibt derselbe.")));
+      }
     }
     for (const w of r.warnungen) lines.push(h("li", { class: "test-bad" }, "⚠ " + w));
     box.replaceChildren(h("ul", {}, lines));
@@ -3052,7 +3058,12 @@ async function loadOverview() {
       icon(sec.icon), h("b", {}, S.counts[id].toLocaleString("de-DE")),
       h("span", {}, label)))));
   const rep = d.bericht;
+  const keyWarn = (d.key_warnungen || []).map((w) => h("div", { class: "banner warn" },
+    h("b", {}, `API-Key von ${w.benutzer}: es fehlen Rechte. `),
+    w.fehlend.map((p) => `${p.recht} (${p.wofuer})`).join(", "),
+    ". In Immich unter Konto-Einstellungen → API-Schlüssel ergänzen oder „Alle“ wählen."));
   box.replaceChildren(...[
+    ...keyWarn,
     tiles,
     h("h2", { class: "stage-head" }, "Zu tun"),
     todo.childElementCount ? todo : h("p", { class: "muted" }, "Alles aufgeräumt 🎉"),

@@ -8,6 +8,7 @@ Alle Einstellungen werden hier gemacht und in `data/einstellungen.json` gespeich
 - **Adresse für Links im Browser** (optional): Die Links „Web ↗“ an den Bildern führen hierhin, z. B. zu deiner externen Immich-Adresse. Leer heißt: die Adresse oben.
 - **API-Keys:** Pro Benutzer einer. In Immich als dieser Benutzer anmelden, dann *Kontoeinstellungen → API-Schlüssel → Neuer API-Schlüssel*. Ein leeres Feld beim Speichern behält den bisherigen Key. Keys werden nie an den Browser zurückgegeben.
 - **Verbindung testen** zeigt die Immich-Version und zu jedem Key das zugehörige Konto, ohne zu speichern.
+- **Rechte der API-Keys:** „Verbindung testen“ zeigt außerdem, ob der Key **alle Rechte** hat oder welche fehlen und wofür sie gebraucht werden (z. B. `asset.view` für Vorschaubilder, `asset.update` für Orte). Fehlende Rechte stehen auch als Hinweis auf der Startseite. Ergänzen in Immich unter Konto-Einstellungen → API-Schlüssel → Key bearbeiten (am einfachsten „Alle“). Der Key bleibt derselbe, im Tool ist nichts zu ändern. Welcher Key benutzt wird, steht hier bei den Benutzern (bzw. in der `.env` als `IMMICH_KEY_<NAME>` – der hat Vorrang).
 
 ## Automatisch einlesen
 

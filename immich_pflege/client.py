@@ -284,6 +284,10 @@ class ImmichClient:
             raise ImmichError(f"Original {asset_id}: HTTP {resp.status_code} {_error_text(resp)}", resp.status_code)
         return resp.content, resp.headers.get("content-type", "application/octet-stream")
 
+    def my_api_key(self) -> dict:
+        """Der benutzte API-Key mit Name und Rechten (``permissions``, „all“ = alles)."""
+        return self.request("GET", "/api-keys/me") or {}
+
     def asset_job(self, ids: list[str], name: str) -> None:
         """Immich-Auftrag für einzelne Medien, z. B. ``regenerate-thumbnail``."""
         self.request("POST", "/assets/jobs", json={"assetIds": ids, "name": name})

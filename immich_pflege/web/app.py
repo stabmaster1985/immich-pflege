@@ -486,6 +486,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         if not users:
             raise ActionError("Mindestens einen Benutzer mit API-Key eintragen")
         clients = {n: ImmichClient(url + "/api", k, n, http=http, timeout=15) for n, k in users.items()}
+        svc()._key_warnings = None  # Rechte beim nächsten Blick auf die Startseite neu abfragen
         return {"immich_url": url, **check_server(clients)}
 
     # ------------------------------------------------- Update-Dienst (Host)
@@ -813,7 +814,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
 
     @app.get("/api/dashboard")
     def dashboard():
-        return {**svc().dashboard(), "bericht": app.state.reporter.info()}
+        return {**svc().dashboard(), "bericht": app.state.reporter.info(), "key_warnungen": svc().key_warnings()}
 
     @app.get("/api/trash")
     def trash():
