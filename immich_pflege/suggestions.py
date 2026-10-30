@@ -61,6 +61,18 @@ def home_country(lib: Library) -> str | None:
     return counts.most_common(1)[0][0] if counts else None
 
 
+def _nice_spelling(variants: Counter) -> tuple[str, str]:
+    """Schönste Schreibweise: Hersteller nicht nur in Großbuchstaben (Sony statt SONY), sonst die häufigste."""
+    def pretty(word: str, options: list[str]) -> str:
+        mixed = [o for o in options if not o.isupper()]
+        if mixed:
+            return mixed[0]
+        return word.title() if len(word) > 3 else word  # SONY -> Sony, aber HTC/LG bleiben
+    ordered = [v for v, _ in variants.most_common()]
+    make = pretty(ordered[0][0], [m for m, _ in ordered])
+    return make, ordered[0][1]
+
+
 def data_suggestions(lib: Library) -> list[dict[str, Any]]:
     """Vorschläge als Regel-Definitionen: {id, art, titel, grund, regel}."""
     out: list[dict[str, Any]] = []
@@ -71,15 +83,23 @@ def data_suggestions(lib: Library) -> list[dict[str, Any]]:
         out.append({"id": _sid("land", country), "art": "land", "titel": f"Reisen nach {country}",
                     "grund": f"{n} Fotos mit Ort in {country}",
                     "regel": {"name": f"Vorschlag: {country}", "tag": f"Reisen/{country}", "land": country}})
-    cams = Counter((a.make, a.model) for a in lib.assets.values() if a.make and a.model)
-    for (make, model), n in cams.most_common():
+    # Kameras unabhängig von der Schreibweise: „SONY“ und „Sony“ sind dieselbe Kamera
+    spellings: dict[tuple[str, str], Counter] = {}
+    for a in lib.assets.values():
+        if a.make and a.model and a.make.strip() and a.model.strip():
+            make, model = a.make.strip(), a.model.strip()
+            spellings.setdefault((make.lower(), model.lower()), Counter())[(make, model)] += 1
+    cams = sorted(spellings.items(), key=lambda kv: -sum(kv[1].values()))
+    for (make_l, model_l), variants in cams:
+        n = sum(variants.values())
         if n < MIN_CAMERA:
             continue
-        label = model if model.lower().startswith(make.lower()) else f"{make} {model}"
-        out.append({"id": _sid("kamera", f"{make}|{model}"), "art": "kamera", "titel": f"Kamera {label}",
+        make, model = _nice_spelling(variants)
+        label = model if model_l.startswith(make_l) else f"{make} {model}"
+        out.append({"id": _sid("kamera", f"{make_l}|{model_l}"), "art": "kamera", "titel": f"Kamera {label}",
                     "grund": f"{n} Medien mit dieser Kamera",
                     "regel": {"name": f"Vorschlag: {label}", "tag": f"Kamera/{label}", "hersteller": make,
-                              "modell": f"^{re.escape(model)}$"}})
+                              "modell": f"^{re.escape(model)}$"}})  # Regeln: Groß/klein egal
     shots = sum(1 for a in lib.assets.values() if is_screenshot(a))
     if shots >= MIN_SOURCE:
         out.append({"id": _sid("quelle", "screenshot"), "art": "quelle", "titel": "Screenshots",

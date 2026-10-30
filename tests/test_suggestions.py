@@ -139,3 +139,24 @@ def test_smart_search_skips_excluded_and_pages(web, state):
     assert {m["id"] for m in hidden["medien"]} == set(ids)
     web.post("/api/suggestions/smart/hide", json={"tag": first["tag"], "ids": ids, "undo": True})
     assert web.get("/api/suggestions/smart", params={"begriff": "Hund", "anzahl": 3}).json()["ausgeblendet"] == 0
+
+
+def test_camera_spelling_merged():
+    """„SONY ILCE-7M4“ und „Sony ILCE-7M4“ sind eine Kamera – ein Vorschlag, schöne Schreibweise."""
+    from immich_pflege.suggestions import MIN_CAMERA, data_suggestions
+    from tests.helpers import asset, library
+    half = MIN_CAMERA // 2 + 1
+    xs = [asset(make="SONY", model="ILCE-7M4") for _ in range(half)] + [asset(make="Sony", model="ilce-7m4") for _ in range(half)]
+    cams = [s for s in data_suggestions(library(*xs)) if s["art"] == "kamera"]
+    assert len(cams) == 1 and cams[0]["regel"]["tag"] == "Kamera/Sony ILCE-7M4"
+    assert cams[0]["grund"].startswith(f"{2 * half} ")
+
+
+def test_existing_tag_spelling_is_reused(clients, state):
+    from immich_pflege.rules import Resolver
+    client = clients["frank"]
+    client.upsert_tags(["Kamera/SONY ILCE-7M4"])
+    r = Resolver(clients)
+    assert r.canonical("frank", "Kamera/Sony ILCE-7M4") == "Kamera/SONY ILCE-7M4"
+    assert r.canonical("frank", "Kamera/Neu") == "Kamera/Neu"
+    assert r.tag_id("frank", "kamera/sony ilce-7m4") == r.tag_id("frank", "Kamera/SONY ILCE-7M4")

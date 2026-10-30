@@ -414,7 +414,17 @@ class Resolver:
     def tag_id(self, user: str, value: str) -> str | None:
         if user not in self._tags:
             self._tags[user] = {t["value"]: t["id"] for t in self.clients[user].tags()}
-        return self._tags[user].get(value)
+        return self._tags[user].get(self.canonical(user, value))
+
+    def canonical(self, user: str, value: str) -> str:
+        """Vorhandene Schreibweise eines Tags (Groß-/Kleinschreibung egal) – sonst ``value`` selbst.
+        So entsteht kein „Kamera/Sony …“ neben einem vorhandenen „Kamera/SONY …“."""
+        if user not in self._tags:
+            self._tags[user] = {t["value"]: t["id"] for t in self.clients[user].tags()}
+        if value in self._tags[user]:
+            return value
+        low = value.lower()
+        return next((v for v in sorted(self._tags[user]) if v.lower() == low), value)
 
     def tagged_assets(self, user: str, value: str) -> set[str]:
         tid = self.tag_id(user, value)
@@ -499,8 +509,9 @@ def tag_ids(tag: str, ids: list[str], lib: Library, resolver: Resolver) -> dict[
         if not new:
             continue
         client = resolver.clients[user]
-        upserted = client.upsert_tags([tag])
-        tid = next((t["id"] for t in upserted if t.get("value") == tag), None) or resolver.tag_id(user, tag)
+        value = resolver.canonical(user, tag)
+        upserted = client.upsert_tags([value])
+        tid = next((t["id"] for t in upserted if t.get("value") == value), None) or resolver.tag_id(user, value)
         if not tid:
             raise RuntimeError(f"Tag „{tag}“ konnte bei {user} nicht angelegt werden")
         client.tag_assets([tid], new)
@@ -525,11 +536,12 @@ def apply(rules: list[Rule], lib: Library, resolver: Resolver) -> list[dict[str,
                 per_user[m.user] = 0
                 continue
             client = resolver.clients[m.user]
-            upserted = client.upsert_tags(list(m.missing))
+            canon = {tag: resolver.canonical(m.user, tag) for tag in m.missing}
+            upserted = client.upsert_tags(sorted(set(canon.values())))
             ids_by_value = {t.get("value"): t["id"] for t in upserted}
             resolver.forget_tags(m.user)
             for tag, asset_ids in m.missing.items():
-                tid = ids_by_value.get(tag) or resolver.tag_id(m.user, tag)
+                tid = ids_by_value.get(canon[tag]) or resolver.tag_id(m.user, canon[tag])
                 if not tid:
                     raise RuntimeError(f"Tag „{tag}“ konnte bei {m.user} nicht angelegt werden")
                 if asset_ids:

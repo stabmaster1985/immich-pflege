@@ -13,6 +13,8 @@ Das Tool schlägt aus euren Daten Tags vor und zählt genau, wie viele Medien no
 | 📥 Screenshots | `Quelle/Screenshot` | Bildschirmfotos |
 | 📥 WhatsApp-Bilder | `Quelle/WhatsApp` | Dateinamen wie `IMG-20240718-WA0003` |
 
+**Groß-/Kleinschreibung:** Kameras zählen unabhängig von der Schreibweise, „SONY ILCE-7M4“ und „Sony ILCE-7M4“ sind ein Vorschlag (Hersteller schön geschrieben, also „Sony“). Gibt es einen Tag schon in anderer Schreibweise, z. B. `Kamera/SONY ILCE-7M4`, wird dieser benutzt statt einen zweiten anzulegen – das gilt für alle Tags.
+
 **Prüfen & taggen** öffnet alle Treffer, auch Tausende, als kleines Raster, nach Monaten gruppiert (neueste zuerst):
 
 - **Antippen** wählt ein Bild ab (grau mit ✕), noch einmal antippen wählt es wieder aus.
