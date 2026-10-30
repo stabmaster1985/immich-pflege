@@ -325,3 +325,26 @@ def test_sort_by_benefit_and_progress(web):
     web.post("/api/staged/duplicates", json={"action": "album", "groups": [{"id": gid}]})
     web.post("/api/staged/apply", json={})
     assert web.get("/api/duplicates").json()["fortschritt"]["heute"] >= 1
+
+
+def test_thumbnail_falls_back_to_other_size(web):
+    """Fehlt in Immich die kleine Vorschau, kommt die große (und umgekehrt)."""
+    from immich_pflege.client import ImmichError
+    svc = web.app.state.service
+    asset_id = next(iter(svc.library().assets))
+    calls = []
+
+    def fake(self, aid, size="thumbnail"):
+        calls.append((self.user, size))
+        if size == "thumbnail":
+            raise ImmichError("fehlt", 404)
+        return b"JPEG", "image/jpeg"
+
+    from unittest.mock import patch
+    with patch("immich_pflege.client.ImmichClient.thumbnail", fake):
+        r = web.get(f"/thumb/{asset_id}")
+        assert r.status_code == 200 and r.content == b"JPEG"
+        assert calls[-1][1] == "preview"
+    with patch("immich_pflege.client.ImmichClient.thumbnail", lambda self, aid, size="thumbnail": (_ for _ in ()).throw(ImmichError("nein", 403))):
+        r = web.get(f"/thumb/{asset_id}")
+        assert r.status_code == 403 and r.headers["cache-control"] == "no-store"

@@ -2116,16 +2116,28 @@ class Pflege:
 
     # ------------------------------------------------------------- Vorschau
     def thumbnail(self, asset_id: str, size: str = "thumbnail") -> tuple[bytes, str]:
+        """Vorschaubild über den Key des Besitzers (sonst des anderen). Fehlt die gewünschte Größe in Immich
+        (z. B. Erzeugung fehlgeschlagen), kommt die andere Größe; Netzfehler werden einmal wiederholt."""
         lib = self._lib
         owner = lib.assets[asset_id].owner if lib and asset_id in lib.assets else None
         order = [owner] if owner else []
         order += [n for n in self.clients if n != owner]
+        sizes = [size] + [s for s in ("thumbnail", "preview", "fullsize") if s != size]
+        errors: list[str] = []
         last: ImmichError | None = None
-        for name in order:
-            try:
-                return self.clients[name].thumbnail(asset_id, size)
-            except ImmichError as exc:
-                last = exc
+        for s in sizes:
+            for name in order:
+                for attempt in range(2):
+                    try:
+                        return self.clients[name].thumbnail(asset_id, s)
+                    except ImmichError as exc:
+                        last = exc
+                        if attempt == 0 and (exc.status is None or exc.status >= 500 or exc.status == 429):
+                            time.sleep(0.3)  # kurz durchatmen, dann noch einmal
+                            continue
+                        errors.append(f"{name}/{s}: {exc.status or exc}")
+                        break
+        log.warning("Vorschaubild %s nicht ladbar (%s)", asset_id, "; ".join(errors))
         raise last or ImmichError("Kein Benutzer konfiguriert")
 
 

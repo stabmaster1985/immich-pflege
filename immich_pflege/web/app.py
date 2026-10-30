@@ -922,7 +922,8 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         try:
             data, ctype = svc().thumbnail(asset_id, size)
         except ImmichError as exc:
-            return Response(str(exc), status_code=404 if exc.status in (400, 404) else 502)
+            status = 404 if exc.status in (400, 404) else 403 if exc.status in (401, 403) else 502
+            return Response(str(exc), status_code=status, headers={"Cache-Control": "no-store"})
         return Response(data, media_type=ctype,
                         headers={"Cache-Control": "private, max-age=86400"})
 

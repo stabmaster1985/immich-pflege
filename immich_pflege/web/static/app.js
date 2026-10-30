@@ -125,6 +125,37 @@ function openLinks(m) {
     web ? h("a", { href: `${web}/photos/${encodeURIComponent(m.id)}`, target: "_blank", rel: "noopener", title: "In Immich im Browser öffnen" }, "Web ↗") : null);
 }
 
+/* ------------------------------------------------- Fehlende Vorschauen */
+// Vorschaubild lädt nicht: einmal nachladen, sonst Platzhalter mit dem Grund (HTTP-Status von Immich)
+document.addEventListener("error", (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !/(^|\/)thumb\//.test(img.getAttribute("src") || "")) return;
+  if (!img.dataset.retry) {
+    img.dataset.retry = "1";
+    const src = img.getAttribute("src");
+    setTimeout(() => { img.src = src + (src.includes("?") ? "&" : "?") + "r=1"; }, 1200);
+    return;
+  }
+  thumbFailed(img);
+}, true);
+
+async function thumbFailed(img) {
+  if (img.classList.contains("thumb-err")) return;
+  img.classList.add("thumb-err");
+  let why = "";
+  try {
+    const r = await fetch(img.getAttribute("src"), { cache: "no-store" });
+    why = r.ok ? "" : (r.status === 403 ? "kein Zugriff mit dem API-Key" : r.status === 404 ? "in Immich nicht gefunden" : "Immich-Fehler") + ` (HTTP ${r.status})`;
+  } catch (_) { why = "keine Verbindung"; }
+  img.alt = "Vorschau fehlt" + (why ? ": " + why : "");
+  img.title = img.alt + (img._m && img._m.dateiname ? " – " + img._m.dateiname : "");
+  const code = (why.match(/HTTP \d+/) || [""])[0];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#8884"/>`
+    + `<text x="60" y="56" font-size="13" text-anchor="middle" fill="#666" font-family="sans-serif">Vorschau fehlt</text>`
+    + `<text x="60" y="76" font-size="12" text-anchor="middle" fill="#666" font-family="sans-serif">${code}</text></svg>`;
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+}
+
 /* -------------------------------------------------------- Großansicht */
 const zoomBtn = () => h("button", { type: "button", class: "v-open zoom", title: "Groß ansehen", "aria-label": "Groß ansehen" }, "⤢");
 // Jedes Vorschaubild (img._m) lässt sich groß ansehen: in Streifen per Antippen, in Kacheln über „Groß“.
@@ -151,6 +182,7 @@ function renderViewer() {
   img.src = "thumb/" + m.id;  // kleines Bild sofort, das große lädt darüber
   const big = new Image();
   big.onload = () => { if (VW.list[VW.i] === m) img.src = big.src; };
+  big.onerror = () => { if (VW.list[VW.i] === m) thumbFailed(img); };
   big.src = "thumb/" + m.id + "?size=preview";
   img.alt = m.dateiname || "";
   const next = VW.list[VW.i + 1];
