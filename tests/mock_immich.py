@@ -554,6 +554,8 @@ def create_app(state: MockState) -> FastAPI:
         a = state.assets.get(asset_id)
         if a is None or a["ownerId"] != user["id"]:
             raise HTTPException(400, "Not found or no asset.view access")
+        if a.get("_no_thumb"):
+            raise HTTPException(404, "Asset media not found")
         if a["type"] == "IMAGE":
             return Response(render_thumbnail(a["_image"], a["width"]), media_type="image/webp")
         label = a["originalFileName"][:14]
@@ -561,6 +563,23 @@ def create_app(state: MockState) -> FastAPI:
                f'<rect width="250" height="250" fill="#888"/><text x="125" y="130" font-size="20" '
                f'text-anchor="middle" fill="#fff" font-family="sans-serif">{label}</text></svg>')
         return Response(svg, media_type="image/svg+xml")
+
+    @app.get("/api/assets/{asset_id}/original")
+    async def original(asset_id: str, request: Request):
+        user = auth(request)
+        a = state.assets.get(asset_id)
+        if a is None or a["ownerId"] != user["id"]:
+            raise HTTPException(400, "Not found or no asset.download access")
+        return Response(b"ORIGINAL", media_type="image/jpeg")
+
+    @app.post("/api/assets/jobs")
+    async def asset_jobs(request: Request):
+        user = auth(request)
+        body = await record(request, user)
+        for aid in body["assetIds"]:
+            if body["name"] == "regenerate-thumbnail" and aid in state.assets:
+                state.assets[aid].pop("_no_thumb", None)
+        return Response(status_code=204)
 
     @app.get("/api/tags")
     async def tags(request: Request):

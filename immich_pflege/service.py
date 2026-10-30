@@ -82,6 +82,10 @@ def check_server(clients: dict[str, ImmichClient]) -> dict[str, Any]:
     return result
 
 
+BROWSER_IMAGES = {"jpg", "jpeg", "png", "webp", "gif", "avif"}  # zeigt jeder Browser direkt an
+ORIGINAL_MAX = 25 * 1024 * 1024  # größer nicht als Ersatz-Vorschau laden
+
+
 class Pflege:
     def __init__(self, settings: Settings, http: httpx.Client | None = None):
         self.settings = settings
@@ -91,6 +95,7 @@ class Pflege:
         }
         self._lib: Library | None = None
         self._lock = threading.RLock()
+        self._thumb_regen: set[str] = set()  # schon in Immich neu angestoßene Vorschauen (je Programmlauf)
         self._scan_lock = threading.RLock()
         self.scanning = False
         self.progress = ""  # was beim Einlesen gerade passiert (für die Oberfläche)
@@ -2125,6 +2130,7 @@ class Pflege:
         sizes = [size] + [s for s in ("thumbnail", "preview", "fullsize") if s != size]
         errors: list[str] = []
         last: ImmichError | None = None
+        own_error: ImmichError | None = None  # zählt: was der Key des Besitzers sagt
         for s in sizes:
             for name in order:
                 for attempt in range(2):
@@ -2132,12 +2138,32 @@ class Pflege:
                         return self.clients[name].thumbnail(asset_id, s)
                     except ImmichError as exc:
                         last = exc
+                        if name == owner:
+                            own_error = exc
                         if attempt == 0 and (exc.status is None or exc.status >= 500 or exc.status == 429):
                             time.sleep(0.3)  # kurz durchatmen, dann noch einmal
                             continue
                         errors.append(f"{name}/{s}: {exc.status or exc}")
                         break
         log.warning("Vorschaubild %s nicht ladbar (%s)", asset_id, "; ".join(errors))
+        last = own_error or last
+        if last is not None and last.status == 404 and owner:
+            # Immich hat keine Vorschaudatei (Erzeugung fehlgeschlagen oder Datei weg): neu erzeugen lassen
+            # und solange das Original zeigen, falls der Browser es darstellen kann und es nicht zu groß ist
+            a = lib.assets[asset_id]
+            if asset_id not in self._thumb_regen:
+                self._thumb_regen.add(asset_id)
+                try:
+                    self.clients[owner].asset_job([asset_id], "regenerate-thumbnail")
+                    log.info("Vorschau für %s (%s) in Immich neu angestoßen", a.file_name, owner)
+                except ImmichError as exc:
+                    log.warning("Vorschau für %s nicht neu anstoßbar: %s", a.file_name, exc)
+            ext = (a.file_name or "").rsplit(".", 1)[-1].lower()
+            if a.type == "IMAGE" and ext in BROWSER_IMAGES and (a.file_size or 0) <= ORIGINAL_MAX:
+                try:
+                    return self.clients[owner].original(asset_id)
+                except ImmichError as exc:
+                    log.warning("Original %s als Ersatz nicht ladbar: %s", a.file_name, exc)
         raise last or ImmichError("Kein Benutzer konfiguriert")
 
 

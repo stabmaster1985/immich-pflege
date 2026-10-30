@@ -348,3 +348,15 @@ def test_thumbnail_falls_back_to_other_size(web):
     with patch("immich_pflege.client.ImmichClient.thumbnail", lambda self, aid, size="thumbnail": (_ for _ in ()).throw(ImmichError("nein", 403))):
         r = web.get(f"/thumb/{asset_id}")
         assert r.status_code == 403 and r.headers["cache-control"] == "no-store"
+
+
+def test_missing_thumbnail_regenerated_and_original_shown(web, state):
+    """Immich hat keine Vorschaudatei: Original als Ersatz, Vorschau in Immich neu anstoßen."""
+    aid = next(i for i, a in state.assets.items() if a["type"] == "IMAGE" and a["originalFileName"].lower().endswith(".jpg"))
+    state.assets[aid]["_no_thumb"] = True
+    web.get("/api/duplicates")  # Bibliothek einlesen (Besitzer bekannt)
+    r = web.get(f"/thumb/{aid}")
+    assert r.status_code == 200 and r.content == b"ORIGINAL"
+    jobs = [c for c in state.calls if c[1] == "/api/assets/jobs"]
+    assert len(jobs) == 1 and jobs[0][3] == {"assetIds": [aid], "name": "regenerate-thumbnail"}
+    assert web.get(f"/thumb/{aid}").content != b"ORIGINAL"  # danach wieder die echte Vorschau

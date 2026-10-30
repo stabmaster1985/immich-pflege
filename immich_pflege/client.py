@@ -271,8 +271,22 @@ class ImmichClient:
         except httpx.HTTPError as exc:
             raise ImmichError(f"Immich nicht erreichbar: {exc}") from exc
         if resp.status_code >= 400:
-            raise ImmichError(f"Vorschaubild {asset_id}: HTTP {resp.status_code}", resp.status_code)
+            raise ImmichError(f"Vorschaubild {asset_id}: HTTP {resp.status_code} {_error_text(resp)}", resp.status_code)
         return resp.content, resp.headers.get("content-type", "image/jpeg")
+
+    def original(self, asset_id: str) -> tuple[bytes, str]:
+        """Originaldatei (nur als Ersatz, wenn Immich keine Vorschau hat)."""
+        try:
+            resp = self._http.get(f"{self.api_url}/assets/{asset_id}/original", headers={"x-api-key": self._key})
+        except httpx.HTTPError as exc:
+            raise ImmichError(f"Immich nicht erreichbar: {exc}") from exc
+        if resp.status_code >= 400:
+            raise ImmichError(f"Original {asset_id}: HTTP {resp.status_code} {_error_text(resp)}", resp.status_code)
+        return resp.content, resp.headers.get("content-type", "application/octet-stream")
+
+    def asset_job(self, ids: list[str], name: str) -> None:
+        """Immich-Auftrag für einzelne Medien, z. B. ``regenerate-thumbnail``."""
+        self.request("POST", "/assets/jobs", json={"assetIds": ids, "name": name})
 
     # ------------------------------------------------------------------ Tags
     def tags(self) -> list[dict]:

@@ -145,7 +145,7 @@ async function thumbFailed(img) {
   let why = "";
   try {
     const r = await fetch(img.getAttribute("src"), { cache: "no-store" });
-    why = r.ok ? "" : (r.status === 403 ? "kein Zugriff mit dem API-Key" : r.status === 404 ? "in Immich nicht gefunden" : "Immich-Fehler") + ` (HTTP ${r.status})`;
+    why = r.ok ? "" : (r.status === 403 ? "kein Zugriff mit dem API-Key" : r.status === 400 ? "kein Zugriff oder unbekannt (gehört es einem anderen Konto?)" : r.status === 404 ? "Immich hat keine Vorschau – wird neu erzeugt, später neu laden" : "Immich-Fehler") + ` (HTTP ${r.status})`;
   } catch (_) { why = "keine Verbindung"; }
   img.alt = "Vorschau fehlt" + (why ? ": " + why : "");
   img.title = img.alt + (img._m && img._m.dateiname ? " – " + img._m.dateiname : "");
