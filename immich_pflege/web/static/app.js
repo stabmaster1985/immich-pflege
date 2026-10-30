@@ -133,7 +133,7 @@ document.addEventListener("error", (e) => {
   if (!img.dataset.retry) {
     img.dataset.retry = "1";
     const src = img.getAttribute("src");
-    setTimeout(() => { img.src = src + (src.includes("?") ? "&" : "?") + "r=1"; }, 1200);
+    setTimeout(() => { img.src = src + (src.includes("?") ? "&" : "?") + "r=1"; }, 2000 + Math.random() * 2000);
     return;
   }
   thumbFailed(img);
@@ -145,10 +145,13 @@ async function thumbFailed(img) {
   let why = "";
   try {
     const r = await fetch(img.getAttribute("src"), { cache: "no-store" });
-    why = r.ok ? "" : (r.status === 403 ? "kein Zugriff mit dem API-Key" : r.status === 400 ? "kein Zugriff oder unbekannt (gehört es einem anderen Konto?)" : r.status === 404 ? "Immich hat keine Vorschau – wird neu erzeugt, später neu laden" : "Immich-Fehler") + ` (HTTP ${r.status})`;
+    if (r.ok) { img.classList.remove("thumb-err"); const s = img.getAttribute("src"); img.src = s + (s.includes("?") ? "&" : "?") + "ok=1"; return; }  // klappt inzwischen
+    const detail = (await r.text()).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+    img.dataset.detail = detail;
+    why = r.ok ? "" : (r.status === 403 ? "von Immich abgewiesen" : r.status === 400 ? "kein Zugriff oder unbekannt (gehört es einem anderen Konto?)" : r.status === 404 ? "Immich hat keine Vorschau – wird neu erzeugt, später neu laden" : "Immich-Fehler") + ` (HTTP ${r.status})`;
   } catch (_) { why = "keine Verbindung"; }
   img.alt = "Vorschau fehlt" + (why ? ": " + why : "");
-  img.title = img.alt + (img._m && img._m.dateiname ? " – " + img._m.dateiname : "");
+  img.title = img.alt + (img._m && img._m.dateiname ? " – " + img._m.dateiname : "") + (img.dataset.detail ? "\n" + img.dataset.detail : "");
   const code = (why.match(/HTTP \d+/) || [""])[0];
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#8884"/>`
     + `<text x="60" y="56" font-size="13" text-anchor="middle" fill="#666" font-family="sans-serif">Vorschau fehlt</text>`

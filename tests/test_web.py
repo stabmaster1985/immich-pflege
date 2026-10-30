@@ -360,3 +360,24 @@ def test_missing_thumbnail_regenerated_and_original_shown(web, state):
     jobs = [c for c in state.calls if c[1] == "/api/assets/jobs"]
     assert len(jobs) == 1 and jobs[0][3] == {"assetIds": [aid], "name": "regenerate-thumbnail"}
     assert web.get(f"/thumb/{aid}").content != b"ORIGINAL"  # danach wieder die echte Vorschau
+
+
+def test_thumbnail_retries_when_rejected_temporarily(web):
+    """Bei vielen Anfragen weist ein Proxy/Immich einzelne ab (403/429): kurz warten, noch einmal."""
+    from unittest.mock import patch
+
+    from immich_pflege.client import ImmichError
+    svc = web.app.state.service
+    web.get("/api/duplicates")
+    asset_id = next(iter(svc.library().assets))
+    tries = []
+
+    def flaky(self, aid, size="thumbnail"):
+        tries.append(size)
+        if len(tries) == 1:
+            raise ImmichError("Forbidden", 403)
+        return b"OK", "image/jpeg"
+
+    with patch("immich_pflege.service.THUMB_RETRY_S", (0, 0)), patch("immich_pflege.client.ImmichClient.thumbnail", flaky):
+        r = web.get(f"/thumb/{asset_id}")
+    assert r.status_code == 200 and tries == ["thumbnail", "thumbnail"]

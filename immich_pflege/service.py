@@ -84,6 +84,8 @@ def check_server(clients: dict[str, ImmichClient]) -> dict[str, Any]:
 
 BROWSER_IMAGES = {"jpg", "jpeg", "png", "webp", "gif", "avif"}  # zeigt jeder Browser direkt an
 ORIGINAL_MAX = 25 * 1024 * 1024  # größer nicht als Ersatz-Vorschau laden
+THUMB_PARALLEL = 6  # gleichzeitige Vorschau-Anfragen an Immich
+THUMB_RETRY_S = (0.5, 2.0)  # Wartezeiten vor dem 2. und 3. Versuch
 
 
 class Pflege:
@@ -96,6 +98,7 @@ class Pflege:
         self._lib: Library | None = None
         self._lock = threading.RLock()
         self._thumb_regen: set[str] = set()  # schon in Immich neu angestoßene Vorschauen (je Programmlauf)
+        self._thumb_slots = threading.BoundedSemaphore(THUMB_PARALLEL)
         self._scan_lock = threading.RLock()
         self.scanning = False
         self.progress = ""  # was beim Einlesen gerade passiert (für die Oberfläche)
@@ -2133,19 +2136,26 @@ class Pflege:
         own_error: ImmichError | None = None  # zählt: was der Key des Besitzers sagt
         for s in sizes:
             for name in order:
-                for attempt in range(2):
+                for attempt in range(len(THUMB_RETRY_S) + 1):
                     try:
-                        return self.clients[name].thumbnail(asset_id, s)
+                        with self._thumb_slots:  # nicht zu viele auf einmal (Proxy/Immich weisen sonst ab)
+                            return self.clients[name].thumbnail(asset_id, s)
                     except ImmichError as exc:
                         last = exc
                         if name == owner:
                             own_error = exc
-                        if attempt == 0 and (exc.status is None or exc.status >= 500 or exc.status == 429):
-                            time.sleep(0.3)  # kurz durchatmen, dann noch einmal
+                        # vorübergehend? (Netz, überlastet, Proxy-Sperre bei vielen Anfragen) – kurz warten
+                        if attempt < len(THUMB_RETRY_S) and (exc.status is None or exc.status in (401, 403, 429)
+                                                              or exc.status >= 500):
+                            time.sleep(THUMB_RETRY_S[attempt])
                             continue
-                        errors.append(f"{name}/{s}: {exc.status or exc}")
+                        errors.append(f"{name}/{s}: {exc}")
                         break
-        log.warning("Vorschaubild %s nicht ladbar (%s)", asset_id, "; ".join(errors))
+                if own_error is not None and own_error.status in (401, 403) and last is own_error:
+                    break  # Key des Besitzers abgewiesen: andere Größen bringen nichts
+            if own_error is not None and own_error.status in (401, 403):
+                break
+        log.warning("Vorschaubild %s nicht ladbar: %s", asset_id, " | ".join(errors))
         last = own_error or last
         if last is not None and last.status == 404 and owner:
             # Immich hat keine Vorschaudatei (Erzeugung fehlgeschlagen oder Datei weg): neu erzeugen lassen
