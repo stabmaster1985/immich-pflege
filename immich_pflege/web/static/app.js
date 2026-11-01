@@ -724,6 +724,7 @@ async function loadLocation(reset) {
     sortierung: initSort(l, "loc", "datum") });
   if (l.hours) params.set("max_hours", l.hours);
   if (l.minConf) params.set("min_confidence", l.minConf);
+  if (l.level) params.set("sicherheit", l.level);
   if (l.ort && l.ort !== "*") params.set("ort", l.ort);
   if (l.monat) params.set("monat", l.monat);
   if (l.herkunft) params.set("herkunft", l.herkunft);
@@ -1006,6 +1007,7 @@ async function applyPlace(o, btn, monat = null) {
   const body = { ort: o.key };
   if (monat) body.monat = monat;
   if (S.loc.minConf) body.min_confidence = S.loc.minConf;
+  if (S.loc.level) body.sicherheit = S.loc.level;
   await doApplyLocation(body, btn, monat ? `${o.name}` : o.name);
 }
 
@@ -1098,7 +1100,7 @@ async function doApplyLocation(body, btn, label) {
   try {
     const r = await api("api/staged/no-location", { method: "POST",
       body: { ...body, label, max_hours: S.loc.hours, ...(S.loc.herkunft ? { herkunft: S.loc.herkunft } : {}),
-        ...(S.loc.benutzer ? { benutzer: S.loc.benutzer } : {}) } });
+        ...(S.loc.benutzer ? { benutzer: S.loc.benutzer } : {}), ...(S.loc.level && !body.ids && !body.place ? { sicherheit: S.loc.level } : {}) } });
     toast(`${n(r.vorgemerkt, "Medium", "Medien")} vorgemerkt` + (r.uebersprungen.length ? `, ${r.uebersprungen.length} übersprungen` : ""));
     await afterStage("loc");
     return true;
@@ -3971,7 +3973,13 @@ onBusyClick("#dup-more", () => loadDuplicates(false));
 onBusyClick("#loc-more", () => loadLocation(false));
 $("#dup-done").addEventListener("change", (e) => { S.dup.includeDone = e.target.checked; loadTab("dup", true); });
 $("#loc-only").addEventListener("change", (e) => { S.loc.only = e.target.checked; loadTab("loc", true); });
-$("#loc-conf").addEventListener("change", (e) => { S.loc.minConf = e.target.value || null; loadTab("loc", true); });
+// „nur sichere“/„ab wahrscheinlich“: ab dieser Stufe; „=…“: genau diese Stufe (die anderen Medien fallen weg)
+$("#loc-conf").addEventListener("change", (e) => {
+  const v = e.target.value;
+  S.loc.minConf = v && !v.startsWith("=") ? v : null;
+  S.loc.level = v.startsWith("=") ? v.slice(1) : null;
+  loadTab("loc", true);
+});
 $("#place-q").addEventListener("input", () => { clearTimeout(placeTimer); placeTimer = setTimeout(searchPlaces, 300); });
 $("#set-home-q").addEventListener("input", () => { clearTimeout(homeTimer); homeTimer = setTimeout(searchHome, 300); });
 $("#loc-hours").addEventListener("change", (e) => {

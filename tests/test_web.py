@@ -171,7 +171,7 @@ def test_no_location_by_place(web):
     key = over["orte"][0]["key"]
     r = web.get("/api/no-location", params={"ort": key}).json()
     assert r["serien_gesamt"] == 1 and r["medien_gefiltert"] == 2
-    assert r["filter"] == {"ort": key, "monat": None, "herkunft": None, "benutzer": None, "sortierung": "datum"}
+    assert r["filter"] == {"ort": key, "monat": None, "herkunft": None, "benutzer": None, "sortierung": "datum", "sicherheit": None}
     assert web.get("/api/no-location", params={"ort": "~ohne"}).json()["medien_gefiltert"] == 4
     assert web.get("/api/no-location", params={"monat": "2024-06"}).json()["serien_gesamt"] == 0
 
@@ -316,8 +316,8 @@ def test_sort_by_benefit_and_progress(web):
     saved = [sum(m["groesse"] or 0 for m in g["medien"] if m["id"] != g["vorschlag"]) for g in r["gruppen"]]
     assert saved == sorted(saved, reverse=True) and r["fortschritt"] == {"heute": 0, "woche": 0}
     assert web.get("/api/duplicates", params={"sortierung": "quatsch"}).status_code == 422
-    ser = web.get("/api/no-location", params={"ort": "*", "sortierung": "menge", "limit": 0}).json()["serien"]
-    assert [s["anzahl"] for s in ser] == sorted((s["anzahl"] for s in ser), reverse=True)
+    ser = web.get("/api/no-location", params={"sortierung": "menge", "limit": 0}).json()["serien"]
+    assert ser and [s["anzahl"] for s in ser] == sorted((s["anzahl"] for s in ser), reverse=True)
     items = web.get("/api/cleanup", params={"sortierung": "speicher"}).json()["eintraege"]
     assert [i["groesse"] for i in items] == sorted((i["groesse"] for i in items), reverse=True)
     # Übertragen zählt im Fortschritt
@@ -396,3 +396,20 @@ def test_key_permissions_reported(web, state):
     with __import__("unittest.mock").mock.patch("immich_pflege.service.THUMB_RETRY_S", (0, 0)):
         resp = web.get(f"/thumb/{aid}")
     assert resp.status_code == 403 and "asset.view" in resp.text
+
+
+def test_no_location_filter_exact_confidence(web):
+    """„nur wahrscheinliche“ / „nur unsichere“: genau diese Stufe, auch beim Vormerken."""
+    full = web.get("/api/no-location", params={"limit": 0}).json()
+    levels = {m["vorschlag"]["sicherheit"] for s in full["serien"] for m in s["medien"] if m["vorschlag"] and m["aenderbar"]}
+    for lvl in levels:
+        r = web.get("/api/no-location", params={"sicherheit": lvl, "limit": 0}).json()
+        shown = [m for s in r["serien"] for m in s["medien"]]
+        assert shown and all(m["vorschlag"]["sicherheit"] == lvl for m in shown)
+        assert r["filter"]["sicherheit"] == lvl
+    assert web.get("/api/no-location", params={"sicherheit": "quatsch"}).status_code == 422
+    lvl = "mittel" if "mittel" in levels else sorted(levels)[0]
+    over = web.get("/api/no-location", params={"overview": True, "sicherheit": lvl}).json()
+    res = web.post("/api/staged/no-location", json={"ort": over["orte"][0]["key"], "sicherheit": lvl}).json()
+    st = web.get("/api/staged").json()["eintraege"][0]
+    assert res["vorgemerkt"] >= 1 and all(ch["confidence"] == lvl for ch in st["daten"]["aenderungen"])

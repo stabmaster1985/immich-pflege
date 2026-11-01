@@ -55,7 +55,7 @@ Oben in der Zusammenfassung steht **„… ausgeblendet – ansehen“**. Dort s
 ## So arbeitest du am schnellsten
 
 1. Die **Übersicht nach Ort** zeigt pro vorgeschlagenem Ort, wie viele Medien und Serien betroffen sind.
-2. **Alle vormerken** auf einer Ortskarte merkt den Ort für alle Medien mit Vorschlag vor. Steht oben „nur sichere“, werden nur die sicheren vorgemerkt.
+2. **Alle vormerken** auf einer Ortskarte merkt den Ort für alle Medien mit Vorschlag vor. Oben unter **Zeigen** filterst du nach Sicherheit: „nur sichere“, „ab wahrscheinlich“, „nur wahrscheinliche“ oder „nur unsichere“. Dann zeigen Liste, Zahlen und **Alle vormerken** nur Medien dieser Stufe – so arbeitest du z. B. erst alle sicheren ab, dann gezielt die wahrscheinlichen.
 3. **Alle sicheren prüfen** unten öffnet alle sicheren Vorschläge in der Prüf-Ansicht, nach neuem Ort gruppiert. Einzelne Bilder oder ganze Orte abwählen, dann **… verorten**.
 
 Vorgemerktes verschwindet aus der Liste. An Immich geht es erst, wenn du es unter **Vorgemerkt** überträgst.

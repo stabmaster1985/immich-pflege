@@ -667,14 +667,18 @@ class Pflege:
         return series
 
     @staticmethod
-    def _member_filter(series, herkunft=None, benutzer=None):
-        """Serien nur mit den Medien dieser Herkunft bzw. dieses Benutzers; leere fallen weg."""
-        if not herkunft and not benutzer:
+    def _member_filter(series, herkunft=None, benutzer=None, level=None):
+        """Serien nur mit den Medien dieser Herkunft, dieses Benutzers bzw. genau dieser Sicherheit
+        (``level``); leere fallen weg."""
+        if not herkunft and not benutzer and not level:
             return series
+        if level and level not in LEVELS:
+            raise ActionError(f"Sicherheit muss {', '.join(LEVELS)} sein")
         out = []
         for s in series:
             members = [c for c in s.members if (not herkunft or c.origin == herkunft)
-                       and (not benutzer or c.asset.owner == benutzer)]
+                       and (not benutzer or c.asset.owner == benutzer)
+                       and (not level or (c.applicable and c.suggestion.confidence == level))]
             if members:
                 out.append(replace(s, members=members))
         return out
@@ -683,7 +687,8 @@ class Pflege:
                          only_suggestions: bool = False, min_confidence: str | None = None,
                          ort: str | None = None, monat: str | None = None,
                          overview: bool = False, herkunft: str | None = None,
-                         benutzer: str | None = None, sort: str = "datum") -> dict[str, Any]:
+                         benutzer: str | None = None, sort: str = "datum",
+                         level: str | None = None) -> dict[str, Any]:
         """Serien ohne Ort. ``overview`` liefert nur die Orte mit Mengen (ohne Serien).
         ``herkunft`` / ``benutzer``: nur die Medien dieser Herkunft bzw. dieses Benutzers."""
         if herkunft and herkunft not in HERKUNFT:
@@ -695,7 +700,7 @@ class Pflege:
             self.start_text_scan()  # einmal je Programmstart; danach nach jedem Einlesen
         hours, an = self._analysis(max_hours)
         # Serien (und damit Orte, Monate, Zahlen) nur mit den Medien dieser Herkunft / dieses Benutzers
-        base = self._member_filter(self._filter_series(an.series, only_suggestions, min_confidence), herkunft, benutzer)
+        base = self._member_filter(self._filter_series(an.series, only_suggestions, min_confidence), herkunft, benutzer, level)
         series = self._filter_series(base, ort=ort, monat=monat)
         if sort == "menge":  # große Serien zuerst – ein Tipp erledigt viele Medien
             series = sorted(series, key=lambda s: -len(s.members))
@@ -722,7 +727,8 @@ class Pflege:
             # Mengen je Ort (für den aktuellen Monat) und je Monat (für den aktuellen Ort)
             "orte": place_facets(self._filter_series(base, monat=monat)),
             "monate": month_facets(self._filter_series(base, ort=ort)),
-            "filter": {"ort": ort, "monat": monat, "herkunft": herkunft, "benutzer": benutzer, "sortierung": sort},
+            "filter": {"ort": ort, "monat": monat, "herkunft": herkunft, "benutzer": benutzer, "sortierung": sort,
+                       "sicherheit": level},
             "fortschritt": self.done_recently(("ort",)),
             "serien_gesamt": len(series),
             "medien_gefiltert": sum(len(s.members) for s in series),
@@ -734,7 +740,7 @@ class Pflege:
         return out
 
     def _select_locations(self, ids=None, max_hours=None, min_confidence=None, series=None, place=None,
-                          ort=None, monat=None, herkunft=None, benutzer=None):
+                          ort=None, monat=None, herkunft=None, benutzer=None, sicherheit=None):
         """Auswahl auflösen: ids und/oder series (Serien-IDs); ort/monat wählt alle Serien eines
         Ortes bzw. Monats; place = {breite, laenge, name} setzt einen von Hand gewählten Ort;
         min_confidence ohne Auswahl = alle ab dieser Sicherheit. Vorgemerktes zählt nicht mit."""
@@ -756,6 +762,7 @@ class Pflege:
                 selected += [c.asset.id for c in known[sid].members
                              if c.editable and (place or c.suggestion) and (not herkunft or c.origin == herkunft)
                              and (not benutzer or c.asset.owner == benutzer)
+                             and (not sicherheit or (c.suggestion and c.suggestion.confidence == sicherheit))
                              and (not min_confidence or (c.suggestion and
                                   level_at_least(c.suggestion.confidence, min_confidence)))]
         if not selected:

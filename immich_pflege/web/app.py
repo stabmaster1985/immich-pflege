@@ -115,6 +115,7 @@ class NoLocationApply(BaseModel):
     monat: Optional[str] = None
     herkunft: Optional[Herkunft] = None  # nur Medien dieser Herkunft
     benutzer: Optional[str] = None  # nur Medien dieses Benutzers
+    sicherheit: Optional[Literal["niedrig", "mittel", "hoch"]] = None  # nur genau diese Sicherheit
     label: Optional[str] = None  # nur beim Vormerken: Titel in der Liste
     max_hours: Optional[float] = Field(default=None, gt=0, le=48)
 
@@ -624,9 +625,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
                     min_confidence: Optional[Literal["niedrig", "mittel", "hoch"]] = None,
                     ort: Optional[str] = None, monat: Optional[str] = None, overview: bool = False,
                     herkunft: Optional[Herkunft] = None, benutzer: Optional[str] = None,
-                    sortierung: Literal["datum", "menge"] = "datum"):
+                    sortierung: Literal["datum", "menge"] = "datum",
+                    sicherheit: Optional[Literal["niedrig", "mittel", "hoch"]] = None):
         return svc().no_location_view(max_hours, offset, limit, only_suggestions, min_confidence,
-                                      ort, monat, overview, herkunft, benutzer, sortierung)
+                                      ort, monat, overview, herkunft, benutzer, sortierung, sicherheit)
 
     @app.get("/api/no-location/origin-media")
     def no_location_origin_media(herkunft: Herkunft,
@@ -885,7 +887,8 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         return svc().stage_no_location(
             label=body.label, ids=body.ids, max_hours=body.max_hours, min_confidence=body.min_confidence,
             series=body.series, place=body.place.model_dump() if body.place else None,
-            ort=body.ort, monat=body.monat, herkunft=body.herkunft, benutzer=body.benutzer)
+            ort=body.ort, monat=body.monat, herkunft=body.herkunft, benutzer=body.benutzer,
+            sicherheit=body.sicherheit)
 
     @app.post("/api/staged/tags")
     def stage_tags(body: TagsApply):
