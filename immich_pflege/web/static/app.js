@@ -874,7 +874,7 @@ async function archiveLocSelection(btn) {
   try {
     const res = await api("api/staged/archive", { method: "POST", body: { ids, label: "Ohne Ort – Auswahl" } });
     await api("api/no-location/no-place", { method: "POST", body: { ids } });
-    toast(`${n(res.vorgemerkt, "Medium", "Medien")} zum Archivieren vorgemerkt – unter Vorgemerkt übertragen`);
+    toast(`${n(res.vorgemerkt, "Medium", "Medien")} ausgeblendet und zum Archivieren vorgemerkt – unter Vorgemerkt übertragen`);
     S.loc.sel.clear(); S.stage.loaded = false;
     await loadTab("loc", true); loadCounts();
   } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
@@ -906,15 +906,15 @@ async function openOriginReview(herkunft, name, btn) {
   const after = async () => { S.loc.loaded = false; await loadTab("loc", true); loadCounts(); };
   openReview({
     titel: `Ohne Ort: ${name}`, medien: r.medien, gruppe: "monat",
-    hinweis: "Abwählen, was doch einen Ort bekommen soll. Ausgeblendetes lässt sich unter „… ausgeblendet – ansehen“ zurückholen.",
+    hinweis: "Abwählen, was doch einen Ort bekommen soll. „Nur ausblenden“: kein Ort nötig, bleibt in der Zeitleiste. „Ausblenden + archivieren“: zusätzlich aus der Zeitleiste nehmen (wird vorgemerkt, bleibt in Suche und Alben). Zurückholen unter „… ausgeblendet – ansehen“.",
     aktionen: [
-      { text: (k) => `${k} archivieren`, run: async (ids) => {
+      { text: (k) => `${k} ausblenden + archivieren`, run: async (ids) => {
         const res = await api("api/staged/archive", { method: "POST", body: { ids, label: name } });
         await api("api/no-location/no-place", { method: "POST", body: { ids } });
         toast(`${n(res.vorgemerkt, "Medium", "Medien")} zum Archivieren vorgemerkt und hier ausgeblendet`);
         S.stage.loaded = false; await after();
       } },
-      { klasse: "primary", text: (k) => `${k} ausblenden – kein Ort nötig`, run: async (ids) => {
+      { klasse: "primary", text: (k) => `${k} nur ausblenden`, run: async (ids) => {
         await api("api/no-location/no-place", { method: "POST", body: { ids } });
         toast(`${n(ids.length, "Medium", "Medien")} ausgeblendet`);
         await after();
@@ -3668,10 +3668,10 @@ function updateActionbar() {
     if (cnt) {
       const chosen = S.loc.series.flatMap((s) => s.medien).filter((m) => S.loc.sel.has(m.id));
       // gewählte Bilder ohne Ort-Vorschlag: archivieren (vormerken) oder „kein Ort nötig“
-      buttons.push(h("button", { class: "btn small", type: "button", title: "Aus der Zeitleiste nehmen – bleibt in Suche und Alben",
-        onclick: (e) => archiveLocSelection(e.currentTarget) }, "Archivieren"));
-      buttons.push(h("button", { class: "btn small", type: "button", title: "Hier dauerhaft ausblenden",
-        onclick: (e) => noPlaceLocSelection(e.currentTarget) }, "Kein Ort nötig"));
+      buttons.push(h("button", { class: "btn small", type: "button", title: "Hier ausblenden (kein Ort nötig) und aus der Zeitleiste nehmen – bleibt in Suche und Alben",
+        onclick: (e) => archiveLocSelection(e.currentTarget) }, "Ausblenden + archivieren"));
+      buttons.push(h("button", { class: "btn small", type: "button", title: "Nur hier dauerhaft ausblenden, bleibt in der Zeitleiste",
+        onclick: (e) => noPlaceLocSelection(e.currentTarget) }, "Nur ausblenden"));
       buttons.push(h("button", { class: "btn small", type: "button", onclick: () => openPlaceSearch({ ids: [...S.loc.sel], count: cnt, label: "Auswahl" }) }, "Ort wählen …"));
       buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !chosen.some(selectable), onclick: (e) => applyLocation(e.currentTarget) }, "Vormerken"));
     } else {

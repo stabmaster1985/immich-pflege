@@ -45,10 +45,10 @@ Die Filter wirken **im gewählten Ort**: In der Übersicht steht er oben und zä
 
 Screenshots sind ausgeblendet (abschaltbar unter ⚙ Einstellungen), ebenso Bilder, die in Immich **archiviert** sind: Die hast du bewusst aus der Zeitleiste genommen, sie brauchen meist keinen Ort. Bei **Messenger** und **Ohne Kameradaten** erscheint **Alle … prüfen & ausblenden**. Die Prüf-Ansicht zeigt alle, du wählst ab, was doch einen Ort bekommen soll. Dann:
 
-- **ausblenden – kein Ort nötig:** verschwinden dauerhaft aus „Ohne Ort“, aus den Zahlen und aus „Alle sicheren“.
-- **archivieren:** zusätzlich aus der Immich-Zeitleiste nehmen (wird vorgemerkt).
+- **nur ausblenden:** kein Ort nötig – verschwinden dauerhaft aus „Ohne Ort“, aus den Zahlen und aus „Alle sicheren“, bleiben aber in der Zeitleiste.
+- **ausblenden + archivieren:** beides – hier ausgeblendet **und** aus der Immich-Zeitleiste genommen (wird vorgemerkt; bleibt in Suche und Alben). Ideal für Dokumente, Quittungen und Screenshots.
 
-**Einzelne Bilder:** In der Liste Bilder antippen, dann unten **Archivieren** oder **Kein Ort nötig**. Das geht ohne Prüf-Ansicht, gut für ein paar Bilder. Archivieren wird wie alles erst **vorgemerkt** und geht beim **Übertragen** unter Vorgemerkt an Immich. Bis dahin ist das Bild hier schon ausgeblendet.
+**Einzelne Bilder:** In der Liste Bilder antippen, dann unten **Ausblenden + archivieren** oder **Nur ausblenden**. Das geht ohne Prüf-Ansicht, gut für ein paar Bilder. Archivieren wird wie alles erst **vorgemerkt** und geht beim **Übertragen** unter Vorgemerkt an Immich. Bis dahin ist das Bild hier schon ausgeblendet.
 
 Oben in der Zusammenfassung steht **„… ausgeblendet – ansehen“**. Dort siehst du getrennt: was du ausgeblendet hast, was in Immich archiviert ist und was als Screenshot erkannt wurde. Antippen und **wieder einblenden**, auch für ein Bild, das fälschlich als Screenshot erkannt wurde.
 
