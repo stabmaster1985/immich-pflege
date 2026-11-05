@@ -38,6 +38,16 @@ Verpasst der Container den Termin, holt er ihn beim nächsten Start nach, solang
 
 **An diesem Tag:** Über denselben Kanal kommt auf Wunsch jeden Morgen eine Nachricht mit den Fotos vom selben Kalendertag aus früheren Jahren, z. B. „vor 2 Jahren (2024): 23 Fotos – Siena“. Antippen öffnet bei ntfy das schönste Foto direkt in der Immich-App (Favorit, sonst ein Foto aus einem Album). Bei Telegram steht ein Link zur Weboberfläche darunter. An Tagen ohne frühere Fotos kommt nichts. Screenshots, archivierte Fotos und das Prüf-Album zählen nicht. **Heute testen** schickt die heutige Nachricht sofort.
 
+## Home Assistant (MQTT)
+
+Optional: Das Tool schickt seine Kennzahlen (Duplikate, Fotos ohne Ort, Aufräumen, Album- und Tag-Vorschläge, Vorgemerkt, letzter Scan, Version) per MQTT an den Broker. Home Assistant legt über die MQTT-Integration das Gerät **„Immich-Pflege“** mit diesen Sensoren und dem Knopf **„Neu scannen“** von selbst an.
+
+- **Broker**, **Port** und ggf. **Benutzer/Passwort** des MQTT-Brokers eintragen, den Haken setzen, speichern.
+- **Adresse dieses Tools:** z. B. `http://192.168.0.114:2222` – damit führt „Gerät besuchen“ in Home Assistant hierher.
+- Gesendet wird nach jeder Änderung (Einlesen, Vormerken, Übertragen, Rückgängig) und zusätzlich alle **… Sekunden**. **Jetzt senden** schickt sofort.
+- Darunter steht, ob die Verbindung steht. Ist der Broker nicht erreichbar, versucht es das Tool im Hintergrund weiter – sonst läuft alles normal.
+- Übernehmen, Löschen oder Taggen geht bewusst **nicht** über Home Assistant, nur hier mit Vorschau.
+
 ## Automatisch vormerken
 
 Unter **Automatisch einlesen**: Nach jedem automatischen Einlesen werden die angehakten Arten vorgemerkt (sichere Orte, identische Duplikate, Messenger-Kopien, Original + Bearbeitung, Serienbilder stapeln). Dazu wählst du, ob Duplikat-Kopien ins Prüf-Album oder in den Papierkorb sollen. Übertragen wird erst unter Vorgemerkt. Per `.env`: `AUTO_STAGE=identisch,messenger,serien`, `AUTO_STAGE_ACTION=album`.

@@ -1992,6 +1992,18 @@ async function loadSettings() {
     el.title = el.disabled ? "In der .env festgelegt" : "";
   };
   $("#set-url").value = d.immich_url; lock("#set-url", "immich_url");
+  $("#set-mqtt-on").checked = d.mqtt_enabled; lock("#set-mqtt-on", "mqtt_enabled");
+  $("#set-mqtt-host").value = d.mqtt_host; lock("#set-mqtt-host", "mqtt_host");
+  $("#set-mqtt-port").value = d.mqtt_port; lock("#set-mqtt-port", "mqtt_port");
+  $("#set-mqtt-user").value = d.mqtt_user; lock("#set-mqtt-user", "mqtt_user");
+  $("#set-mqtt-pass").value = ""; lock("#set-mqtt-pass", "mqtt_password");
+  $("#set-mqtt-pass").placeholder = d.mqtt_password_gesetzt ? "gespeichert" : "nicht gesetzt";
+  $("#set-mqtt-base").value = d.mqtt_base_topic; lock("#set-mqtt-base", "mqtt_base_topic");
+  $("#set-mqtt-prefix").value = d.mqtt_discovery_prefix; lock("#set-mqtt-prefix", "mqtt_discovery_prefix");
+  $("#set-mqtt-interval").value = d.mqtt_publish_interval; lock("#set-mqtt-interval", "mqtt_publish_interval");
+  $("#set-public-url").value = d.public_url; lock("#set-public-url", "public_url");
+  updateMqttFields();
+  loadMqttInfo();
   $("#set-album").value = d.review_album; lock("#set-album", "review_album");
   $("#set-link-url").value = d.link_url; lock("#set-link-url", "link_url");
   $("#set-hours").value = d.location_max_hours; lock("#set-hours", "location_max_hours");
@@ -2106,6 +2118,15 @@ function readSettingsForm() {
   put("update_repo", $("#set-upd-repo").value.trim());
   put("update_webhook_url", $("#set-upd-url").value.trim());
   put("update_webhook_header", $("#set-upd-header").value.trim());
+  put("mqtt_enabled", $("#set-mqtt-on").checked);
+  put("mqtt_host", $("#set-mqtt-host").value.trim());
+  put("mqtt_port", Number($("#set-mqtt-port").value) || 1883);
+  put("mqtt_user", $("#set-mqtt-user").value.trim());
+  if ($("#set-mqtt-pass").value) put("mqtt_password", $("#set-mqtt-pass").value);
+  put("mqtt_base_topic", $("#set-mqtt-base").value.trim());
+  put("mqtt_discovery_prefix", $("#set-mqtt-prefix").value.trim());
+  put("mqtt_publish_interval", Number($("#set-mqtt-interval").value) || 900);
+  put("public_url", $("#set-public-url").value.trim());
   put("report_channel", $("#set-rep-channel").value);
   put("report_day", Number($("#set-rep-day").value));
   put("report_time", $("#set-rep-time").value);
@@ -2149,6 +2170,19 @@ async function testConnection(btn) {
   } finally {
     busy(btn, false);
   }
+}
+
+function updateMqttFields() {
+  $("#set-mqtt-fields").hidden = !$("#set-mqtt-on").checked;
+}
+
+async function loadMqttInfo() {
+  try {
+    const m = await api("api/mqtt");
+    $("#set-mqtt-info").textContent = !m.aktiv ? "aus"
+      : m.verbunden ? `✓ verbunden mit ${m.broker}` + (m.zuletzt_gesendet ? ` · zuletzt gesendet ${fmtDateTime(m.zuletzt_gesendet)}` : "")
+        : `✗ nicht verbunden (${m.broker})` + (m.fehler ? `: ${m.fehler}` : " – verbinde …");
+  } catch (_) { /* egal */ }
 }
 
 function updateReportFields() {
@@ -4011,6 +4045,13 @@ $("#rule-delete").addEventListener("click", deleteRule);
 $("#yaml-save").addEventListener("click", (e) => saveYaml(e.currentTarget));
 $("#set-add-user").addEventListener("click", () => $("#set-users").append(userRow({ name: "", key_gesetzt: false })));
 $("#set-test").addEventListener("click", (e) => testConnection(e.currentTarget));
+$("#set-mqtt-on").addEventListener("change", updateMqttFields);
+$("#set-mqtt-send").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  busy(btn, true);
+  try { await api("api/mqtt/publish", { method: "POST" }); setTimeout(loadMqttInfo, 3500); toast("Wird gesendet"); }
+  catch (err) { toast(err.message, true); } finally { busy(btn, false); }
+});
 $("#set-auto").addEventListener("change", updateAutoFields);
 $("#set-rep-channel").addEventListener("change", updateReportFields);
 $("#set-rep-test").addEventListener("click", (e) => sendTestReport(e.currentTarget));

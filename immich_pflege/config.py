@@ -139,6 +139,15 @@ class Settings:
     update_webhook_url: str = ""  # n8n-Workflow n8n/immich-pflege-update.json
     update_webhook_header: str = "X-Update-Key"
     update_webhook_secret: str = ""
+    mqtt_enabled: bool = False  # Kennzahlen per MQTT an Home Assistant (Discovery)
+    mqtt_host: str = ""
+    mqtt_port: int = 1883
+    mqtt_user: str = ""
+    mqtt_password: str = ""
+    mqtt_base_topic: str = "immich_pflege"
+    mqtt_discovery_prefix: str = "homeassistant"
+    mqtt_publish_interval: int = 900  # Sekunden
+    public_url: str = ""  # Adresse dieses Tools, z. B. http://192.168.0.114:2222 (für Home Assistant)
     data_dir: Path = Path("/data")
     rules_file: Path | None = None
     timeout: float = 60.0
@@ -250,6 +259,15 @@ class Settings:
                                        lambda v: str(v).strip()),
             update_webhook_secret=pick("UPDATE_WEBHOOK_SECRET", "update_webhook_secret", "",
                                        lambda v: str(v).strip()),
+            mqtt_enabled=pick("MQTT_ENABLED", "mqtt_enabled", False, lambda v: _bool(v, False)),
+            mqtt_host=pick("MQTT_HOST", "mqtt_host", "", parse_host),
+            mqtt_port=pick("MQTT_PORT", "mqtt_port", 1883, parse_port),
+            mqtt_user=pick("MQTT_USER", "mqtt_user", "", lambda v: str(v).strip()),
+            mqtt_password=pick("MQTT_PASSWORD", "mqtt_password", "", lambda v: str(v)),
+            mqtt_base_topic=pick("MQTT_BASE_TOPIC", "mqtt_base_topic", "immich_pflege", parse_topic),
+            mqtt_discovery_prefix=pick("MQTT_DISCOVERY_PREFIX", "mqtt_discovery_prefix", "homeassistant", parse_topic),
+            mqtt_publish_interval=pick("MQTT_PUBLISH_INTERVAL", "mqtt_publish_interval", 900, parse_publish_interval),
+            public_url=pick("PUBLIC_URL", "public_url", "", lambda v: normalize_url(v) if str(v).strip() else ""),
         )
         if "update_webhook_header" not in locked and stored.get("update_webhook_header") == "":
             update["update_webhook_header"] = ""  # bewusst leer = Webhook ohne Authentifizierung
@@ -322,6 +340,15 @@ class Settings:
             "update_webhook_url": self.update_webhook_url,
             "update_webhook_header": self.update_webhook_header,
             "update_webhook_secret_gesetzt": bool(self.update_webhook_secret),
+            "mqtt_enabled": self.mqtt_enabled,
+            "mqtt_host": self.mqtt_host,
+            "mqtt_port": self.mqtt_port,
+            "mqtt_user": self.mqtt_user,
+            "mqtt_password_gesetzt": bool(self.mqtt_password),
+            "mqtt_base_topic": self.mqtt_base_topic,
+            "mqtt_discovery_prefix": self.mqtt_discovery_prefix,
+            "mqtt_publish_interval": self.mqtt_publish_interval,
+            "public_url": self.public_url,
         }
 
 
@@ -389,10 +416,19 @@ def update_settings(current: Settings, changes: Mapping[str, Any]) -> dict[str, 
     attempt("update_repo", parse_repo)
     attempt("update_webhook_url", lambda v: parse_webhook_url(v) if str(v or "").strip() else "")
     attempt("update_webhook_header", lambda v: str(v or "").strip())
+    attempt("mqtt_enabled", lambda v: _bool(v, False))
+    attempt("mqtt_host", lambda v: parse_host(v) if str(v or "").strip() else "")
+    attempt("mqtt_port", parse_port)
+    attempt("mqtt_user", lambda v: str(v or "").strip())
+    attempt("mqtt_base_topic", parse_topic)
+    attempt("mqtt_discovery_prefix", parse_topic)
+    attempt("mqtt_publish_interval", parse_publish_interval)
+    attempt("public_url", lambda v: normalize_url(v) if str(v or "").strip() else "")
     if stored.get("update_webhook_header") == "" and "update_webhook_secret" not in current.locked:
         stored.pop("update_webhook_secret", None)  # ohne Header-Name kein Header-Wert
         changes = {k: v for k, v in changes.items() if k != "update_webhook_secret"}
-    for secret in ("update_github_token", "update_webhook_secret", "report_ntfy_token", "report_telegram_token"):
+    for secret in ("update_github_token", "update_webhook_secret", "report_ntfy_token", "report_telegram_token",
+                   "mqtt_password"):
         # leer = unverändert, null = löschen
         if secret in changes and not blocked(secret):
             if changes[secret] is None:
@@ -501,6 +537,42 @@ def parse_min_km(value: Any) -> int:
 
 def parse_min_media(value: Any) -> int:
     return _int_range(value, 3, 1000, "Mindestzahl Medien für Albumvorschläge")
+
+
+def parse_host(value: Any) -> str:
+    """Rechnername oder IP des MQTT-Brokers (ohne Schema und Port)."""
+    v = str(value or "").strip()
+    v = re.sub(r"^(mqtts?|tcp)://", "", v).rstrip("/")
+    if not re.match(r"^[A-Za-z0-9.\-]+$", v):
+        raise ConfigError(f"MQTT-Broker: Rechnername oder IP, z. B. 192.168.0.102 (ist: {value!r})")
+    return v
+
+
+def parse_port(value: Any) -> int:
+    try:
+        port = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"MQTT-Port muss eine Zahl sein (ist: {value!r})") from exc
+    if not 1 <= port <= 65535:
+        raise ConfigError(f"MQTT-Port 1–65535 (ist: {port})")
+    return port
+
+
+def parse_topic(value: Any) -> str:
+    v = str(value or "").strip().strip("/")
+    if not v or any(c in v for c in "#+ ") or "//" in v:
+        raise ConfigError(f"MQTT-Topic ohne Leerzeichen, # und + (ist: {value!r})")
+    return v
+
+
+def parse_publish_interval(value: Any) -> int:
+    try:
+        secs = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"MQTT-Intervall in Sekunden (ist: {value!r})") from exc
+    if not 60 <= secs <= 86400:
+        raise ConfigError(f"MQTT-Intervall 60–86400 Sekunden (ist: {secs})")
+    return secs
 
 
 AUTO_STAGE_KINDS = ("identisch", "messenger", "bearbeitung", "serien")

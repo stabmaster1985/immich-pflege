@@ -9,7 +9,7 @@ from collections import Counter
 from dataclasses import replace
 from datetime import datetime, timedelta
 import time
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -154,6 +154,8 @@ class Pflege:
         # gleich anlegen: bei verzögertem Anlegen konnten Vorberechnung und Anfrage zwei Listen erzeugen
         self._staging = StagingStore(settings.data_dir / "vorgemerkt.json")
         self.history = HistoryStore(settings.data_dir / "verlauf.json")
+        self.listeners: list[Callable[[], None]] = []  # bei Änderungen aufgerufen (MQTT)
+        self._staging.on_change = self.history.on_change = self._notify
         self._trips_cache: tuple[tuple, Any] | None = None
         self._groups_cache: tuple[tuple, list[DuplicateGroup]] | None = None
         self._analysis_cache: tuple[tuple, Any] | None = None
@@ -226,7 +228,16 @@ class Pflege:
             self.start_hashing()
         self.start_text_scan()
         self.warm_up_background()
+        self._notify()
         return lib
+
+    def _notify(self) -> None:
+        """Etwas hat sich geändert (Einlesen, Vormerken, Übertragen, Rückgängig) – z. B. für MQTT."""
+        for fn in list(self.listeners):
+            try:
+                fn()
+            except Exception:  # ein Zuhörer darf nie die eigentliche Aktion stören
+                log.exception("Benachrichtigung fehlgeschlagen")
 
     def _set_progress(self, text: str) -> None:
         self.progress = text
@@ -251,6 +262,7 @@ class Pflege:
             self.progress = ""
         if self._lib is lib:
             self.sync_folders()
+        self._notify()  # Albumvorschläge sind jetzt bekannt
 
     # ------------------------------------------------------- Ordner-Alben
     def synced_folders(self) -> SyncedFolders:
@@ -2095,6 +2107,11 @@ class Pflege:
             },
             "erledigt": [{"monat": m, **v} for m, v in sorted(months.items())[-12:]],
         }
+
+    def duplicate_savings(self) -> tuple[int, int]:
+        """Offene Duplikat-Gruppen (wie „offen“ in der Liste) und wie viele Bytes der Vorschlag frei machen würde."""
+        groups = [g for g in self._filter_groups(self.duplicate_groups()) if not g.done()]
+        return len(groups), sum(a.file_size or 0 for g in groups for a in g.assets if a.id != g.suggested_keep)
 
     def nav_counts(self) -> dict[str, Any]:
         """Offene Einträge je Menüpunkt (None = gerade nicht bekannt, z. B. Alben werden noch gelesen)."""

@@ -29,6 +29,7 @@ from ..config import ConfigError, Settings, normalize_url, update_settings
 from ..logsetup import setup_logging
 from ..report import ReportError, Reporter, build_text
 from ..rules import RuleError, example_rules, read_rules_raw, save_rules
+from ..mqtt import MqttBridge
 from ..service import ActionError, ImmichError, NotConfigured, Pflege, check_server
 from ..scheduler import AutoScan
 from ..updater import BUSY, Updater
@@ -274,7 +275,9 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         if auto_scan_enabled:
             app.state.auto_scan.start()
         app.state.service.warm_up_background()  # Zwischenspeicher laden und Tabs vorab berechnen
+        app.state.mqtt.start()  # nur wenn eingeschaltet; ein fehlender Broker blockiert nichts
         yield
+        await app.state.mqtt.stop()
         app.state.auto_scan.stop()
 
     app = FastAPI(title="immich-pflege", version=__version__, docs_url="/api/docs",
@@ -288,6 +291,29 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     app.state.auto_scan.jobs += [app.state.reporter.tick, app.state.reporter.memories_tick]
     app.state.version = version or Version("", http=ext_http)
     sessions = Sessions(first.data_dir)
+
+    def version_info() -> tuple[str, bool]:
+        commit = (app.state.version.current() or {}).get("commit") or ""
+        return (f"{__version__}+{commit[:7]}" if commit else __version__), app.state.version.update_available
+
+    def start_scan_background(full: bool = False) -> bool:
+        """Einlesen im Hintergrund starten (Oberfläche, Home-Assistant-Knopf). False: läuft schon/nicht eingerichtet."""
+        service = svc()
+        if not service.settings.configured or service.scanning:
+            return False
+
+        def run():
+            try:
+                service.scan(full=full)
+            except ImmichError as exc:
+                log.error("Einlesen fehlgeschlagen: %s", exc)
+
+        app.state.scan_thread = threading.Thread(target=run, daemon=True)
+        app.state.scan_thread.start()
+        return True
+
+    app.state.mqtt = MqttBridge(lambda: app.state.service, version_info, start_scan_background)
+    app.state.service.listeners.append(app.state.mqtt.trigger)
 
     def configure_version(settings: Settings) -> None:
         v = app.state.version
@@ -306,10 +332,17 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         new = Settings.load(env)
         fresh = Pflege(new, http=http)
         fresh.background_albums = background_albums
+        fresh.listeners = old.listeners  # z. B. MQTT bekommt weiter Bescheid
         if old._lib and new.immich_url == old.settings.immich_url and new.users == old.settings.users:
             fresh._lib = old._lib  # Bibliothek weiterverwenden, wenn sich Immich-Zugang nicht ändert
         app.state.service = fresh
         configure_version(new)
+        mqtt_keys = ("mqtt_enabled", "mqtt_host", "mqtt_port", "mqtt_user", "mqtt_password", "mqtt_base_topic",
+                     "mqtt_discovery_prefix", "public_url")
+        if any(getattr(old.settings, k) != getattr(new, k) for k in mqtt_keys):
+            app.state.mqtt.restart()  # neu verbinden bzw. ein-/ausschalten
+        else:
+            app.state.mqtt.trigger()
         return new
 
     def set_session_cookie(response: Response, request: Request, settings: Settings, remember: bool) -> None:
@@ -399,17 +432,8 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         if not body.wait:
             if not service.settings.configured:
                 raise NotConfigured()
-            if service.scanning:
+            if not start_scan_background(body.full):
                 return JSONResponse({"gestartet": False, "grund": "Einlesen läuft bereits"}, 409)
-
-            def run():
-                try:
-                    service.scan(full=body.full)
-                except ImmichError as exc:
-                    log.error("Einlesen fehlgeschlagen: %s", exc)
-
-            app.state.scan_thread = threading.Thread(target=run, daemon=True)
-            app.state.scan_thread.start()
             return JSONResponse({"gestartet": True}, 202)
         lib = service.scan(full=body.full)
         return {"stand": lib.scanned_at, "dauer_s": lib.duration_s, "nur_aenderungen": lib.incremental,
@@ -810,6 +834,16 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         return svc().stage_albums([t.model_dump(exclude_unset=True) for t in body.trips])
 
     # ------------------------------------------------- Übersicht, Papierkorb
+    @app.get("/api/mqtt")
+    def mqtt_info():
+        return app.state.mqtt.info()
+
+    @app.post("/api/mqtt/publish")
+    def mqtt_publish():
+        """Zustand sofort (statt erst nach dem Intervall) an Home Assistant schicken."""
+        app.state.mqtt.trigger()
+        return app.state.mqtt.info()
+
     @app.get("/api/nav-counts")
     def nav_counts():
         return svc().nav_counts()

@@ -305,6 +305,31 @@
           </div>
         </fieldset>
         <fieldset class="card">
+          <legend>Home Assistant (MQTT)</legend>
+          <label class="toggle"><input type="checkbox" id="set-mqtt-on"> Kennzahlen per MQTT an Home Assistant senden</label>
+          <small>Home Assistant legt das Gerät „Immich-Pflege“ mit Sensoren (Duplikate, Fotos ohne Ort, Vorgemerkt …) und dem Knopf „Neu scannen“ von selbst an – über die MQTT-Integration, ohne YAML.</small>
+          <div id="set-mqtt-fields">
+            <div class="two">
+              <label class="f">Broker <input type="text" id="set-mqtt-host" autocapitalize="off" spellcheck="false" placeholder="192.168.0.102"></label>
+              <label class="f">Port <input type="number" id="set-mqtt-port" min="1" max="65535" inputmode="numeric"></label>
+            </div>
+            <div class="two">
+              <label class="f">Benutzer <small>optional</small><input type="text" id="set-mqtt-user" autocapitalize="off" autocomplete="off" spellcheck="false"></label>
+              <label class="f">Passwort <small>optional</small><input type="password" id="set-mqtt-pass" autocomplete="off"></label>
+            </div>
+            <div class="two">
+              <label class="f">Basis-Topic <input type="text" id="set-mqtt-base" autocapitalize="off" spellcheck="false"></label>
+              <label class="f">Discovery-Präfix <input type="text" id="set-mqtt-prefix" autocapitalize="off" spellcheck="false"></label>
+            </div>
+            <div class="two">
+              <label class="f">Senden alle … Sekunden <small>und nach jeder Änderung</small><input type="number" id="set-mqtt-interval" min="60" max="86400" step="60" inputmode="numeric"></label>
+              <label class="f">Adresse dieses Tools <small>für den Link in Home Assistant</small><input type="url" id="set-public-url" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="http://192.168.0.114:2222"></label>
+            </div>
+            <div class="row-gap"><button type="button" id="set-mqtt-send" class="btn small">Jetzt senden</button>
+              <small id="set-mqtt-info" class="muted"></small></div>
+          </div>
+        </fieldset>
+        <fieldset class="card">
           <legend>Updates</legend>
           <label class="toggle"><input type="checkbox" id="set-upd-check"> Stündlich auf GitHub nach Updates schauen</label>
           <label class="f">GitHub-Repository

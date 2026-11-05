@@ -16,6 +16,7 @@ dependencies = [
     "PyYAML>=6",
     "tzdata",  # Zeitzonen auch im schlanken Docker-Image
     "Pillow>=10",  # Bild-Fingerabdruck für ähnliche Duplikate
+    "aiomqtt>=2.3",  # Home Assistant per MQTT (optional eingeschaltet)
 ]
 
 [project.optional-dependencies]

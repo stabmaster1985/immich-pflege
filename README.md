@@ -313,6 +313,62 @@ Was früher ein nächtlicher n8n-Workflow erledigt hat, kann das Tool selbst: Un
 
 Auch der **Wochenbericht** braucht kein n8n: unter ⚙ Einstellungen → Wochenbericht ntfy oder Telegram eintragen.
 
+## Home Assistant (MQTT)
+
+Optional und standardmäßig aus: Das Tool schickt seine Kennzahlen per **MQTT** an den Broker im Heimnetz, mit **Home-Assistant-Discovery**. Home Assistant legt das Gerät **„Immich-Pflege“** dann von selbst an, ohne YAML, ohne Neustart und ohne Zugangsdaten in Home Assistant. Voraussetzung ist die MQTT-Integration in Home Assistant mit demselben Broker.
+
+**Einschalten:** ⚙ Einstellungen → **Home Assistant (MQTT)**: Broker (z. B. `192.168.0.102`), Port, ggf. Benutzer und Passwort, und als „Adresse dieses Tools“ z. B. `http://192.168.0.114:2222` (Link „Gerät besuchen“ in Home Assistant). Darunter steht, ob die Verbindung steht und wann zuletzt gesendet wurde. Alternativ per `.env`:
+
+| Variable | Standard | Bedeutung |
+|---|---|---|
+| `MQTT_ENABLED` | `false` | MQTT-Export ein/aus |
+| `MQTT_HOST` | – | Broker, z. B. `192.168.0.102` |
+| `MQTT_PORT` | `1883` | |
+| `MQTT_USER` / `MQTT_PASSWORD` | leer | optional (das Passwort geht nie an den Browser) |
+| `MQTT_BASE_TOPIC` | `immich_pflege` | |
+| `MQTT_DISCOVERY_PREFIX` | `homeassistant` | |
+| `MQTT_PUBLISH_INTERVAL` | `900` | Sekunden (60–86400) |
+| `PUBLIC_URL` | leer | Adresse des Tools für `configuration_url` |
+
+**Topics:**
+
+- `immich_pflege/status`: `online`/`offline` (retained, Last Will – stürzt das Tool ab, meldet der Broker `offline`)
+- `immich_pflege/state`: JSON (retained), gesendet nach jedem Einlesen, Vormerken, Übertragen und Rückgängig (kurz gebündelt) und zusätzlich alle `MQTT_PUBLISH_INTERVAL` Sekunden:
+
+```json
+{"status": "ok", "version": "0.1.0+dfe0692", "update_verfuegbar": false, "immich_erreichbar": true,
+ "medien_gesamt": 48213, "duplikate_gruppen": 37, "duplikate_einsparung_mb": 1840.5,
+ "ohne_ort": 1290, "ohne_ort_vorschlaege": 412, "aufraeum_kandidaten": 265, "album_vorschlaege": 6,
+ "tag_vorschlaege": 54, "vorgemerkt": 12, "papierkorb": 3,
+ "letzter_scan": "2026-11-05T03:00:00+01:00", "letzte_aenderung": "2026-11-04T21:12:00+01:00"}
+```
+
+  Die Zahlen kommen aus denselben Funktionen wie Oberfläche und Menüzähler: `duplikate_gruppen` = offene Gruppen (wie „offen“ bei Duplikate), `duplikate_einsparung_mb` = was der Behalten-Vorschlag frei machen würde, `ohne_ort_vorschlaege` = Medien mit Ortsvorschlag, `aufraeum_kandidaten` = Einträge unter Aufräumen, `vorgemerkt` = Einträge unter Vorgemerkt, `papierkorb` = davon in den Papierkorb, `letzte_aenderung` = letzte Übertragung an Immich laut Verlauf. Was gerade nicht bekannt ist (z. B. Alben werden nach dem Einlesen noch gelesen), steht als `null`. `status`: `ok`, `immich_nicht_erreichbar`, `noch_nicht_eingelesen` oder `nicht_eingerichtet`.
+- `immich_pflege/cmd/scan`: Knopf **„Neu scannen“** (wie `POST /api/scan`)
+- Discovery (retained) unter `homeassistant/<komponente>/immich_pflege/<objekt>/config` – neu gesendet beim Verbinden und wenn Home Assistant `homeassistant/status` = `online` meldet:
+
+| Komponente | Objekt | Name |
+|---|---|---|
+| sensor | `duplikate_gruppen` | Duplikate (Attribut `duplikate_einsparung_mb`) |
+| sensor | `duplikate_einsparung_mb` | Duplikate Einsparung (MB) |
+| sensor | `ohne_ort` | Fotos ohne Ort (Attribut `ohne_ort_vorschlaege`) |
+| sensor | `aufraeum_kandidaten` | Aufräum-Kandidaten |
+| sensor | `album_vorschlaege` | Album-Vorschläge |
+| sensor | `tag_vorschlaege` | Tag-Vorschläge |
+| sensor | `vorgemerkt` | Vorgemerkt (Attribut `papierkorb`) |
+| sensor | `medien_gesamt` | Medien gesamt (Diagnose) |
+| sensor | `letzter_scan` | Letzter Scan (Zeitstempel, Diagnose) |
+| sensor | `version` | Version (Diagnose) |
+| binary_sensor | `immich_erreichbar` | Immich erreichbar (Verbindung) |
+| binary_sensor | `update_verfuegbar` | Update verfügbar |
+| button | `scan` | Neu scannen |
+
+**Bewusst nicht per MQTT:** Übernehmen bzw. Löschen von Duplikaten, Orten oder Tags. Das bleibt in der Oberfläche mit Vorschau.
+
+Ein nicht erreichbarer Broker blockiert nichts: Das Tool versucht es im Hintergrund erneut (5 s, dann immer länger bis 5 min) und schreibt den Grund ins Log und unter die Einstellung. Prüfen lässt sich alles z. B. mit **MQTT Explorer** unter `immich_pflege/…` und `homeassistant/…/immich_pflege/…`.
+
+API: `GET /api/mqtt` (Verbindungsstand), `POST /api/mqtt/publish` (Zustand sofort senden).
+
 ### Optional: n8n-Workflow (Idee: jede Nacht)
 
 Die API führt direkt aus, ohne Vormerkliste. Beispiel:

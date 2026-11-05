@@ -50,7 +50,16 @@ class HistoryStore:
         except (OSError, ValueError) as exc:
             log.warning("Verlauf unlesbar (%s) – starte leer", exc)
 
+    on_change = None  # Callable[[], None] – nach jedem Speichern
+
     def _save(self) -> None:
+        try:
+            self._write()
+        finally:
+            if self.on_change:
+                self.on_change()
+
+    def _write(self) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix(".tmp")
