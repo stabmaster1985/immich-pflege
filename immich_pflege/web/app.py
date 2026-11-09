@@ -834,6 +834,14 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         return svc().stage_albums([t.model_dump(exclude_unset=True) for t in body.trips])
 
     # ------------------------------------------------- Übersicht, Papierkorb
+    @app.get("/api/stats")
+    def stats(jahr: Optional[str] = Query(None, pattern=r"^\d{4}$")):
+        return svc().stats(jahr)
+
+    @app.get("/api/stats/media")
+    def stats_media(monat: str = Query(..., pattern=r"^\d{4}-\d{2}$"), benutzer: Optional[str] = None):
+        return svc().stats_media(monat, benutzer)
+
     @app.get("/api/mqtt")
     def mqtt_info():
         return app.state.mqtt.info()

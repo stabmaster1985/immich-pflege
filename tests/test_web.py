@@ -413,3 +413,21 @@ def test_no_location_filter_exact_confidence(web):
     res = web.post("/api/staged/no-location", json={"ort": over["orte"][0]["key"], "sicherheit": lvl}).json()
     st = web.get("/api/staged").json()["eintraege"][0]
     assert res["vorgemerkt"] >= 1 and all(ch["confidence"] == lvl for ch in st["daten"]["aenderungen"])
+
+
+def test_stats_years_months_and_tops(web):
+    r = web.get("/api/stats").json()
+    assert r["benutzer"] == ["frank", "julia"] and r["jahr"] is None and r["monate"] == []
+    total = sum(y["medien"] for y in r["jahre"]) + r["gesamt"]["ohne_datum"]
+    assert total == r["gesamt"]["medien"] == web.get("/api/dashboard").json()["gesamt"]["medien"]
+    assert all(sum(y["je_benutzer"].values()) == y["medien"] for y in r["jahre"])
+    assert len(r["wochentage"]) == 7 and len(r["stunden"]) == 24 and r["kameras"] and r["formate"]
+    year = r["jahre"][-1]["jahr"]
+    ry = web.get("/api/stats", params={"jahr": year}).json()
+    assert [m["monat"] for m in ry["monate"]] == [f"{year}-{m:02d}" for m in range(1, 13)]
+    assert sum(m["medien"] for m in ry["monate"]) == ry["gesamt"]["medien"] == r["jahre"][-1]["medien"]
+    month = next(m for m in ry["monate"] if m["medien"])
+    media = web.get("/api/stats/media", params={"monat": month["monat"]}).json()["medien"]
+    assert len(media) == month["medien"] and all(m["aufnahme"].startswith(month["monat"]) for m in media)
+    assert web.get("/api/stats", params={"jahr": "1900"}).status_code == 400
+    assert web.get("/api/stats", params={"jahr": "abc"}).status_code == 422

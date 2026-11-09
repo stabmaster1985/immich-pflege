@@ -6,6 +6,7 @@ const S = {
   tab: "dup",
   status: null,
   dup: { groups: [], total: 0, open: 0, keep: {}, sel: new Set(), includeDone: false, art: null, monat: null, crossUser: false, ignored: false, loaded: false, info: null },
+  stats: { jahr: null },
   loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, herkunft: null, benutzer: null, loaded: false, info: null },
   ovw: { loaded: false },
   cln: { bereich: "speicher", kategorie: null, ignored: false, items: [], total: 0, sel: new Set(), keep: {}, loaded: false, info: null },
@@ -3098,6 +3099,8 @@ async function loadOverview() {
     h("b", {}, `API-Key von ${w.benutzer}: es fehlen Rechte. `),
     w.fehlend.map((p) => `${p.recht} (${p.wofuer})`).join(", "),
     ". In Immich unter Konto-Einstellungen → API-Schlüssel ergänzen oder „Alle“ wählen."));
+  const statsBox = h("div", { class: "stat-box" });
+  renderStats(statsBox);
   box.replaceChildren(...[
     ...keyWarn,
     tiles,
@@ -3107,7 +3110,7 @@ async function loadOverview() {
       h("button", { type: "button", class: "btn primary", onclick: (e) => openAutoStage(e.currentTarget) }, "⚡ Eindeutiges vormerken"),
       h("span", { class: "muted small" }, "sichere Orte, identische Duplikate, Messenger-Kopien, Serien – auf einen Schlag")) : null,
     h("h2", { class: "stage-head" }, "Benutzer"), users,
-    h("h2", { class: "stage-head" }, "Aufnahmen je Jahr"), yearChart(d.jahre),
+    h("h2", { class: "stage-head" }, "Statistik"), statsBox,
     d.erledigt.length ? h("h2", { class: "stage-head" }, "Erledigt je Monat") : null,
     d.erledigt.length ? doneTable(d.erledigt) : null,
     h("p", { class: "muted small" }, rep.kanal === "aus" ? "Wochenbericht: aus (⚙ Einstellungen)"
@@ -3115,24 +3118,104 @@ async function loadOverview() {
   ].filter(Boolean));
 }
 
-// Einfarbiges Säulendiagramm (eine Reihe): Höhe = Anzahl, Tooltip mit Anzahl und Speicher
-function yearChart(years) {
-  if (!years.length) return h("p", { class: "muted" }, "Keine Daten");
-  const max = Math.max(...years.map((y) => y.medien));
-  const wrap = h("div", { class: "ychart", role: "img", "aria-label": "Aufnahmen je Jahr" });
-  const tip = h("div", { class: "ychart-tip", hidden: true });
-  for (const y of years) {
-    const bar = h("div", { class: "ybar", tabindex: "0", "aria-label": `${y.jahr}: ${y.medien} Medien, ${fmtBig(y.groesse)}` },
-      h("div", { class: "ybar-fill", style: `height:${Math.max(2, (y.medien / max) * 100)}%` }),
-      h("div", { class: "ybar-x" }, years.length > 12 ? "’" + y.jahr.slice(2) : y.jahr));
-    const show = () => { tip.hidden = false; tip.textContent = `${y.jahr}: ${y.medien.toLocaleString("de-DE")} Medien · ${fmtBig(y.groesse)}`; };
-    bar.addEventListener("mouseenter", show); bar.addEventListener("focus", show);
-    bar.addEventListener("click", show);
-    bar.addEventListener("mouseleave", () => { tip.hidden = true; });
+/* ------------------------------------------------------------ Statistik */
+// Jahre (je Benutzer gestapelt) → Tipp auf ein Jahr zeigt dessen Monate → Tipp auf einen Monat öffnet seine Fotos.
+// Farben je Benutzer fest (Reihenfolge der Benutzer), nicht nach Rang.
+const MONTH_SHORT = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+const WEEKDAY_LONG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
+const userColor = (i) => (i < 2 ? `var(--series-${i + 1})` : "var(--muted)");
+const cap = (u) => u.charAt(0).toUpperCase() + u.slice(1);
+const de = (x) => x.toLocaleString("de-DE");
+
+// Säulen: items = [{label, parts: [{val, color}], tip, active, onclick}]; ein Hinweistext unter dem Diagramm
+function barChart(items, { aria, labelEvery = 1, height = 140 } = {}) {
+  const max = Math.max(1, ...items.map((it) => it.parts.reduce((a, p) => a + p.val, 0)));
+  const tip = h("div", { class: "ychart-tip muted small" }, "\u00a0");
+  const wrap = h("div", { class: "ychart", role: "img", "aria-label": aria, style: `height:${height}px` });
+  items.forEach((it, k) => {
+    const total = it.parts.reduce((a, p) => a + p.val, 0);
+    const fill = h("div", { class: "ybar-fill", style: `height:${total ? Math.max(2, (total / max) * 100) : 0}%` },
+      ...it.parts.filter((p) => p.val).map((p) => h("div", { class: "ybar-seg", style: `flex-grow:${p.val};background:${p.color}` })));
+    const bar = h("div", { class: "ybar" + (it.active ? " on" : "") + (it.onclick ? " click" : ""), tabindex: "0",
+      role: it.onclick ? "button" : null, "aria-label": it.tip }, fill,
+    k % labelEvery === 0 ? h("div", { class: "ybar-x" }, it.label) : null);
+    const show = () => { tip.textContent = it.tip; };
+    bar.addEventListener("mouseenter", show);
+    bar.addEventListener("focus", show);
+    bar.addEventListener("click", () => { show(); if (it.onclick) it.onclick(); });
+    bar.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && it.onclick) { e.preventDefault(); it.onclick(); } });
     wrap.append(bar);
+  });
+  return h("div", { class: "chart" }, wrap, tip);
+}
+
+// Rangliste als waagerechte Balken (eine Reihe)
+function rankList(title, list, total) {
+  if (!list.length) return null;
+  const max = list[0].anzahl;
+  return h("div", { class: "rank card" }, h("h3", {}, title),
+    ...list.map((x) => h("div", { class: "rank-row", title: `${x.name}: ${de(x.anzahl)} (${Math.round((x.anzahl / total) * 100)} %)` },
+      h("span", { class: "rank-name" }, x.name),
+      h("span", { class: "rank-bar" }, h("i", { style: `width:${Math.max(2, (x.anzahl / max) * 100)}%` })),
+      h("span", { class: "rank-n" }, de(x.anzahl)))));
+}
+
+function userTip(prefix, b, users) {
+  const per = users.length > 1 ? " · " + users.map((u) => `${cap(u)} ${de(b.je_benutzer[u] || 0)}`).join(", ") : "";
+  return `${prefix}: ${de(b.medien)} Medien${per} · ${fmtBig(b.groesse)}` + (b.videos ? ` · ${de(b.videos)} Videos` : "")
+    + (b.medien ? ` · ${Math.round((b.ohne_gps / b.medien) * 100)} % ohne Ort` : "");
+}
+
+async function renderStats(box) {
+  const year = S.stats.jahr;
+  if (!box.childElementCount) box.append(h("p", { class: "muted small" }, "Lade Statistik …"));
+  let r;
+  try { r = await api("api/stats" + (year ? "?jahr=" + year : "")); }
+  catch (e) { if (year) { S.stats.jahr = null; return renderStats(box); } box.replaceChildren(h("div", { class: "banner err" }, e.message)); return; }
+  const users = r.benutzer;
+  const parts = (b) => users.map((u, i) => ({ val: b.je_benutzer[u] || 0, color: userColor(i) }));
+  const legend = users.length > 1 ? h("div", { class: "legend" }, ...users.map((u, i) =>
+    h("span", {}, h("i", { style: `background:${userColor(i)}` }), cap(u)))) : null;
+  const peak = r.jahre.reduce((a, y) => (y.medien > (a ? a.medien : -1) ? y : a), null);
+  const years = barChart(r.jahre.map((y) => ({
+    label: r.jahre.length > 12 ? "’" + y.jahr.slice(2) : y.jahr, parts: parts(y), active: y.jahr === year,
+    tip: userTip(y.jahr, y, users) + (y.jahr === year ? " – noch einmal tippen: alle Jahre" : " – tippen: Monate"),
+    onclick: () => { S.stats.jahr = y.jahr === year ? null : y.jahr; renderStats(box); },
+  })), { aria: "Aufnahmen je Jahr", labelEvery: r.jahre.length > 24 ? 2 : 1 });
+  const g = r.gesamt;
+  const kpi = (v, l) => h("div", { class: "kpi" }, h("b", {}, v), h("span", { class: "muted small" }, l));
+  const head = h("div", { class: "stats-head" },
+    h("div", {}, h("b", {}, year ? `Jahr ${year}` : "Alle Jahre"),
+      h("div", { class: "muted small" }, year ? "Tippe auf einen Monat, um seine Fotos zu sehen."
+        : (peak ? `Tippe auf ein Jahr für seine Monate · meiste Aufnahmen ${peak.jahr} (${de(peak.medien)})` : ""))),
+    year ? h("button", { type: "button", class: "btn small", onclick: () => { S.stats.jahr = null; renderStats(box); } }, "← Alle Jahre") : null);
+  const kpis = h("div", { class: "kpis" }, kpi(de(g.medien), "Medien"), kpi(fmtBig(g.groesse), "Speicher"),
+    kpi(de(g.videos), "Videos"), kpi(g.medien ? Math.round((g.ohne_gps / g.medien) * 100) + " %" : "–", "ohne Ort"),
+    g.extern ? kpi(de(g.extern), "extern") : null, g.ohne_datum ? kpi(de(g.ohne_datum), "ohne Datum") : null);
+  let months = null;
+  if (year) {
+    months = h("div", {}, h("h3", {}, `Monate ${year}`), barChart(r.monate.map((m, k) => ({
+      label: MONTH_SHORT[k], parts: parts(m),
+      tip: userTip(`${MONTHS[k]} ${year}`, m, users) + (m.medien ? " – tippen: Fotos ansehen" : ""),
+      onclick: m.medien ? () => openMonthMedia(m.monat, `${MONTHS[k]} ${year}`) : null,
+    })), { aria: `Aufnahmen je Monat ${year}` }));
   }
-  const peak = years.find((y) => y.medien === max);
-  return h("div", {}, h("div", { class: "muted small" }, `meiste Aufnahmen: ${peak.jahr} (${max.toLocaleString("de-DE")})`), wrap, tip);
+  const wd = barChart(r.wochentage.map((c, k) => ({ label: WEEKDAYS[(k + 1) % 7], parts: [{ val: c, color: "var(--series-1)" }],
+    tip: `${WEEKDAY_LONG[k]}: ${de(c)} Medien` })), { aria: "Aufnahmen je Wochentag", height: 90 });
+  const hr = barChart(r.stunden.map((c, k) => ({ label: String(k), parts: [{ val: c, color: "var(--series-1)" }],
+    tip: `${k}–${k + 1} Uhr: ${de(c)} Medien` })), { aria: "Aufnahmen je Uhrzeit", labelEvery: 3, height: 90 });
+  box.replaceChildren(...[head, kpis, legend, years, months,
+    h("div", { class: "rank-grid" }, ...[rankList("Kameras", r.kameras, g.medien), rankList("Länder", r.laender, g.medien),
+      rankList("Orte", r.orte, g.medien), rankList("Formate", r.formate, g.medien)].filter(Boolean)),
+    h("div", { class: "rank-grid" }, h("div", { class: "card" }, h("h3", {}, "Wochentage"), wd),
+      h("div", { class: "card" }, h("h3", {}, "Uhrzeit"), hr))].filter(Boolean));
+}
+
+async function openMonthMedia(month, label) {
+  let r;
+  try { r = await api("api/stats/media?monat=" + month); } catch (e) { toast(e.message, true); return; }
+  openReview({ titel: `📅 ${label}`, medien: r.medien, gruppe: "tag", nurAnsehen: true,
+    hinweis: "Nach Tagen gruppiert. Antippen öffnet groß.", aktionen: [{ leer: true, text: () => "Schließen", run: async () => {} }] });
 }
 
 const DONE_LABEL = { duplikat: "Duplikate", aufraeumen: "Aufgeräumt", archiv: "Archiviert", stapel: "Gestapelt", albenpflege: "Alben", zeit: "Zeit", ort: "Verortet", album: "In Alben", tag: "Getaggt", papierkorb: "Wiederhergestellt" };

@@ -2066,6 +2066,77 @@ class Pflege:
             self._key_warnings = out
         return self._key_warnings
 
+    def stats(self, year: str | None = None) -> dict[str, Any]:
+        """Statistik: Jahre (je Benutzer), mit ``year`` dessen Monate, dazu Kameras, Länder, Orte, Formate,
+        Wochentage und Uhrzeiten – für alle Jahre oder nur das gewählte."""
+        lib = self.library()
+        owners = sorted({a.owner for a in lib.assets.values()})
+
+        def bucket() -> dict[str, Any]:
+            return {"medien": 0, "groesse": 0, "videos": 0, "ohne_gps": 0, "je_benutzer": {u: 0 for u in owners}}
+
+        def add(b: dict[str, Any], a: Asset) -> None:
+            b["medien"] += 1
+            b["groesse"] += a.file_size or 0
+            b["videos"] += a.type == "VIDEO"
+            b["ohne_gps"] += not a.has_gps
+            b["je_benutzer"][a.owner] += 1
+
+        years: dict[str, dict[str, Any]] = {}
+        months = {f"{year}-{m:02d}": bucket() for m in range(1, 13)} if year else {}
+        scope: list[Asset] = []
+        undated = 0
+        for a in lib.assets.values():
+            if not a.local_dt:
+                undated += 1
+                if not year:
+                    scope.append(a)
+                continue
+            y = str(a.local_dt.year)
+            add(years.setdefault(y, bucket()), a)
+            if year is None or y == year:
+                scope.append(a)
+                if year:
+                    add(months[a.local_dt.strftime("%Y-%m")], a)
+        if year and year not in years:
+            raise ActionError(f"Keine Aufnahmen aus {year}")
+
+        def top(values, n: int) -> list[dict[str, Any]]:
+            return [{"name": k, "anzahl": c} for k, c in Counter(v for v in values if v).most_common(n)]
+
+        cams = []
+        for a in scope:
+            if a.make or a.model:
+                make, model = (a.make or "").strip(), (a.model or "").strip()
+                cams.append(model if make and model.lower().startswith(make.lower()) else f"{make} {model}".strip())
+        weekdays, hours = [0] * 7, [0] * 24
+        for a in scope:
+            if a.local_dt:
+                weekdays[a.local_dt.weekday()] += 1
+                hours[a.local_dt.hour] += 1
+        return {
+            "benutzer": owners,
+            "jahr": year,
+            "jahre": [{"jahr": k, **v} for k, v in sorted(years.items())],
+            "monate": [{"monat": k, **v} for k, v in months.items()],
+            "gesamt": {"medien": len(scope), "groesse": sum(a.file_size or 0 for a in scope),
+                       "videos": sum(a.type == "VIDEO" for a in scope), "ohne_gps": sum(not a.has_gps for a in scope),
+                       "extern": sum(a.is_external for a in scope), "ohne_datum": 0 if year else undated},
+            "kameras": top(cams, 8),
+            "laender": top((a.country for a in scope), 8),
+            "orte": top((a.city for a in scope), 10),
+            "formate": top(((a.file_name or "").rsplit(".", 1)[-1].upper() for a in scope if "." in (a.file_name or "")), 8),
+            "wochentage": weekdays,  # Montag zuerst
+            "stunden": hours,
+        }
+
+    def stats_media(self, month: str, user: str | None = None) -> dict[str, Any]:
+        """Alle Medien eines Monats (JJJJ-MM) zum Ansehen, optional nur eines Benutzers."""
+        lib = self.library()
+        ids = [a.id for a in lib.assets.values() if a.local_dt and a.local_dt.strftime("%Y-%m") == month
+               and (not user or a.owner == user)]
+        return {"monat": month, "medien": self._review_media(ids)}
+
     def dashboard(self) -> dict[str, Any]:
         """Kennzahlen für die Übersicht und den Wochenbericht (nur aus dem Zwischenspeicher)."""
         lib = self.library()
