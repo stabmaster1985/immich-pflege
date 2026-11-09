@@ -1,5 +1,7 @@
 # immich-pflege
 
+[![Unterstützen per PayPal](https://img.shields.io/badge/Unterst%C3%BCtzen-PayPal.me-00457C?logo=paypal&logoColor=white)](https://www.paypal.me/FrankTylinski)
+
 Wartungstool für einen selbst gehosteten **Immich-Server (v3.x, getestet gegen die API von 3.2.4, geprüft mit 3.3.1)**: als Docker-Container mit mobiler Web-Oberfläche, Kommandozeile `pflege` und JSON-API für n8n.
 
 | Funktion | Was passiert |
@@ -407,3 +409,9 @@ DATA_DIR=./data .venv/bin/uvicorn immich_pflege.web.app:create_app --factory --p
 - Titelbilder setzt das Tool mit `PATCH /api/albums/{id}` (`albumThumbnailAssetId`), immer mit dem Key des Album-Besitzers.
 - Bulk-Aufrufe gehen in Blöcken zu 500 IDs. Ist Immich nicht 3.x, erscheint eine Warnung.
 - Assets mit `visibility` `hidden` (Live-Photo-Videos) oder `locked` sowie Medien im Papierkorb werden ignoriert. Über Partner-Freigaben sichtbare Medien werden nur ihrem Besitzer zugeordnet.
+
+---
+
+## Unterstützen
+
+Dir gefällt immich-pflege und es spart dir Zeit? Über eine kleine Spende freue ich mich: **[paypal.me/FrankTylinski](https://www.paypal.me/FrankTylinski)** ☕ Danke!
