@@ -2592,7 +2592,7 @@ function renderCleanupFilters(r, time) {
   cat.value = c.kategorie || "";
   $("#cln-filters").replaceChildren(...[
     cats.length > 1 ? h("label", { class: "field grow" }, "Art", cat) : null,
-    ["speicher", "serien", "qualitaet"].includes(c.bereich)
+    ["speicher", "videos", "serien", "qualitaet"].includes(c.bereich)
       ? sortSel(c, "cln", [["standard", "Standard"], ["speicher", "Meiste Ersparnis zuerst"], ["menge", "Meiste Bilder zuerst"]], "cln") : null,
     h("label", { class: "toggle" }, h("input", { type: "checkbox", checked: c.ignored,
       onchange: (e) => { c.ignored = e.target.checked; loadTab("cln", true); } }),
@@ -2765,6 +2765,17 @@ async function stageCleanup(action, items, btn) {
 }
 
 // Alle Treffer eines Aufräum-Bereichs prüfen (je Eintrag ein Medium, das weg soll), dann Prüf-Album oder Papierkorb
+async function archiveCleanup(items, btn) {
+  const ids = [...new Set(items.flatMap((it) => it.medien.filter((m) => m.aktion === "weg").map((m) => m.id)))];
+  busy(btn, true);
+  try {
+    const res = await api("api/staged/archive", { method: "POST", body: { ids, label: VIEWS[S.view] ? VIEWS[S.view].label : "Aufräumen" } });
+    toast(`${n(res.vorgemerkt, "Medium", "Medien")} zum Archivieren vorgemerkt`);
+    S.cln.sel.clear();
+    await afterStage("cln");
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
+
 async function openCleanupReview(btn) {
   const c = S.cln;
   busy(btn, true);
@@ -2802,9 +2813,14 @@ async function openCleanupReview(btn) {
     gruppe: (m) => [m._kat, m._kat],
     hinweis: `Alles hier soll weg (${fmtBig(r.groesse)}). Abwählen, was bleiben soll – „Behalten“ blendet es in der Liste dauerhaft aus.`,
     aktionen: [
-      { text: (k) => `${k} ins Prüf-Album`, klasse: "primary", run: stage("album") },
+      c.bereich !== "verwaist" ? { text: (k) => `${k} archivieren`, run: async (ids) => {
+        const res = await api("api/staged/archive", { method: "POST", body: { ids, label: VIEWS[S.view] ? VIEWS[S.view].label : "Aufräumen" } });
+        toast(`${n(res.vorgemerkt, "Medium", "Medien")} zum Archivieren vorgemerkt – bleiben erhalten, nur aus der Zeitleiste`);
+        await afterStage("cln");
+      } } : null,
+      { text: (k) => `${k} ins Prüf-Album`, klasse: c.bereich === "videos" ? "" : "primary", run: stage("album") },
       { text: (k) => `${k} Papierkorb`, klasse: "danger", run: stage("papierkorb") },
-    ],
+    ].filter(Boolean),
   });
 }
 
@@ -3909,7 +3925,9 @@ function updateActionbar() {
       info.textContent = c.total ? "Alle Treffer:" : "Nichts offen";
       buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !c.total, onclick: (e) => openCleanupReview(e.currentTarget) }, `Alle ${c.total} prüfen`));
     } else if (!c.ignored) {
-      buttons.push(h("button", { class: "btn small" + (c.bereich === "serien" ? "" : " primary"), type: "button", disabled: !list.length, onclick: (e) => stageCleanup("album", list, e.currentTarget) }, "Ins Prüf-Album"));
+      if (c.bereich !== "verwaist") buttons.push(h("button", { class: "btn small", type: "button", disabled: !list.length, title: "Aus der Zeitleiste nehmen – bleibt erhalten",
+        onclick: (e) => archiveCleanup(list, e.currentTarget) }, "Archivieren"));
+      buttons.push(h("button", { class: "btn small" + (["serien", "videos"].includes(c.bereich) ? "" : " primary"), type: "button", disabled: !list.length, onclick: (e) => stageCleanup("album", list, e.currentTarget) }, "Ins Prüf-Album"));
       buttons.push(h("button", { class: "btn small danger", type: "button", disabled: !list.length, onclick: (e) => stageCleanup("papierkorb", list, e.currentTarget) }, "Papierkorb"));
     }
   } else if (S.tab === "alb" && S.alb.quelle === "ordner") {
@@ -4027,6 +4045,7 @@ const NAV = [
     ["dup", "Duplikate", { tab: "dup" }],
     ["serien", "Serienbilder", { tab: "cln", bereich: "serien" }],
     ["speicher", "Speicherfresser", { tab: "cln", bereich: "speicher" }],
+    ["videos", "Videos", { tab: "cln", bereich: "videos" }],
     ["qualitaet", "Unscharf & dunkel", { tab: "cln", bereich: "qualitaet" }],
     ["verwaist", "Verwaiste Dateien", { tab: "cln", bereich: "verwaist" }],
     ["papierkorb", "Papierkorb", { tab: "cln", bereich: "papierkorb" }]] },

@@ -1363,7 +1363,7 @@ class Pflege:
                 self._cleanup_cache = (key, find_items(lib, self.hash_store))
             items = self._cleanup_cache[1]
         staged = (self.staging.asset_ids("aufraeumen") | self.staging.asset_ids("duplikat")
-                  | self.staging.asset_ids("stapel"))
+                  | self.staging.asset_ids("stapel") | self.staging.asset_ids("archiv"))
         return lib, [i for i in items if not (i.ids & staged if i.kategorie == "serien" else i.drop & staged)]
 
     def keep_list(self) -> KeepList:
@@ -2195,6 +2195,7 @@ class Pflege:
             "dup": self.duplicates_view(limit=1)["offen"],
             "serien": cln["serien"]["anzahl"],
             "speicher": cln["speicher"]["anzahl"],
+            "videos": cln["videos"]["anzahl"],
             "qualitaet": cln["qualitaet"]["anzahl"],
             "verwaist": cln["verwaist"]["anzahl"],
             "ort": self.no_location_view(overview=True)["mit_vorschlag"],

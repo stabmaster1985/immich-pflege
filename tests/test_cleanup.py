@@ -61,7 +61,7 @@ def by_cat(r, cat):
 def test_categories(web, state):
     r = web.get("/api/cleanup", params={"limit": 0}).json()
     cats = {k: v["anzahl"] for k, v in r["kategorien"].items()}
-    assert cats == {"grosse_videos": 2, "bildschirmaufnahmen": 1, "live_videos": 1, "serien": 1,
+    assert cats == {"grosse_videos": 2, "bildschirmaufnahmen": 1, "live_videos": 1, "kurze_videos": 0, "lange_videos": 0, "serien": 1,
                     "versehentlich": 1, "dunkel": 0, "unscharf": 1, "offline": 1}
     assert r["arten"]["speicher"]["groesse"] == (900 + 2000 + 80 + 4) * MB
     assert by_cat(r, "grosse_videos")[0]["medien"][0]["id"] == state.ids["gross_extern"]  # größtes zuerst
@@ -127,3 +127,16 @@ def test_offline_external_may_go_to_trash(web, state):
     assert web.get("/api/staged").json()["papierkorb"] == 1  # Ausnahme: Datei fehlt ohnehin
     web.post("/api/staged/apply", json={"confirm": "PAPIERKORB"})
     assert state.assets[state.ids["offline"]]["isTrashed"]
+
+
+def test_video_issues():
+    from immich_pflege.cleanup import video_issues
+    from .helpers import asset, library
+    short = asset(name="VID_1.MOV", type="VIDEO", duration_ms=900, file_size=2_000_000)
+    long_ = asset(name="VID_2.MOV", type="VIDEO", duration_ms=25 * 60_000, file_size=200 * 1024 * 1024)
+    normal = asset(name="VID_3.MOV", type="VIDEO", duration_ms=30_000)
+    fav = asset(name="VID_4.MOV", type="VIDEO", duration_ms=500, favorite=True)
+    archived = asset(name="VID_5.MOV", type="VIDEO", duration_ms=500, visibility="archive")
+    live = asset(name="IMG_6.MOV", type="VIDEO", duration_ms=1500)
+    items = video_issues(library(short, long_, normal, fav, archived, live), {live.id})
+    assert {(i.kategorie, i.assets[0].id) for i in items} == {("kurze_videos", short.id), ("lange_videos", long_.id)}

@@ -105,7 +105,7 @@ class StagingStore:
         out: set[str] = set()
         for e in self.of_type(typ):
             d = e["daten"]
-            if typ in ("duplikat", "album", "aufraeumen", "zeit", "stapel"):
+            if typ in ("duplikat", "album", "aufraeumen", "zeit", "stapel", "archiv"):
                 out.update(d.get("alle_medien", []))
             elif typ == "ort":
                 out.update(ch["asset_id"] for ch in d.get("aenderungen", []))

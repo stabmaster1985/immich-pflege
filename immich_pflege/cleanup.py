@@ -32,13 +32,18 @@ BURST_MIN = 3
 BURST_MAX_DIST = 12  # Fingerabdruck-Abstand innerhalb einer Serie (von 64 Bit)
 DARK_MAX = 25  # Helligkeit 0–255
 BLUR_MAX = 3.0  # Schärfe (Streuung nach Laplace-Filter, Vorschaubild 250 px)
+SHORT_VIDEO_S = 2.0  # kürzer: meist versehentlich (Hosentasche, falscher Knopf)
+LONG_VIDEO_MIN = 10  # länger: oft vergessen auszuschalten
 SCREEN_RE = re.compile(r"^(screenrecording|rpreplay|bildschirmaufnahme|screen[_ -]?record)", re.I)
 
-ARTEN = {"speicher": "Speicherfresser", "serien": "Serienbilder", "qualitaet": "Unscharf & dunkel", "verwaist": "Verwaiste Dateien"}
+ARTEN = {"speicher": "Speicherfresser", "videos": "Videos", "serien": "Serienbilder", "qualitaet": "Unscharf & dunkel",
+         "verwaist": "Verwaiste Dateien"}
 KATEGORIEN = {
     "grosse_videos": ("speicher", f"Videos ab {BIG_VIDEO_MB} MB"),
     "bildschirmaufnahmen": ("speicher", "Bildschirmaufnahmen"),
     "live_videos": ("speicher", "Live-Photo-Videos doppelt"),
+    "kurze_videos": ("videos", f"Sehr kurz (unter {SHORT_VIDEO_S:.0f} s) – meist versehentlich"),
+    "lange_videos": ("videos", f"Sehr lang (ab {LONG_VIDEO_MIN} min) – vergessen auszuschalten?"),
     "serien": ("serien", "Serienbilder"),
     "versehentlich": ("qualitaet", "Versehentlich (dunkel und unscharf)"),
     "dunkel": ("qualitaet", "Sehr dunkel"),
@@ -110,6 +115,25 @@ def storage_hogs(lib: Library) -> list[Item]:
             mins = f", {a.duration_ms / 60000:.0f} min" if a.duration_ms else ""
             items.append(Item("grosse_videos", [a], {a.id}, f"{size / MB:.0f} MB{mins}"))
     items.sort(key=lambda i: i.size, reverse=True)
+    return items
+
+
+# ------------------------------------------------------------- Videos
+def video_issues(lib: Library, live_ids: set[str]) -> list[Item]:
+    """Versehentliche Videos (sehr kurz, nicht der Video-Teil eines Live-Photos) und sehr lange, die nicht
+    schon als Speicherfresser auftauchen. Favoriten, archivierte und schon geprüfte bleiben außen vor."""
+    items: list[Item] = []
+    for a in lib.assets.values():
+        if (a.type != "VIDEO" or a.favorite or a.in_review_album or a.visibility == "archive" or not a.duration_ms
+                or a.id in live_ids or SCREEN_RE.match(a.file_name or "")):
+            continue
+        secs = a.duration_ms / 1000
+        size = a.file_size or 0
+        if secs < SHORT_VIDEO_S:
+            items.append(Item("kurze_videos", [a], {a.id}, f"{secs:.1f} s".replace(".", ",")))
+        elif secs >= LONG_VIDEO_MIN * 60 and size < BIG_VIDEO_MB * MB:
+            items.append(Item("lange_videos", [a], {a.id}, f"{secs / 60:.0f} min · {size / MB:.0f} MB"))
+    items.sort(key=lambda i: i.assets[0].local_date_time or "", reverse=True)
     return items
 
 
@@ -191,7 +215,9 @@ def orphans(lib: Library) -> list[Item]:
 def find_items(lib: Library, store: HashStore) -> list[Item]:
     series = bursts(lib, store)
     in_series = {i for item in series for i in item.ids}
-    return storage_hogs(lib) + series + poor_quality(lib, store, in_series) + orphans(lib)
+    hogs = storage_hogs(lib)
+    live = {i for item in hogs if item.kategorie == "live_videos" for i in item.drop}
+    return hogs + video_issues(lib, live) + series + poor_quality(lib, store, in_series) + orphans(lib)
 
 
 # -------------------------------------------------------------- Behalten

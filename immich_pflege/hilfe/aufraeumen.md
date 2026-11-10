@@ -24,6 +24,18 @@ Unten steht **Alle … prüfen**: Alles, was in diesem Bereich weg soll, erschei
 
 Favoriten und Medien im Prüf-Album bleiben außen vor.
 
+
+## Videos
+
+Unter **Aufräumen → Videos** stehen Videos, die oft niemand wollte:
+
+| Art | Woran erkannt |
+|---|---|
+| **Sehr kurz** | unter 2 Sekunden – meist aus Versehen (Hosentasche, falscher Knopf). Der Video-Teil eines Live-Photos zählt nicht (der steht unter Speicherfresser). |
+| **Sehr lang** | ab 10 Minuten (und noch keine 300 MB, sonst unter Speicherfresser) – oft vergessen auszuschalten. |
+
+Favoriten, archivierte und schon im Prüf-Album liegende Videos fehlen. Neben **Ins Prüf-Album** und **Papierkorb** gibt es hier (und bei den anderen Bereichen) **Archivieren**: Das Video bleibt erhalten, verschwindet aber aus der Zeitleiste – gut, wenn du dir nicht sicher bist. Wie alles wird es erst vorgemerkt.
+
 ## Serienbilder
 
 Fotos **derselben Kamera** desselben Benutzers mit höchstens **2 Sekunden** Abstand, mindestens 3 hintereinander. Ist der Bild-Fingerabdruck schon berechnet, müssen sie sich auch ähneln (höchstens 12 von 64 Bit verschieden), sonst reicht die Zeit.
