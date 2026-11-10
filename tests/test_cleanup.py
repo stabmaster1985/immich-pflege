@@ -61,7 +61,7 @@ def by_cat(r, cat):
 def test_categories(web, state):
     r = web.get("/api/cleanup", params={"limit": 0}).json()
     cats = {k: v["anzahl"] for k, v in r["kategorien"].items()}
-    assert cats == {"grosse_videos": 2, "bildschirmaufnahmen": 1, "live_videos": 1, "kurze_videos": 0, "lange_videos": 0, "serien": 1,
+    assert cats == {"grosse_videos": 2, "bildschirmaufnahmen": 1, "live_videos": 1, "kurze_videos": 0, "lange_videos": 0, "drehung": 0, "gespiegelt": 0, "serien": 1,
                     "versehentlich": 1, "dunkel": 0, "unscharf": 1, "offline": 1}
     assert r["arten"]["speicher"]["groesse"] == (900 + 2000 + 80 + 4) * MB
     assert by_cat(r, "grosse_videos")[0]["medien"][0]["id"] == state.ids["gross_extern"]  # größtes zuerst
@@ -140,3 +140,25 @@ def test_video_issues():
     live = asset(name="IMG_6.MOV", type="VIDEO", duration_ms=1500)
     items = video_issues(library(short, long_, normal, fav, archived, live), {live.id})
     assert {(i.kategorie, i.assets[0].id) for i in items} == {("kurze_videos", short.id), ("lange_videos", long_.id)}
+
+
+def test_orientation_issues():
+    from immich_pflege.cleanup import orientation_issues
+    from .helpers import asset, library
+    ok_rot = asset(orientation="6", width=4032, height=3024, display_size=(3024, 4032))
+    bad_rot = asset(orientation="6", width=4032, height=3024, display_size=(4032, 3024))  # nicht getauscht
+    bad_flat = asset(orientation="1", width=4032, height=3024, display_size=(3024, 4032))
+    mirrored = asset(orientation="2", width=4032, height=3024, display_size=(4032, 3024))
+    unknown = asset(orientation="6", width=4032, height=3024)  # Anzeigemaße unbekannt (alter Zwischenspeicher)
+    got = {(i.kategorie, i.assets[0].id) for i in orientation_issues(library(ok_rot, bad_rot, bad_flat, mirrored, unknown))}
+    assert got == {("drehung", bad_rot.id), ("drehung", bad_flat.id), ("gespiegelt", mirrored.id)}
+
+
+def test_orientation_refresh_starts_immich_jobs(env, http, state):
+    with TestClient(create_app(env, http=http, auto_scan_enabled=False)) as web:
+        web.get("/api/duplicates")
+        aid = next(iter(state.assets))
+        assert web.post("/api/orientation/refresh", json={"ids": [aid]}).json() == {"angestossen": 1}
+        jobs = [c[3]["name"] for c in state.calls if c[1] == "/api/assets/jobs"]
+        assert jobs == ["refresh-metadata", "regenerate-thumbnail"]
+        assert web.post("/api/orientation/refresh", json={"ids": ["x"]}).status_code == 400

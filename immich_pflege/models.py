@@ -59,6 +59,8 @@ class Asset:
     in_review_album: bool = False
     stack_id: str | None = None  # Immich-Stapel, in dem das Medium liegt
     offline: bool = False  # externe Bibliothek: Datei fehlt auf der Platte
+    orientation: str | None = None  # EXIF-Ausrichtung 1–8 (5–8 = um 90° gedreht, 2/4/5/7 = gespiegelt)
+    display_size: tuple[int, int] | None = None  # Breite × Höhe, wie Immich das Bild anzeigt
     extra: dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------ abgeleitet
@@ -126,6 +128,8 @@ class Asset:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Asset":
+        if data.get("display_size"):  # JSON kennt keine Tupel
+            data = {**data, "display_size": tuple(data["display_size"])}
         return cls(**data)
 
     @classmethod
@@ -157,6 +161,8 @@ class Asset:
             file_size=exif.get("fileSizeInByte"),
             duration_ms=parse_duration(raw.get("duration")),
             offline=bool(raw.get("isOffline")),
+            orientation=str(exif["orientation"]) if exif.get("orientation") not in (None, "") else None,
+            display_size=(raw["width"], raw["height"]) if raw.get("width") and raw.get("height") else None,
         )
 
 

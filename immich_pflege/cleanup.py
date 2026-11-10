@@ -37,7 +37,7 @@ LONG_VIDEO_MIN = 10  # länger: oft vergessen auszuschalten
 SCREEN_RE = re.compile(r"^(screenrecording|rpreplay|bildschirmaufnahme|screen[_ -]?record)", re.I)
 
 ARTEN = {"speicher": "Speicherfresser", "videos": "Videos", "serien": "Serienbilder", "qualitaet": "Unscharf & dunkel",
-         "verwaist": "Verwaiste Dateien"}
+         "ausrichtung": "Gedreht & gespiegelt", "verwaist": "Verwaiste Dateien"}
 KATEGORIEN = {
     "grosse_videos": ("speicher", f"Videos ab {BIG_VIDEO_MB} MB"),
     "bildschirmaufnahmen": ("speicher", "Bildschirmaufnahmen"),
@@ -49,6 +49,8 @@ KATEGORIEN = {
     "dunkel": ("qualitaet", "Sehr dunkel"),
     "unscharf": ("qualitaet", "Unscharf"),
     "offline": ("verwaist", "Datei fehlt (offline)"),
+    "drehung": ("ausrichtung", "Drehung unstimmig – Vorschau steht vermutlich quer"),
+    "gespiegelt": ("ausrichtung", "Gespiegelt gespeichert (oft Selfies)"),
 }
 
 
@@ -137,6 +139,33 @@ def video_issues(lib: Library, live_ids: set[str]) -> list[Item]:
     return items
 
 
+# --------------------------------------------------------- Ausrichtung
+ROTATED = {"5", "6", "7", "8"}  # EXIF: um 90° gedreht
+MIRRORED = {"2", "4", "5", "7"}  # EXIF: gespiegelt
+
+
+def orientation_issues(lib: Library) -> list[Item]:
+    """Fotos, deren Drehung nicht zur Anzeige in Immich passt (Kamera sagt 90° gedreht, Immich zeigt die
+    Rohmaße – oder umgekehrt), und gespiegelt gespeicherte. Nichts davon soll weg: Abhilfe ist, Immich die
+    Datei neu einlesen zu lassen bzw. in Immich zu drehen."""
+    items: list[Item] = []
+    for a in lib.assets.values():
+        if a.type != "IMAGE" or a.visibility == "archive" or not a.orientation:
+            continue
+        raw = (a.width, a.height)
+        shown = a.display_size
+        if shown and raw[0] and raw[1] and raw[0] != raw[1]:
+            swapped = tuple(shown) == (raw[1], raw[0])
+            if (a.orientation in ROTATED) != swapped and tuple(shown) in (raw, (raw[1], raw[0])):
+                items.append(Item("drehung", [a], set(), f"Kamera: {'90° gedreht' if a.orientation in ROTATED else 'nicht gedreht'}"
+                                  f" · Immich zeigt {shown[0]}×{shown[1]}"))
+                continue
+        if a.orientation in MIRRORED:
+            items.append(Item("gespiegelt", [a], set(), f"EXIF-Ausrichtung {a.orientation}"))
+    items.sort(key=lambda i: i.assets[0].local_date_time or "", reverse=True)
+    return items
+
+
 # ------------------------------------------------------------- Serien
 def bursts(lib: Library, store: HashStore) -> list[Item]:
     by_cam: dict[tuple, list[Asset]] = {}
@@ -217,7 +246,8 @@ def find_items(lib: Library, store: HashStore) -> list[Item]:
     in_series = {i for item in series for i in item.ids}
     hogs = storage_hogs(lib)
     live = {i for item in hogs if item.kategorie == "live_videos" for i in item.drop}
-    return hogs + video_issues(lib, live) + series + poor_quality(lib, store, in_series) + orphans(lib)
+    return (hogs + video_issues(lib, live) + series + poor_quality(lib, store, in_series) + orientation_issues(lib)
+            + orphans(lib))
 
 
 # -------------------------------------------------------------- Behalten

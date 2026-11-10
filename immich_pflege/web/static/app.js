@@ -2765,6 +2765,15 @@ async function stageCleanup(action, items, btn) {
 }
 
 // Alle Treffer eines Aufräum-Bereichs prüfen (je Eintrag ein Medium, das weg soll), dann Prüf-Album oder Papierkorb
+async function refreshOrientation(items, btn) {
+  const ids = items.flatMap((it) => it.medien.map((m) => m.id));
+  busy(btn, true);
+  try {
+    const r = await api("api/orientation/refresh", { method: "POST", body: { ids } });
+    toast(`Immich liest ${n(r.angestossen, "Foto", "Fotos")} neu ein – in ein paar Minuten neu einlesen und prüfen`);
+  } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
+}
+
 async function archiveCleanup(items, btn) {
   const ids = [...new Set(items.flatMap((it) => it.medien.filter((m) => m.aktion === "weg").map((m) => m.id)))];
   busy(btn, true);
@@ -3912,6 +3921,15 @@ function updateActionbar() {
     info.textContent = c.ignored ? "Ausgeblendete Einträge" : chosen.length ? `${chosen.length} gewählt` : "Alle mit Vorschlag:";
     if (!c.ignored) buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !list.length,
       onclick: (e) => stageTimeFixes(list, e.currentTarget) }, `Vormerken (${list.length})`));
+  } else if (S.tab === "cln" && S.cln.bereich === "ausrichtung") {
+    // nichts soll weg: Immich die Dateien neu einlesen lassen (behebt quer stehende Vorschauen meist)
+    const c = S.cln;
+    const chosen = c.items.filter((it) => c.sel.has(it.id));
+    const list = (chosen.length ? chosen : c.items).filter((it) => it.kategorie === "drehung");
+    info.textContent = c.ignored ? "Behaltene Einträge" : chosen.length ? `${chosen.length} gewählt` : "Unstimmige Drehung:";
+    if (!c.ignored) buttons.push(h("button", { class: "btn small primary", type: "button", disabled: !list.length,
+      title: "Immich liest die Dateien neu ein und erzeugt die Vorschau neu – an den Fotos ändert sich nichts",
+      onclick: (e) => refreshOrientation(list, e.currentTarget) }, `In Immich neu einlesen (${list.length})`));
   } else if (S.tab === "cln") {
     const c = S.cln;
     const chosen = c.items.filter((it) => c.sel.has(it.id));
@@ -4047,6 +4065,7 @@ const NAV = [
     ["speicher", "Speicherfresser", { tab: "cln", bereich: "speicher" }],
     ["videos", "Videos", { tab: "cln", bereich: "videos" }],
     ["qualitaet", "Unscharf & dunkel", { tab: "cln", bereich: "qualitaet" }],
+    ["ausrichtung", "Gedreht & gespiegelt", { tab: "cln", bereich: "ausrichtung" }],
     ["verwaist", "Verwaiste Dateien", { tab: "cln", bereich: "verwaist" }],
     ["papierkorb", "Papierkorb", { tab: "cln", bereich: "papierkorb" }]] },
   { id: "ordnen", label: "Ordnen", icon: "tag", views: [

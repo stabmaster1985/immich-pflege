@@ -2179,6 +2179,23 @@ class Pflege:
             "erledigt": [{"monat": m, **v} for m, v in sorted(months.items())[-12:]],
         }
 
+    def refresh_assets(self, ids: list[str]) -> dict[str, Any]:
+        """Immich-Aufträge „Metadaten neu lesen“ und „Vorschau neu erzeugen“ je Besitzer anstoßen."""
+        lib = self.library()
+        by_user: dict[str, list[str]] = {}
+        for i in ids:
+            if i in lib.assets:
+                by_user.setdefault(lib.assets[i].owner, []).append(i)
+        if not by_user:
+            raise ActionError("Keine bekannten Medien angegeben")
+        for user, own in by_user.items():
+            client = self.clients[user]
+            client.asset_job(own, "refresh-metadata")
+            client.asset_job(own, "regenerate-thumbnail")
+        n = sum(len(v) for v in by_user.values())
+        log.info("Immich liest %d Medien neu ein (Metadaten + Vorschau)", n)
+        return {"angestossen": n}
+
     def duplicate_savings(self) -> tuple[int, int]:
         """Offene Duplikat-Gruppen (wie „offen“ in der Liste) und wie viele Bytes der Vorschlag frei machen würde."""
         groups = [g for g in self._filter_groups(self.duplicate_groups()) if not g.done()]
@@ -2196,6 +2213,7 @@ class Pflege:
             "serien": cln["serien"]["anzahl"],
             "speicher": cln["speicher"]["anzahl"],
             "videos": cln["videos"]["anzahl"],
+            "ausrichtung": cln["ausrichtung"]["anzahl"],
             "qualitaet": cln["qualitaet"]["anzahl"],
             "verwaist": cln["verwaist"]["anzahl"],
             "ort": self.no_location_view(overview=True)["mit_vorschlag"],

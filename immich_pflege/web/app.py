@@ -88,6 +88,10 @@ class StageDuplicateStacks(BaseModel):
     all: bool = False  # alle Serienbild-Gruppen
 
 
+class IdList(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=5000)
+
+
 class AutoStage(BaseModel):
     arten: list[Literal["orte", "identisch", "messenger", "bearbeitung", "serien"]]
     aktion: Literal["album", "papierkorb"] = "album"
@@ -694,7 +698,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     # ------------------------------------------------------------- Vormerken
     # ------------------------------------------------------------ Aufräumen
     @app.get("/api/cleanup")
-    def cleanup(art: Optional[Literal["speicher", "videos", "serien", "qualitaet", "verwaist"]] = None, kategorie: Optional[str] = None,
+    def cleanup(art: Optional[Literal["speicher", "videos", "serien", "qualitaet", "ausrichtung", "verwaist"]] = None, kategorie: Optional[str] = None,
                 ignoriert: bool = False, offset: int = Query(0, ge=0), limit: int = Query(30, ge=0, le=5000),
                 sortierung: Literal["standard", "speicher", "menge"] = "standard"):
         return svc().cleanup_view(art, kategorie, ignoriert, offset, limit, sortierung)
@@ -834,6 +838,11 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         return svc().stage_albums([t.model_dump(exclude_unset=True) for t in body.trips])
 
     # ------------------------------------------------- Übersicht, Papierkorb
+    @app.post("/api/orientation/refresh")
+    def orientation_refresh(body: IdList):
+        """Immich die Dateien neu einlesen und Vorschauen neu erzeugen lassen (ändert nichts an den Fotos)."""
+        return svc().refresh_assets(body.ids)
+
     @app.get("/api/stats")
     def stats(jahr: Optional[str] = Query(None, pattern=r"^\d{4}$")):
         return svc().stats(jahr)

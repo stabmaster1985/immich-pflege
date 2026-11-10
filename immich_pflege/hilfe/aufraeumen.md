@@ -36,6 +36,18 @@ Unter **Aufräumen → Videos** stehen Videos, die oft niemand wollte:
 
 Favoriten, archivierte und schon im Prüf-Album liegende Videos fehlen. Neben **Ins Prüf-Album** und **Papierkorb** gibt es hier (und bei den anderen Bereichen) **Archivieren**: Das Video bleibt erhalten, verschwindet aber aus der Zeitleiste – gut, wenn du dir nicht sicher bist. Wie alles wird es erst vorgemerkt.
 
+
+## Gedreht & gespiegelt
+
+Ob ein Motiv „richtig herum“ ist, kann das Tool nicht sehen. Es findet aber Fotos, bei denen die Angaben nicht zusammenpassen:
+
+| Art | Woran erkannt | Was tun |
+|---|---|---|
+| **Drehung unstimmig** | Laut Kamera (EXIF-Ausrichtung) um 90° gedreht, aber Immich zeigt die ungedrehten Maße – oder umgekehrt. Die Vorschau steht dann meist quer. | **In Immich neu einlesen**: Immich liest die Datei neu und erzeugt die Vorschau neu. An den Fotos ändert sich nichts, deshalb läuft das sofort, ohne Vormerken. Danach einige Minuten warten und neu einlesen. |
+| **Gespiegelt** | Die Kamera hat das Bild gespiegelt gespeichert (EXIF-Ausrichtung 2, 4, 5 oder 7), oft bei Selfies. | Zur Info. Drehen oder spiegeln geht in Immich (Bild öffnen → Bearbeiten). Mit **Behalten** blendest du sie aus. |
+
+Die Erkennung braucht die Anzeigemaße aus Immich. Die kommen beim nächsten vollständigen Einlesen (⚙ Einstellungen → „Jetzt komplett neu einlesen“, sonst automatisch einmal pro Woche).
+
 ## Serienbilder
 
 Fotos **derselben Kamera** desselben Benutzers mit höchstens **2 Sekunden** Abstand, mindestens 3 hintereinander. Ist der Bild-Fingerabdruck schon berechnet, müssen sie sich auch ähneln (höchstens 12 von 64 Bit verschieden), sonst reicht die Zeit.

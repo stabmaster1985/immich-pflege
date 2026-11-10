@@ -248,7 +248,7 @@ def test_nav_counts(web):
     assert r.status_code == 200
     c = r.json()
     assert set(c) == {"dup", "serien", "speicher", "qualitaet", "verwaist", "ort", "zeit", "tags",
-                      "reisen", "ordner", "albenpflege", "stage", "videos"}
+                      "reisen", "ordner", "albenpflege", "stage", "videos", "ausrichtung"}
     assert c["dup"] >= 1 and c["stage"] == 0
 
 
