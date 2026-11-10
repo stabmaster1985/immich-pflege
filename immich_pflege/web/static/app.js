@@ -13,6 +13,7 @@ const S = {
   fol: { items: [], status: null, ignored: false, choice: {}, sync: {}, ohne: {} },
   alb: { quelle: "reisen", trips: [], total: 0, status: null, jahr: null, ignored: false, sel: new Set(), choice: {}, ohne: {}, open: {}, loaded: false, info: null },
   sug: { items: [], hidden: false, info: null, smart: null, cut: null, tag: "" },
+  per: { loaded: false, data: null, keep: {} },
   tags: { rules: [], sel: new Set(), loaded: false, error: null, warnings: [], items: [], fileErrors: [], users: [], yaml: "" },
   set: { data: null, loaded: false },
   stage: { entries: [], info: null, loaded: false },
@@ -3221,6 +3222,69 @@ async function loadOverview() {
   ].filter(Boolean));
 }
 
+/* ------------------------------------------------------------- Personen */
+// Unbenannte Personen (mit wem sie meist zusammen auf Fotos sind) – benennen in Immich;
+// doppelt angelegte Personen hier zusammenführen (vormerken, in Immich nicht rückgängig zu machen).
+async function loadPeople() {
+  $("#per-list").replaceChildren(h("p", { class: "empty" }, "Frage Immichs Gesichtserkennung …"));
+  S.per.data = await api("api/people");
+  S.per.loaded = true;
+  renderPeople();
+}
+
+function renderPeople() {
+  const box = $("#per-list");
+  const r = S.per.data;
+  const web = S.status && S.status.link_url;
+  $("#per-summary").textContent = `${de(r.anzahl_benannt)} mit Namen · ${de(r.anzahl_unbenannt)} ohne Namen`
+    + (r.doppelt.length ? ` · ${n(r.doppelt.length, "Person doppelt", "Personen doppelt")}` : "");
+  const face = (user, id) => h("img", { class: "face", src: `person-thumb/${encodeURIComponent(user)}/${id}`, alt: "", loading: "lazy" });
+  const doubles = r.doppelt.map((d) => {
+    const key = d.benutzer + "|" + d.name;
+    const keep = S.per.keep[key] || d.behalten;
+    return h("article", { class: "card" },
+      h("div", { class: "card-head" }, h("div", {}, h("h2", {}, `👤 ${d.name}`),
+        h("span", { class: "muted" }, `${n(d.personen.length, "Eintrag", "Einträge")} bei ${cap(d.benutzer)} – Immich hat die Person mehrfach angelegt`))),
+      h("div", { class: "faces" }, ...d.personen.map((p) => h("label", { class: "face-pick" + (p.id === keep ? " on" : "") },
+        h("input", { type: "radio", name: "keep-" + key, checked: p.id === keep, onchange: () => { S.per.keep[key] = p.id; renderPeople(); } }),
+        face(d.benutzer, p.id), h("span", { class: "small" }, `${p.name} · ${n(p.anzahl, "Foto", "Fotos")}`),
+        h("span", { class: "muted small" }, p.id === keep ? "bleibt" : "geht darin auf")))),
+      h("div", { class: "row-gap" }, h("button", { type: "button", class: "btn small primary", onclick: (e) => mergePeople(d, keep, e.currentTarget) },
+        "Zusammenführen vormerken")));
+  });
+  const unnamed = r.unbenannt.map((u) => h("div", { class: "face-card" }, face(u.benutzer, u.id),
+    h("b", {}, n(u.anzahl, "Foto", "Fotos")),
+    h("span", { class: "muted small" }, u.mit ? `meist mit ${u.mit.name} (${u.mit.anzahl})` : "mit niemand Bekanntem"),
+    h("span", { class: "muted small" }, cap(u.benutzer)),
+    web ? h("a", { href: `${web}/people/${encodeURIComponent(u.id)}`, target: "_blank", rel: "noopener", class: "small" }, "In Immich benennen ↗") : null));
+  box.replaceChildren(...[
+    r.fehler.length ? h("div", { class: "banner warn" }, "Nicht alles abrufbar: " + r.fehler.join(" · ") + " – Recht person.read am API-Key?") : null,
+    r.doppelt.length ? h("h2", { class: "stage-head" }, "Doppelt angelegt") : null, ...doubles,
+    h("h2", { class: "stage-head" }, "Ohne Namen – die mit den meisten Fotos"),
+    unnamed.length ? h("div", { class: "face-grid" }, ...unnamed) : h("p", { class: "empty" }, "Alle häufigen Personen haben einen Namen 🎉"),
+    h("p", { class: "muted small" }, web ? "Benennen geht in Immich: „In Immich benennen“ öffnet die Person. Danach hier ↻."
+      : "Benennen geht in Immich unter Personen. Für direkte Links unter ⚙ Einstellungen die „Adresse für Links im Browser“ eintragen."),
+  ].filter(Boolean));
+}
+
+async function mergePeople(d, keep, btn) {
+  const keepP = d.personen.find((p) => p.id === keep);
+  const others = d.personen.filter((p) => p.id !== keep);
+  const ok = await confirmDialog({ title: `„${d.name}“ zusammenführen?`, danger: true, okLabel: "Vormerken",
+    checkLabel: "Mir ist klar: Immich kann das nicht rückgängig machen",
+    body: [h("p", {}, `${n(others.length, "Eintrag geht", "Einträge gehen")} in „${keepP.name}“ (${n(keepP.anzahl, "Foto", "Fotos")}) auf.`),
+      h("p", { class: "muted" }, "Die Gesichter aller Fotos gehören danach zu einer Person. Übertragen wird erst unter Vorgemerkt – Trennen geht danach nicht mehr.")] });
+  if (!ok) return;
+  busy(btn, true);
+  try {
+    await api("api/staged/people-merge", { method: "POST", body: { eintraege: [{ benutzer: d.benutzer, behalten: keep, ids: others.map((p) => p.id) }] } });
+    toast("Zusammenführen vorgemerkt – unter Vorgemerkt übertragen");
+    S.stage.loaded = false;
+    await loadTab("per", true);
+    loadCounts();
+  } catch (e) { toast(e.message, true); busy(btn, false); }
+}
+
 /* ------------------------------------------------------------ Statistik */
 // Jahre (je Benutzer gestapelt) → Tipp auf ein Jahr zeigt dessen Monate → Tipp auf einen Monat öffnet seine Fotos.
 // Farben je Benutzer fest (Reihenfolge der Benutzer), nicht nach Rang.
@@ -3366,7 +3430,7 @@ async function openMonthMedia(month, label) {
     hinweis: "Nach Tagen gruppiert. Antippen öffnet groß.", aktionen: [{ leer: true, text: () => "Schließen", run: async () => {} }] });
 }
 
-const DONE_LABEL = { duplikat: "Duplikate", aufraeumen: "Aufgeräumt", archiv: "Archiviert", stapel: "Gestapelt", albenpflege: "Alben", zeit: "Zeit", ort: "Verortet", album: "In Alben", tag: "Getaggt", papierkorb: "Wiederhergestellt" };
+const DONE_LABEL = { duplikat: "Duplikate", aufraeumen: "Aufgeräumt", archiv: "Archiviert", stapel: "Gestapelt", albenpflege: "Alben", zeit: "Zeit", ort: "Verortet", album: "In Alben", tag: "Getaggt", papierkorb: "Wiederhergestellt", personen: "Personen zusammengeführt" };
 function doneTable(rows) {
   const keys = Object.keys(DONE_LABEL).filter((k) => rows.some((r) => r[k]));
   return h("table", { class: "tbl" },
@@ -3625,7 +3689,7 @@ async function ignoreTrip(t, undo) {
 }
 
 /* -------------------------------------------------------- Vorgemerkt */
-const STAGE_TYPES = [["duplikat", "Duplikate"], ["aufraeumen", "Aufräumen"], ["archiv", "Archivieren"], ["stapel", "Stapel"], ["albenpflege", "Alben aufräumen"], ["zeit", "Aufnahmezeit"], ["ort", "Orte"], ["album", "Alben"], ["tag", "Tags"]];
+const STAGE_TYPES = [["duplikat", "Duplikate"], ["aufraeumen", "Aufräumen"], ["archiv", "Archivieren"], ["stapel", "Stapel"], ["albenpflege", "Alben aufräumen"], ["zeit", "Aufnahmezeit"], ["ort", "Orte"], ["album", "Alben"], ["tag", "Tags"], ["personen", "Personen"]];
 const STAGE_ACTION = { papierkorb: "Papierkorb", album: "Prüf-Album", keine: "–" };
 
 // Nach dem Vormerken: Quelle neu laden (Vorgemerktes ist dort weg) und Zähler aktualisieren
@@ -3725,7 +3789,7 @@ function stageMedia(e) {
 }
 
 // Je Art eine einklappbare Gruppe mit eigener Farbe; der Klappzustand bleibt gespeichert
-const STAGE_ICON = { duplikat: "⧉", aufraeumen: "🧹", archiv: "🗄", stapel: "📚", albenpflege: "🗂", zeit: "🕑", ort: "📍", album: "🖼", tag: "🏷" };
+const STAGE_ICON = { duplikat: "⧉", aufraeumen: "🧹", archiv: "🗄", stapel: "📚", albenpflege: "🗂", zeit: "🕑", ort: "📍", album: "🖼", tag: "🏷", personen: "👤" };
 
 function stageOpen(key, fallback) {
   try {
@@ -3801,7 +3865,7 @@ function stageEntry(x) {
       h("div", { class: "grow" }, h("div", { class: "se-title" }, x.titel),
         h("div", { class: "muted small" }, `${n(x.anzahl, "Medium", "Medien")} · vorgemerkt ${fmtDateTime(x.erstellt)}` + (trash ? ` · 🗑 ${trash}` : ""))),
       h("div", { class: "se-actions" },
-        x.typ !== "albenpflege" ? h("button", { type: "button", class: "btn small", title: "Alle Medien ansehen, einzelne abwählen",
+        !["albenpflege", "personen"].includes(x.typ) ? h("button", { type: "button", class: "btn small", title: "Alle Medien ansehen, einzelne abwählen",
           onclick: (ev) => openStagedReview(x, ev.currentTarget) }, "Ansehen") : null,
         h("button", { type: "button", class: "btn small", title: "Zurücknehmen", onclick: (ev) => unstage(x, ev.currentTarget) }, "↩"),
         h("button", { type: "button", class: "btn small primary", onclick: (ev) => applyStaged([x.id], ev.currentTarget) }, "Übertragen"))),
@@ -3846,7 +3910,7 @@ async function unstageGroup(g, btn) {
   } catch (err) { toast(err.message, true); busy(btn, false); }
 }
 
-const STAGE_SOURCE = { duplikat: "dup", aufraeumen: "cln", archiv: "tags", stapel: "cln", albenpflege: "cln", zeit: "cln", ort: "loc", album: "alb", tag: "tags" };
+const STAGE_SOURCE = { duplikat: "dup", aufraeumen: "cln", archiv: "tags", stapel: "cln", albenpflege: "cln", zeit: "cln", ort: "loc", album: "alb", tag: "tags", personen: "per" };
 
 async function unstage(e, btn) {
   busy(btn, true);
@@ -4052,7 +4116,7 @@ function loadTab(tab, force = false) {
   return p;
 }
 
-const TAB_TARGET = { ovw: "#ovw-body", dup: "#dup-list", loc: "#loc-list", cln: "#cln-list", alb: "#alb-list", tags: "#tags-list", stage: "#stage-list", set: "#set-welcome" };
+const TAB_TARGET = { per: "#per-list", ovw: "#ovw-body", dup: "#dup-list", loc: "#loc-list", cln: "#cln-list", alb: "#alb-list", tags: "#tags-list", stage: "#stage-list", set: "#set-welcome" };
 
 async function doLoadTab(tab, force) {
   try {
@@ -4063,6 +4127,7 @@ async function doLoadTab(tab, force) {
     if (tab === "alb" && (force || !S.alb.loaded)) await loadAlbums(true);
     if (tab === "tags" && (force || !S.tags.loaded)) await Promise.all([loadTags(), loadSuggestions()]);
     if (tab === "stage" && (force || !S.stage.loaded)) await loadStaged();
+    if (tab === "per" && (force || !S.per.loaded)) await loadPeople();
     if (tab === "set" && (force || !S.set.loaded)) { await loadSettings(); loadVersion(); }
     if (tab !== "set" && S.status && !S.status.bibliothek) loadStatus(false);
   } catch (e) {
@@ -4118,6 +4183,7 @@ const NAV = [
     ["ort", "Ohne Ort", { tab: "loc" }],
     ["zeit", "Falsche Zeit", { tab: "cln", bereich: "zeit" }],
     ["tags", "Tags", { tab: "tags" }],
+    ["personen", "Personen", { tab: "per" }],
     ["stapel", "Stapeln", { tab: "cln", bereich: "stapel" }]] },
   { id: "alben", label: "Alben", icon: "album", views: [
     ["reisen", "Reisen", { tab: "alb", quelle: "reisen" }],
@@ -4276,6 +4342,7 @@ const autoMore = new IntersectionObserver((entries) => {
 }, { rootMargin: "0px 0px 400px 0px" });
 ["#dup-more", "#loc-more", "#cln-more", "#alb-more"].forEach((sel) => autoMore.observe($(sel)));
 $("#tags-reload").addEventListener("click", () => loadTab("tags", true));
+$("#per-reload").addEventListener("click", () => loadTab("per", true));
 $("#smart-size").addEventListener("change", (e) => { try { localStorage.setItem("pflege-ki-anzahl", e.target.value); } catch (_) { /* egal */ } });
 try { const v = localStorage.getItem("pflege-ki-anzahl"); if (v) $("#smart-size").value = v; } catch (_) { /* egal */ }
 $("#smart-go").addEventListener("click", () => { const q = $("#smart-q").value.trim(); if (q) loadSmart({ suche: q }); });

@@ -144,6 +144,7 @@ class Pflege:
         self._thumb_slots = threading.BoundedSemaphore(THUMB_PARALLEL)
         self._key_warnings: list[dict[str, Any]] | None = None
         self._people_cache: tuple[tuple, list[dict[str, Any]]] | None = None
+        self._people_view_cache: tuple[tuple, dict[str, Any]] | None = None
         self._scan_lock = threading.RLock()
         self.scanning = False
         self.progress = ""  # was beim Einlesen gerade passiert (für die Oberfläche)
@@ -1195,7 +1196,7 @@ class Pflege:
         elif typ == "tag" and "regel_def" in d:
             ids = self._suggestion_ids(e["key"], "tag")[2]
         else:
-            raise ActionError("Dieser Eintrag betrifft ganze Alben, keine einzelnen Medien")
+            raise ActionError("Dieser Eintrag betrifft ganze Alben oder Personen, keine einzelnen Medien")
         return ids, marks
 
     def staged_media(self, entry_id: str) -> dict[str, Any]:
@@ -1304,6 +1305,8 @@ class Pflege:
                         res = execute_care(lib, self.clients, e["daten"])
                     elif e["typ"] == "archiv":
                         res = self._archive(lib, e["daten"]["medien"])
+                    elif e["typ"] == "personen":
+                        res = self._merge_people(e["daten"])
                     else:
                         res = self._apply_staged_tag(e["daten"])
                 except (ImmichError, ActionError, RuleError, AlbumError) as exc:
@@ -1316,7 +1319,8 @@ class Pflege:
                          "album": lambda r: r["hinzugefuegt"], "tag": lambda r: r["getaggt"],
                          "zeit": lambda r: r["verschoben"], "stapel": lambda r: r["medien"],
                          "albenpflege": lambda r: r["hinzugefuegt"] + r["geloescht"] + r.get("titelbild", 0),
-                         "archiv": lambda r: r["archiviert"]}[e["typ"]](res)
+                         "archiv": lambda r: r["archiviert"],
+                         "personen": lambda r: r["zusammengefuehrt"]}[e["typ"]](res)
                 self._record(e["typ"], e["titel"], count, res, "oberflaeche")
                 results.append({"id": e["id"], "titel": e["titel"], "ergebnis": res})
             self.staging.remove(done)
@@ -2141,6 +2145,85 @@ class Pflege:
             "speicher": self.storage_forecast(),
         }
 
+    # ------------------------------------------------------------- Personen
+    def people_view(self, unnamed_per_user: int = 30, named_per_user: int = 15) -> dict[str, Any]:
+        """Unbenannte Personen mit den meisten Fotos (und mit wem sie meist zusammen auf Fotos sind) und
+        Personen, die Immich doppelt angelegt hat (gleicher Name beim selben Benutzer). Zwischengespeichert
+        bis zum nächsten Einlesen bzw. bis etwas zusammengeführt wurde."""
+        lib = self.library()
+        key = (lib.uid, lib.rev, len(self.history.entries))
+        if self._people_view_cache and self._people_view_cache[0] == key:
+            data = self._people_view_cache[1]
+        else:
+            unnamed, doubles, totals, errors = [], [], {"anzahl_benannt": 0, "anzahl_unbenannt": 0}, []
+            for user, client in self.clients.items():
+                try:
+                    people = client.people()
+                except ImmichError as exc:
+                    errors.append(f"{user}: {exc}")
+                    continue
+                named = [p for p in people if (p.get("name") or "").strip()]
+                nameless = [p for p in people if not (p.get("name") or "").strip()]
+                totals["anzahl_benannt"] += len(named)
+                totals["anzahl_unbenannt"] += len(nameless)
+                try:
+                    named_sets = {p["name"].strip(): client.search_ids(personIds=[p["id"]]) for p in named[:named_per_user]}
+                    for p in nameless[:unnamed_per_user]:
+                        ids = client.search_ids(personIds=[p["id"]])
+                        if not ids:
+                            continue
+                        best = max(((n, len(ids & s)) for n, s in named_sets.items()), key=lambda x: x[1], default=None)
+                        unnamed.append({"id": p["id"], "benutzer": user, "anzahl": len(ids),
+                                        "mit": {"name": best[0], "anzahl": best[1]} if best and best[1] else None})
+                    groups: dict[str, list[dict[str, Any]]] = {}
+                    for p in named:
+                        groups.setdefault(re.sub(r"\s+", " ", p["name"]).strip().lower(), []).append(p)
+                    for same in groups.values():
+                        if len(same) < 2:
+                            continue
+                        members = sorted(({"id": p["id"], "name": p["name"].strip(), "anzahl": client.person_statistics(p["id"])}
+                                          for p in same), key=lambda m: -m["anzahl"])
+                        doubles.append({"benutzer": user, "name": members[0]["name"], "personen": members,
+                                        "behalten": members[0]["id"]})
+                except ImmichError as exc:
+                    errors.append(f"{user}: {exc}")
+            unnamed.sort(key=lambda u: -u["anzahl"])
+            data = {"unbenannt": unnamed, "doppelt": doubles, **totals, "fehler": errors}
+            self._people_view_cache = (key, data)
+        staged = {i for e in self.staging.of_type("personen") for i in e["daten"]["ids"]}
+        return {**data, "doppelt": [d for d in data["doppelt"]
+                                    if not {p["id"] for p in d["personen"]} & staged]}
+
+    def person_thumbnail(self, user: str, person_id: str) -> tuple[bytes, str]:
+        if user not in self.clients:
+            raise ActionError("Unbekannter Benutzer")
+        return self.clients[user].person_thumbnail(person_id)
+
+    def stage_people_merge(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+        """Doppelte Personen zum Zusammenführen vormerken: [{benutzer, behalten, ids}] – ids gehen in behalten auf."""
+        known = {(d["benutzer"], p["id"]): (d, p) for d in self.people_view()["doppelt"] for p in d["personen"]}
+        staged = 0
+        for it in items:
+            user, keep, ids = it.get("benutzer"), it.get("behalten"), [i for i in it.get("ids") or [] if i != it.get("behalten")]
+            if (user, keep) not in known or not ids or any((user, i) not in known for i in ids):
+                raise ActionError("Person nicht (mehr) gefunden – bitte neu laden")
+            d, p = known[(user, keep)]
+            n = sum(known[(user, i)][1]["anzahl"] for i in ids)
+            self.staging.add("personen", f"👤 „{p['name']}“ ({user}): {len(ids) + 1} Einträge zu einem zusammenführen",
+                             {"benutzer": user, "behalten": keep, "ids": ids, "name": p["name"]}, [], p["anzahl"] + n,
+                             key=f"{user}|{keep}")
+            staged += 1
+        return {"vorgemerkt": staged}
+
+    def _merge_people(self, data: dict[str, Any]) -> dict[str, Any]:
+        res = self.clients[data["benutzer"]].merge_people(data["behalten"], data["ids"])
+        failed = [r for r in res if not r.get("success")]
+        if failed and len(failed) == len(res):
+            raise ActionError(f"Zusammenführen abgelehnt: {failed[0].get('error')}")
+        self._people_view_cache = None
+        self._people_cache = None
+        return {"zusammengefuehrt": len(res) - len(failed), "fehler": [r.get("error") for r in failed], "rueck": []}
+
     def top_people(self, per_user: int = 12) -> list[dict[str, Any]]:
         """Benannte Personen mit den meisten Fotos (Gesichtserkennung), je Name über beide Benutzer.
         Zwischengespeichert bis zum nächsten Einlesen; ohne Recht/Gesichtserkennung leer."""
@@ -2292,6 +2375,8 @@ class Pflege:
             "ordner": folders["status"]["neu"] + folders["status"]["ergaenzen"] if folders and "status" in folders else None,
             "albenpflege": sum(a["anzahl"] for a in care["arten"].values()) if care and "arten" in care else None,
             "stage": self.staging.summary()["anzahl"],
+            # Personen nur aus dem Zwischenspeicher (sonst viele Anfragen an Immich bei jedem Zählen)
+            "personen": len(self._people_view_cache[1]["doppelt"]) if self._people_view_cache else None,
         }
 
     # ------------------------------------------------------------ Papierkorb

@@ -36,6 +36,7 @@ KEEP = 500
 NOT_UNDOABLE = {
     "ort": "Immich kann Koordinaten nur ändern, nicht entfernen – bei Bedarf einen anderen Ort setzen.",
     "papierkorb": "Wieder löschen geht über Duplikate oder Aufräumen.",
+    "personen": "Zusammengeführte Personen kann Immich nicht wieder trennen.",
 }
 
 

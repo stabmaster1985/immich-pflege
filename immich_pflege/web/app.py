@@ -39,7 +39,7 @@ from .auth import COOKIE, RENEW_BELOW_S, Sessions, basic_credentials
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
 HELP = Path(__file__).parent.parent / "hilfe"
-HELP_TOPICS = ("duplikate", "ohne-ort", "aufraeumen", "alben", "tags", "vorgemerkt", "einstellungen")
+HELP_TOPICS = ("duplikate", "ohne-ort", "aufraeumen", "alben", "tags", "personen", "vorgemerkt", "einstellungen")
 SLOW_REQUEST_S = 2.0  # langsamere API-Aufrufe landen im Log
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 OPEN_PATHS = {"/healthz", "/login", "/api/login", "/api/logout", "/favicon.ico", "/sw.js"}
@@ -86,6 +86,16 @@ class StageDuplicates(BaseModel):
 class StageDuplicateStacks(BaseModel):
     groups: Optional[list[GroupSelection]] = None  # keep = liegt oben
     all: bool = False  # alle Serienbild-Gruppen
+
+
+class PeopleMergeItem(BaseModel):
+    benutzer: str
+    behalten: str
+    ids: list[str] = Field(min_length=1)
+
+
+class PeopleMerge(BaseModel):
+    eintraege: list[PeopleMergeItem] = Field(min_length=1)
 
 
 class IdList(BaseModel):
@@ -838,6 +848,24 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
         return svc().stage_albums([t.model_dump(exclude_unset=True) for t in body.trips])
 
     # ------------------------------------------------- Übersicht, Papierkorb
+    @app.get("/api/people")
+    def people():
+        return svc().people_view()
+
+    @app.post("/api/staged/people-merge")
+    def stage_people_merge(body: PeopleMerge):
+        return svc().stage_people_merge([i.model_dump() for i in body.eintraege])
+
+    @app.get("/person-thumb/{user}/{person_id}", include_in_schema=False)
+    def person_thumb(user: str, person_id: str):
+        if not UUID_RE.match(person_id):
+            return Response("Ungültige ID", status_code=400)
+        try:
+            data, ctype = svc().person_thumbnail(user, person_id)
+        except (ImmichError, ActionError) as exc:
+            return Response(str(exc), status_code=404, headers={"Cache-Control": "no-store"})
+        return Response(data, media_type=ctype, headers={"Cache-Control": "private, max-age=86400"})
+
     @app.post("/api/orientation/refresh")
     def orientation_refresh(body: IdList):
         """Immich die Dateien neu einlesen und Vorschauen neu erzeugen lassen (ändert nichts an den Fotos)."""

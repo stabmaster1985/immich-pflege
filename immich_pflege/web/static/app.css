@@ -627,3 +627,12 @@ dialog.review[open] { display: flex; flex-direction: column; }
 .heat-y { align-self: center; }
 .disk { height: 10px; border-radius: 5px; background: var(--chip); overflow: hidden; margin: 4px 0 8px; }
 .disk i { display: block; height: 100%; background: var(--series-1); }
+
+/* Personen */
+.face { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; background: var(--chip); }
+.faces { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0; }
+.face-pick { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; border-radius: 12px; border: 2px solid transparent; cursor: pointer; max-width: 120px; text-align: center; }
+.face-pick.on { border-color: var(--keep); }
+.face-pick input { position: absolute; opacity: 0; pointer-events: none; }
+.face-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.face-card { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 6px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); text-align: center; }
