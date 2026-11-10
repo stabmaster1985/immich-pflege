@@ -61,6 +61,7 @@ class Asset:
     offline: bool = False  # externe Bibliothek: Datei fehlt auf der Platte
     orientation: str | None = None  # EXIF-Ausrichtung 1–8 (5–8 = um 90° gedreht, 2/4/5/7 = gespiegelt)
     display_size: tuple[int, int] | None = None  # Breite × Höhe, wie Immich das Bild anzeigt
+    added_at: str | None = None  # wann das Medium in Immich kam (für die Speicherprognose)
     extra: dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------ abgeleitet
@@ -163,6 +164,7 @@ class Asset:
             offline=bool(raw.get("isOffline")),
             orientation=str(exif["orientation"]) if exif.get("orientation") not in (None, "") else None,
             display_size=(raw["width"], raw["height"]) if raw.get("width") and raw.get("height") else None,
+            added_at=raw.get("createdAt"),
         )
 
 

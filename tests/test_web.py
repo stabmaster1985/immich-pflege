@@ -431,3 +431,20 @@ def test_stats_years_months_and_tops(web):
     assert len(media) == month["medien"] and all(m["aufnahme"].startswith(month["monat"]) for m in media)
     assert web.get("/api/stats", params={"jahr": "1900"}).status_code == 400
     assert web.get("/api/stats", params={"jahr": "abc"}).status_code == 422
+
+
+def test_stats_people_heatmap_and_storage(web, state):
+    ids = [i for i, a in state.assets.items() if state.user_by_id(a["ownerId"])["name"].lower() == "frank"]
+    state.add_person("frank", "Julia", ids[:5])
+    state.add_person("julia", "Julia", [i for i, a in state.assets.items()
+                                        if state.user_by_id(a["ownerId"])["name"].lower() == "julia"][:3])
+    state.add_person("frank", "", ids[5:9])  # unbenannt zählt nicht
+    r = web.get("/api/stats").json()
+    julia = next(p for p in r["personen"] if p["name"] == "Julia")
+    assert julia["anzahl"] == 8 and julia["je_benutzer"] == {"frank": 5, "julia": 3}
+    assert all(p["name"] for p in r["personen"])
+    assert len(r["heatmap"]) == 7 and all(len(row) == 24 for row in r["heatmap"])
+    assert sum(map(sum, r["heatmap"])) == sum(r["wochentage"])
+    sp = r["speicher"]
+    assert sp["frei"] == 3_000_000_000_000 and sp["gesamt"] and len(sp["monate"]) == 12
+    assert all(y["groesse"] == sum(y["groesse_je_benutzer"].values()) for y in r["jahre"])

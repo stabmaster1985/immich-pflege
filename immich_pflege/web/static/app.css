@@ -620,3 +620,10 @@ dialog.review[open] { display: flex; flex-direction: column; }
 .cmp-tbl tbody th { white-space: nowrap; word-break: normal; }
 .cmp-tbl tr.diff td { background: var(--warn-bg); color: var(--warn-fg); }
 .cmp-actions { justify-content: space-between; }
+.metric-bar { margin: 2px 0 6px; }
+.heat { display: grid; grid-template-columns: 2em repeat(24, minmax(0, 1fr)); gap: 2px; margin-top: 6px; }
+.heat-c { aspect-ratio: 1; border-radius: 2px; cursor: pointer; }
+.heat-x, .heat-y { font-size: .6rem; color: var(--muted); line-height: 1.4; }
+.heat-y { align-self: center; }
+.disk { height: 10px; border-radius: 5px; background: var(--chip); overflow: hidden; margin: 4px 0 8px; }
+.disk i { display: block; height: 100%; background: var(--series-1); }

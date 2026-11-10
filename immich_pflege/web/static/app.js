@@ -6,7 +6,7 @@ const S = {
   tab: "dup",
   status: null,
   dup: { groups: [], total: 0, open: 0, keep: {}, sel: new Set(), includeDone: false, art: null, monat: null, crossUser: false, ignored: false, loaded: false, info: null },
-  stats: { jahr: null },
+  stats: { jahr: null, metric: "medien" },
   loc: { series: [], total: 0, sel: new Set(), open: new Set(), hours: null, only: false, minConf: null, ort: null, monat: null, herkunft: null, benutzer: null, loaded: false, info: null },
   ovw: { loaded: false },
   cln: { bereich: "speicher", kategorie: null, ignored: false, items: [], total: 0, sel: new Set(), keep: {}, loaded: false, info: null },
@@ -90,6 +90,7 @@ function n(count, one, many) { return `${count} ${count === 1 ? one : many}`; }
 function fmtSize(b) { return b ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : ""; }
 function fmtBig(b) {
   if (!b) return "0 MB";
+  if (b >= 1099511627776) return (b / 1099511627776).toFixed(2).replace(".", ",") + " TB";
   return b >= 1073741824 ? (b / 1073741824).toFixed(1).replace(".", ",") + " GB" : Math.round(b / 1048576) + " MB";
 }
 
@@ -3230,8 +3231,8 @@ const cap = (u) => u.charAt(0).toUpperCase() + u.slice(1);
 const de = (x) => x.toLocaleString("de-DE");
 
 // Säulen: items = [{label, parts: [{val, color}], tip, active, onclick}]; ein Hinweistext unter dem Diagramm
-function barChart(items, { aria, labelEvery = 1, height = 140 } = {}) {
-  const max = Math.max(1, ...items.map((it) => it.parts.reduce((a, p) => a + p.val, 0)));
+function barChart(items, { aria, labelEvery = 1, height = 140, max = null } = {}) {
+  max = max || Math.max(1, ...items.map((it) => it.parts.reduce((a, p) => a + p.val, 0)));
   const tip = h("div", { class: "ychart-tip muted small" }, "\u00a0");
   const wrap = h("div", { class: "ychart", role: "img", "aria-label": aria, style: `height:${height}px` });
   items.forEach((it, k) => {
@@ -3263,7 +3264,7 @@ function rankList(title, list, total) {
 }
 
 function userTip(prefix, b, users) {
-  const per = users.length > 1 ? " · " + users.map((u) => `${cap(u)} ${de(b.je_benutzer[u] || 0)}`).join(", ") : "";
+  const per = users.length > 1 ? " · " + users.map((u) => `${cap(u)} ${de(b.je_benutzer[u] || 0)} (${fmtBig((b.groesse_je_benutzer || {})[u] || 0)})`).join(", ") : "";
   return `${prefix}: ${de(b.medien)} Medien${per} · ${fmtBig(b.groesse)}` + (b.videos ? ` · ${de(b.videos)} Videos` : "")
     + (b.medien ? ` · ${Math.round((b.ohne_gps / b.medien) * 100)} % ohne Ort` : "");
 }
@@ -3275,15 +3276,21 @@ async function renderStats(box) {
   try { r = await api("api/stats" + (year ? "?jahr=" + year : "")); }
   catch (e) { if (year) { S.stats.jahr = null; return renderStats(box); } box.replaceChildren(h("div", { class: "banner err" }, e.message)); return; }
   const users = r.benutzer;
-  const parts = (b) => users.map((u, i) => ({ val: b.je_benutzer[u] || 0, color: userColor(i) }));
-  const legend = users.length > 1 ? h("div", { class: "legend" }, ...users.map((u, i) =>
+  const metric = S.stats.metric;
+  // Anzahl oder Speicher je Benutzer gestapelt; „mit Ort“ als Anteil (eine Reihe, Skala bis 100 %)
+  const parts = (b) => (metric === "ort" ? [{ val: b.medien ? Math.round(((b.medien - b.ohne_gps) / b.medien) * 100) : 0, color: "var(--series-1)" }]
+    : users.map((u, i) => ({ val: (metric === "groesse" ? b.groesse_je_benutzer : b.je_benutzer)[u] || 0, color: userColor(i) })));
+  const scaleMax = metric === "ort" ? 100 : null;
+  const metricBar = h("div", { class: "row-gap metric-bar" }, ...[["medien", "Anzahl"], ["groesse", "Speicher"], ["ort", "mit Ort"]].map(([k, l]) =>
+    h("button", { type: "button", class: "chip-btn" + (metric === k ? " on" : ""), onclick: () => { S.stats.metric = k; renderStats(box); } }, l)));
+  const legend = metric !== "ort" && users.length > 1 ? h("div", { class: "legend" }, ...users.map((u, i) =>
     h("span", {}, h("i", { style: `background:${userColor(i)}` }), cap(u)))) : null;
   const peak = r.jahre.reduce((a, y) => (y.medien > (a ? a.medien : -1) ? y : a), null);
   const years = barChart(r.jahre.map((y) => ({
     label: r.jahre.length > 12 ? "’" + y.jahr.slice(2) : y.jahr, parts: parts(y), active: y.jahr === year,
     tip: userTip(y.jahr, y, users) + (y.jahr === year ? " – noch einmal tippen: alle Jahre" : " – tippen: Monate"),
     onclick: () => { S.stats.jahr = y.jahr === year ? null : y.jahr; renderStats(box); },
-  })), { aria: "Aufnahmen je Jahr", labelEvery: r.jahre.length > 24 ? 2 : 1 });
+  })), { aria: "Aufnahmen je Jahr", labelEvery: r.jahre.length > 24 ? 2 : 1, max: scaleMax });
   const g = r.gesamt;
   const kpi = (v, l) => h("div", { class: "kpi" }, h("b", {}, v), h("span", { class: "muted small" }, l));
   const head = h("div", { class: "stats-head" },
@@ -3300,17 +3307,56 @@ async function renderStats(box) {
       label: MONTH_SHORT[k], parts: parts(m),
       tip: userTip(`${MONTHS[k]} ${year}`, m, users) + (m.medien ? " – tippen: Fotos ansehen" : ""),
       onclick: m.medien ? () => openMonthMedia(m.monat, `${MONTHS[k]} ${year}`) : null,
-    })), { aria: `Aufnahmen je Monat ${year}` }));
+    })), { aria: `Aufnahmen je Monat ${year}`, max: scaleMax }));
   }
-  const wd = barChart(r.wochentage.map((c, k) => ({ label: WEEKDAYS[(k + 1) % 7], parts: [{ val: c, color: "var(--series-1)" }],
-    tip: `${WEEKDAY_LONG[k]}: ${de(c)} Medien` })), { aria: "Aufnahmen je Wochentag", height: 90 });
-  const hr = barChart(r.stunden.map((c, k) => ({ label: String(k), parts: [{ val: c, color: "var(--series-1)" }],
-    tip: `${k}–${k + 1} Uhr: ${de(c)} Medien` })), { aria: "Aufnahmen je Uhrzeit", labelEvery: 3, height: 90 });
-  box.replaceChildren(...[head, kpis, legend, years, months,
+  box.replaceChildren(...[head, kpis, metricBar, legend, years, months,
     h("div", { class: "rank-grid" }, ...[rankList("Kameras", r.kameras, g.medien), rankList("Länder", r.laender, g.medien),
-      rankList("Orte", r.orte, g.medien), rankList("Formate", r.formate, g.medien)].filter(Boolean)),
-    h("div", { class: "rank-grid" }, h("div", { class: "card" }, h("h3", {}, "Wochentage"), wd),
-      h("div", { class: "card" }, h("h3", {}, "Uhrzeit"), hr))].filter(Boolean));
+      rankList("Orte", r.orte, g.medien), r.personen && r.personen.length ? rankList("Personen", r.personen, g.medien) : null,
+      rankList("Formate", r.formate, g.medien)].filter(Boolean)),
+    h("div", { class: "card" }, h("h3", {}, "Wann wird fotografiert?"), heatmap(r.heatmap)),
+    year ? null : storageCard(r.speicher)].filter(Boolean));
+}
+
+// Wochentag × Uhrzeit: je dunkler, desto mehr Aufnahmen (eine Farbe, hell → dunkel)
+function heatmap(m) {
+  const max = Math.max(1, ...m.flat());
+  const tip = h("div", { class: "ychart-tip muted small" }, "\u00a0");
+  let best = [0, 0];
+  m.forEach((row, d) => row.forEach((c, hh) => { if (c > m[best[0]][best[1]]) best = [d, hh]; }));
+  const grid = h("div", { class: "heat", role: "img", "aria-label": "Aufnahmen nach Wochentag und Uhrzeit" },
+    h("span", {}), ...Array.from({ length: 24 }, (_, hh) => h("span", { class: "heat-x" }, hh % 6 === 0 ? String(hh) : "")),
+    ...m.flatMap((row, d) => [h("span", { class: "heat-y" }, WEEKDAYS[(d + 1) % 7]), ...row.map((c, hh) => {
+      const cell = h("span", { class: "heat-c", tabindex: "-1",
+        style: `background: color-mix(in srgb, var(--series-1) ${c ? Math.round(12 + 88 * (c / max)) : 0}%, var(--chip))` });
+      const show = () => { tip.textContent = `${WEEKDAY_LONG[d]}, ${hh}–${hh + 1} Uhr: ${de(c)} Medien`; };
+      cell.addEventListener("mouseenter", show); cell.addEventListener("click", show);
+      return cell;
+    })]));
+  return h("div", {}, h("div", { class: "muted small" }, `Am meisten: ${WEEKDAY_LONG[best[0]]}s ${best[1]}–${best[1] + 1} Uhr · tippe auf ein Feld`), grid, tip);
+}
+
+// Speicher: Platte laut Immich, Zuwachs je Monat (letzte 12 Monate) und wann sie voll ist
+function storageCard(sp) {
+  if (!sp) return null;
+  const parts = [h("h3", {}, "Speicher & Prognose")];
+  if (sp.gesamt) {
+    const pct = sp.prozent ?? (sp.belegt / sp.gesamt) * 100;
+    parts.push(h("div", { class: "disk" }, h("i", { style: `width:${Math.min(100, pct)}%` })),
+      h("div", { class: "kpis" }, h("div", { class: "kpi" }, h("b", {}, fmtBig(sp.belegt)), h("span", { class: "muted small" }, `belegt (${Math.round(pct)} %)`)),
+        h("div", { class: "kpi" }, h("b", {}, fmtBig(sp.frei)), h("span", { class: "muted small" }, "frei")),
+        h("div", { class: "kpi" }, h("b", {}, fmtBig(sp.zuwachs_monat)), h("span", { class: "muted small" }, "Zuwachs je Monat")),
+        h("div", { class: "kpi" }, h("b", {}, !sp.monate_bis_voll ? "–" : sp.monate_bis_voll > 120 ? "> 10 Jahre"
+          : new Date(sp.voll_am).toLocaleDateString("de-DE", { month: "short", year: "numeric" })),
+          h("span", { class: "muted small" }, !sp.monate_bis_voll ? "kein Zuwachs" : sp.monate_bis_voll > 120 ? "bis die Platte voll ist"
+            : `voll in ~${de(Math.round(sp.monate_bis_voll))} Monaten`))));
+  } else {
+    parts.push(h("p", { class: "muted small" }, "Freien Platz liefert Immich nicht – fehlt dem API-Key das Recht server.storage? Zuwachs trotzdem:"),
+      h("div", { class: "kpi" }, h("b", {}, fmtBig(sp.zuwachs_monat)), h("span", { class: "muted small" }, "Zuwachs je Monat")));
+  }
+  parts.push(barChart(sp.monate.map((m) => ({ label: MONTH_SHORT[+m.monat.slice(5) - 1], parts: [{ val: m.groesse, color: "var(--series-1)" }],
+    tip: `${MONTHS[+m.monat.slice(5) - 1]} ${m.monat.slice(0, 4)}: +${fmtBig(m.groesse)}` })), { aria: "Speicherzuwachs je Monat", height: 80 }),
+  h("p", { class: "muted small" }, "Prognose: Mittel der letzten 12 Monate (nach dem Datum, an dem die Medien in Immich kamen). Gezählt sind nur Originale – Vorschauen und Videos in Immich brauchen zusätzlich Platz."));
+  return h("div", { class: "card" }, ...parts);
 }
 
 async function openMonthMedia(month, label) {

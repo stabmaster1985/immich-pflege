@@ -83,6 +83,9 @@ KEY_PERMISSIONS = {
     "duplicate.read": "Immichs Duplikate lesen",
     "person.read": "Regeln mit Personen",
     "job.create": "Vorschau neu erzeugen lassen",
+    "server.storage": "Speicherprognose (freier Platz)",
+    "person.statistics": "Top-Personen in der Statistik",
+    "person.merge": "doppelte Personen zusammenführen",
 }
 
 
@@ -140,6 +143,7 @@ class Pflege:
         self._thumb_regen: set[str] = set()  # schon in Immich neu angestoßene Vorschauen (je Programmlauf)
         self._thumb_slots = threading.BoundedSemaphore(THUMB_PARALLEL)
         self._key_warnings: list[dict[str, Any]] | None = None
+        self._people_cache: tuple[tuple, list[dict[str, Any]]] | None = None
         self._scan_lock = threading.RLock()
         self.scanning = False
         self.progress = ""  # was beim Einlesen gerade passiert (für die Oberfläche)
@@ -2073,7 +2077,8 @@ class Pflege:
         owners = sorted({a.owner for a in lib.assets.values()})
 
         def bucket() -> dict[str, Any]:
-            return {"medien": 0, "groesse": 0, "videos": 0, "ohne_gps": 0, "je_benutzer": {u: 0 for u in owners}}
+            return {"medien": 0, "groesse": 0, "videos": 0, "ohne_gps": 0, "je_benutzer": {u: 0 for u in owners},
+                    "groesse_je_benutzer": {u: 0 for u in owners}}
 
         def add(b: dict[str, Any], a: Asset) -> None:
             b["medien"] += 1
@@ -2081,6 +2086,7 @@ class Pflege:
             b["videos"] += a.type == "VIDEO"
             b["ohne_gps"] += not a.has_gps
             b["je_benutzer"][a.owner] += 1
+            b["groesse_je_benutzer"][a.owner] += a.file_size or 0
 
         years: dict[str, dict[str, Any]] = {}
         months = {f"{year}-{m:02d}": bucket() for m in range(1, 13)} if year else {}
@@ -2110,10 +2116,12 @@ class Pflege:
                 make, model = (a.make or "").strip(), (a.model or "").strip()
                 cams.append(model if make and model.lower().startswith(make.lower()) else f"{make} {model}".strip())
         weekdays, hours = [0] * 7, [0] * 24
+        heat = [[0] * 24 for _ in range(7)]  # Wochentag × Stunde
         for a in scope:
             if a.local_dt:
                 weekdays[a.local_dt.weekday()] += 1
                 hours[a.local_dt.hour] += 1
+                heat[a.local_dt.weekday()][a.local_dt.hour] += 1
         return {
             "benutzer": owners,
             "jahr": year,
@@ -2128,7 +2136,68 @@ class Pflege:
             "formate": top(((a.file_name or "").rsplit(".", 1)[-1].upper() for a in scope if "." in (a.file_name or "")), 8),
             "wochentage": weekdays,  # Montag zuerst
             "stunden": hours,
+            "heatmap": heat,
+            "personen": self.top_people(),
+            "speicher": self.storage_forecast(),
         }
+
+    def top_people(self, per_user: int = 12) -> list[dict[str, Any]]:
+        """Benannte Personen mit den meisten Fotos (Gesichtserkennung), je Name über beide Benutzer.
+        Zwischengespeichert bis zum nächsten Einlesen; ohne Recht/Gesichtserkennung leer."""
+        lib = self.library()
+        key = (lib.uid, lib.rev)
+        if self._people_cache and self._people_cache[0] == key:
+            return self._people_cache[1]
+        names: dict[str, dict[str, Any]] = {}
+        for user, client in self.clients.items():
+            try:
+                named = [p for p in client.people() if (p.get("name") or "").strip() and not p.get("isHidden")][:per_user]
+                for p in named:
+                    n = p["name"].strip()
+                    e = names.setdefault(n.lower(), {"name": n, "anzahl": 0, "je_benutzer": {}})
+                    count = client.person_statistics(p["id"])
+                    e["anzahl"] += count
+                    e["je_benutzer"][user] = e["je_benutzer"].get(user, 0) + count
+            except ImmichError as exc:
+                log.info("Top-Personen für %s nicht verfügbar: %s", user, exc)
+        out = sorted(names.values(), key=lambda e: -e["anzahl"])[:10]
+        self._people_cache = (key, out)
+        return out
+
+    def storage_forecast(self) -> dict[str, Any] | None:
+        """Belegter/freier Platz laut Immich und wann er bei gleichem Zuwachs voll ist. Zuwachs: Mittel der
+        letzten 12 vollen Monate nach dem Datum, an dem die Medien in Immich kamen (sonst Aufnahmedatum)."""
+        if not self.clients:
+            return None
+        try:
+            st = next(iter(self.clients.values())).server_storage()
+        except ImmichError as exc:
+            log.info("Speicherplatz von Immich nicht abrufbar: %s", exc)
+            st = {}
+        lib = self.library()
+        today = datetime.now().date().replace(day=1)
+        months: list[str] = []
+        d = today
+        for _ in range(12):  # die 12 vollen Monate vor dem aktuellen
+            d = (d - timedelta(days=1)).replace(day=1)
+            months.insert(0, d.strftime("%Y-%m"))
+        growth = {m: 0 for m in months}
+        for a in lib.assets.values():
+            when = (a.added_at or a.file_created_at or "")[:7]
+            if when in growth:
+                growth[when] += a.file_size or 0
+        per_month = sum(growth.values()) / len(months)
+        free = st.get("diskAvailableRaw")
+        out: dict[str, Any] = {
+            "gesamt": st.get("diskSizeRaw"), "belegt": st.get("diskUseRaw"), "frei": free,
+            "prozent": st.get("diskUsagePercentage"), "medien_groesse": sum(a.file_size or 0 for a in lib.assets.values()),
+            "zuwachs_monat": round(per_month), "monate": [{"monat": m, "groesse": growth[m]} for m in months],
+        }
+        if free and per_month > 0:
+            left = free / per_month
+            out["monate_bis_voll"] = round(left, 1)
+            out["voll_am"] = (datetime.now() + timedelta(days=left * 30.44)).date().isoformat() if left < 1200 else None
+        return out
 
     def stats_media(self, month: str, user: str | None = None) -> dict[str, Any]:
         """Alle Medien eines Monats (JJJJ-MM) zum Ansehen, optional nur eines Benutzers."""

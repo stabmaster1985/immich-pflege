@@ -92,6 +92,7 @@ class MockState:
             "duplicateId": duplicate_id,
             "duration": duration,
             "isOffline": offline,
+            "createdAt": utc or local or now_iso(),
             "updatedAt": now_iso(),
         })
         if trashed:
@@ -327,6 +328,57 @@ def create_app(state: MockState) -> FastAPI:
              "latitude": 43.7696, "longitude": 11.2558},
         ]
         return [p for p in places if name.lower() in p["name"].lower()]
+
+    def person_count(pid: str) -> int:
+        return sum(1 for a in state.assets.values() if pid in a["_people"] and not a["isTrashed"])
+
+    @app.get("/api/people")
+    async def people(request: Request, withHidden: bool = False):
+        user = auth(request)
+        own = [p for p in state.people.values() if p["ownerId"] == user["id"] and (withHidden or not p.get("isHidden"))]
+        own.sort(key=lambda p: -person_count(p["id"]))  # wie Immich: meiste Gesichter zuerst
+        return {"people": [{"isHidden": False, **p} for p in own], "total": len(own), "hidden": 0}
+
+    @app.get("/api/people/{pid}/statistics")
+    async def person_statistics(pid: str, request: Request):
+        user = auth(request)
+        p = state.people.get(pid)
+        if not p or p["ownerId"] != user["id"]:
+            raise HTTPException(400, "Not found or no person.read access")
+        return {"assets": person_count(pid)}
+
+    @app.get("/api/people/{pid}/thumbnail")
+    async def person_thumbnail(pid: str, request: Request):
+        user = auth(request)
+        p = state.people.get(pid)
+        if not p or p["ownerId"] != user["id"]:
+            raise HTTPException(400, "Not found or no person.read access")
+        return Response(b"<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'/>", media_type="image/svg+xml")
+
+    @app.post("/api/people/{pid}/merge")
+    async def merge_people(pid: str, request: Request):
+        user = auth(request)
+        body = await record(request, user)
+        out = []
+        for other in body["ids"]:
+            p = state.people.get(other)
+            if not p or p["ownerId"] != user["id"] or other == pid:
+                out.append({"id": other, "success": False, "error": "not_found"})
+                continue
+            for a in state.assets.values():
+                if other in a["_people"]:
+                    a["_people"].discard(other)
+                    a["_people"].add(pid)
+            del state.people[other]
+            out.append({"id": other, "success": True})
+        return out
+
+    @app.get("/api/server/storage")
+    async def server_storage(request: Request):
+        auth(request)
+        size, used = 4_000_000_000_000, 1_000_000_000_000
+        return {"diskSizeRaw": size, "diskUseRaw": used, "diskAvailableRaw": size - used,
+                "diskUsagePercentage": 25.0, "diskSize": "3.6 TiB", "diskUse": "931 GiB", "diskAvailable": "2.7 TiB"}
 
     @app.get("/api/search/person")
     async def search_person(request: Request, name: str = ""):

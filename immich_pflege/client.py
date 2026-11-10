@@ -134,6 +134,30 @@ class ImmichClient:
     def reverse_geocode(self, lat: float, lon: float) -> list[dict]:
         return self.request("GET", "/map/reverse-geocode", params={"lat": lat, "lon": lon}) or []
 
+    def people(self, with_hidden: bool = False) -> list[dict]:
+        """Personen (Gesichtserkennung), von Immich nach Anzahl Gesichter sortiert."""
+        data = self.request("GET", "/people", params={"withHidden": str(with_hidden).lower()}) or {}
+        return data.get("people", []) if isinstance(data, dict) else data
+
+    def person_statistics(self, person_id: str) -> int:
+        return int((self.request("GET", f"/people/{person_id}/statistics") or {}).get("assets") or 0)
+
+    def person_thumbnail(self, person_id: str) -> tuple[bytes, str]:
+        try:
+            resp = self._http.get(f"{self.api_url}/people/{person_id}/thumbnail", headers={"x-api-key": self._key})
+        except httpx.HTTPError as exc:
+            raise ImmichError(f"Immich nicht erreichbar: {exc}") from exc
+        if resp.status_code >= 400:
+            raise ImmichError(f"Personenbild {person_id}: HTTP {resp.status_code} {_error_text(resp)}", resp.status_code)
+        return resp.content, resp.headers.get("content-type", "image/jpeg")
+
+    def merge_people(self, keep_id: str, ids: list[str]) -> list[dict]:
+        """Personen ``ids`` in ``keep_id`` zusammenführen – in Immich nicht rückgängig zu machen."""
+        return self.request("POST", f"/people/{keep_id}/merge", json={"ids": ids}) or []
+
+    def server_storage(self) -> dict:
+        return self.request("GET", "/server/storage") or {}
+
     def search_person(self, name: str) -> list[dict]:
         return self.request("GET", "/search/person", params={"name": name}) or []
 
