@@ -126,6 +126,82 @@ function openLinks(m) {
     web ? h("a", { href: `${web}/photos/${encodeURIComponent(m.id)}`, target: "_blank", rel: "noopener", title: "In Immich im Browser öffnen" }, "Web ↗") : null);
 }
 
+/* ------------------------------------------------- Duplikate vergleichen */
+// Zwei Bilder einer Gruppe groß: nebeneinander oder übereinander mit Schieber; darunter die Unterschiede.
+const CMP = { g: null, a: null, b: null, mode: "schieber", pos: 50 };
+
+function openCompare(g) {
+  const keep = S.dup.keep[g.id] && S.dup.keep[g.id] !== ALL_GONE ? S.dup.keep[g.id] : g.behalten;
+  Object.assign(CMP, { g, a: keep, b: g.medien.find((m) => m.id !== keep).id, pos: 50 });
+  try { CMP.mode = localStorage.getItem("pflege-cmp") || "schieber"; } catch (_) { /* egal */ }
+  renderCompare();
+  if (!$("#cmp-dlg").open) $("#cmp-dlg").showModal();
+}
+
+function cmpRows(a, b) {
+  const ext = (m) => (m.dateiname || "").split(".").pop().toUpperCase();
+  const px = (m) => (m.breite && m.hoehe ? `${m.breite}×${m.hoehe} (${((m.breite * m.hoehe) / 1e6).toFixed(1).replace(".", ",")} MP)` : "–");
+  const yes = (v) => (v ? "ja" : "nein");
+  return [
+    ["Datei", (m) => m.dateiname], ["Format", ext], ["Benutzer", (m) => m.benutzer], ["Bibliothek", (m) => (m.extern ? "extern" : "Upload")],
+    ["Aufnahme", (m) => fmtTaken(m.aufnahme)], ["Auflösung", px], ["Dateigröße", (m) => fmtSize(m.groesse) || "–"],
+    ["Kamera", (m) => m.kamera || "keine Kameradaten"], ["Ort", (m) => m.ort || (m.gps ? "GPS" : "–")],
+    ["In Album", (m) => yes(m.im_album)], ["Favorit", (m) => yes(m.favorit)], ["Punkte", (m) => String(m.punkte ?? "")],
+  ].map(([label, fn]) => {
+    const va = fn(a), vb = fn(b);
+    return h("tr", { class: va !== vb ? "diff" : "" }, h("th", {}, label), h("td", {}, va), h("td", {}, vb));
+  });
+}
+
+function renderCompare() {
+  const { g } = CMP;
+  const a = g.medien.find((m) => m.id === CMP.a), b = g.medien.find((m) => m.id === CMP.b);
+  $("#cmp-title").textContent = `Vergleichen · ${g.art_text}`;
+  $("#cmp-sub").textContent = g.medien.length > 2 ? `${g.medien.length} Medien in der Gruppe – oben zwei auswählen` : "";
+  const pick = (side) => {
+    const sel = h("select", { "aria-label": side === "a" ? "Links" : "Rechts", onchange: (e) => { CMP[side] = e.target.value; renderCompare(); } },
+      ...g.medien.map((m, i) => h("option", { value: m.id, disabled: m.id === (side === "a" ? CMP.b : CMP.a) },
+        `${String.fromCharCode(65 + i)}: ${m.dateiname}${m.id === g.behalten ? " (Vorschlag)" : ""}`)));
+    sel.value = CMP[side];
+    return sel;
+  };
+  const modes = h("div", { class: "row-gap" }, ...[["schieber", "Schieber"], ["neben", "Nebeneinander"]].map(([k, l]) =>
+    h("button", { type: "button", class: "chip-btn" + (CMP.mode === k ? " on" : ""), onclick: () => {
+      CMP.mode = k; try { localStorage.setItem("pflege-cmp", k); } catch (_) { /* egal */ } renderCompare();
+    } }, l)));
+  const src = (m) => `thumb/${m.id}?size=preview`;
+  let view;
+  if (CMP.mode === "neben") {
+    view = h("div", { class: "cmp-side" }, ...[a, b].map((m, i) => h("figure", {}, h("img", { src: src(m), alt: m.dateiname }),
+      h("figcaption", { class: "small" }, i ? "rechts" : "links"))));
+  } else {
+    const top = h("img", { src: src(b), alt: b.dateiname, class: "cmp-top", style: `clip-path: inset(0 0 0 ${CMP.pos}%)` });
+    const line = h("div", { class: "cmp-line", style: `left:${CMP.pos}%` });
+    const range = h("input", { type: "range", min: 0, max: 100, value: CMP.pos, "aria-label": "Schieber links/rechts",
+      oninput: (e) => { CMP.pos = +e.target.value; top.style.clipPath = `inset(0 0 0 ${CMP.pos}%)`; line.style.left = CMP.pos + "%"; } });
+    view = h("div", {}, h("div", { class: "cmp-stack" }, h("img", { src: src(a), alt: a.dateiname }), top, line,
+      h("span", { class: "cmp-lab l" }, "links"), h("span", { class: "cmp-lab r" }, "rechts")), range);
+  }
+  const choose = (m) => {
+    S.dup.keep[g.id] = m.id;
+    S.dup.sel.add(g.id);
+    const card = document.querySelector(`[data-group="${g.id}"]`);
+    if (card) card.replaceWith(renderGroup(g));
+    updateActionbar();
+    $("#cmp-dlg").close();
+    toast(`„${m.dateiname}“ bleibt – unten vormerken`);
+  };
+  $("#cmp-body").replaceChildren(
+    h("div", { class: "cmp-tools" }, h("label", { class: "field" }, "Links", pick("a")), h("label", { class: "field" }, "Rechts", pick("b")), modes),
+    view,
+    h("table", { class: "tbl cmp-tbl" }, h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", {}, "links"), h("th", {}, "rechts"))),
+      h("tbody", {}, ...cmpRows(a, b))),
+    h("p", { class: "muted small" }, "Gelb markiert: hier unterscheiden sich die beiden."),
+    h("div", { class: "row-gap cmp-actions" },
+      h("button", { type: "button", class: "btn primary", onclick: () => choose(a) }, "Links behalten"),
+      h("button", { type: "button", class: "btn primary", onclick: () => choose(b) }, "Rechts behalten")));
+}
+
 /* ------------------------------------------------- Fehlende Vorschauen */
 // Vorschaubild lädt nicht: einmal nachladen, sonst Platzhalter mit dem Grund (HTTP-Status von Immich)
 document.addEventListener("error", (e) => {
@@ -605,6 +681,7 @@ function renderGroup(g) {
     g.erledigt ? h("span", { class: "chip ok" }, "erledigt") : null,
     h("button", { type: "button", class: "btn small edit", onclick: () => ignoreGroup(g, S.dup.ignored) },
       S.dup.ignored ? "Wieder aufnehmen" : "Kein Duplikat"),
+    h("button", { type: "button", class: "btn small", title: "Zwei Bilder groß vergleichen", onclick: () => openCompare(g) }, "Vergleichen"),
     S.dup.ignored ? null : h("button", { type: "button", class: "btn small" + (keep === ALL_GONE ? " danger" : ""),
       title: keep === ALL_GONE ? "Doch eins behalten (Vorschlag)" : "Keins behalten – alle weg",
       onclick: () => {
@@ -4049,6 +4126,7 @@ $("#scan-btn").addEventListener("click", () => rescan());
 $("#v-close").addEventListener("click", () => $("#viewer").close());
 $("#rv-close").addEventListener("click", () => $("#review").close());
 $("#map-close").addEventListener("click", () => $("#map-dlg").close());
+$("#cmp-close").addEventListener("click", () => $("#cmp-dlg").close());
 $("#rv-all").addEventListener("click", () => setAllReview(true));
 $("#rv-jump").addEventListener("change", (e) => {
   const sec = $("#rv-body").querySelectorAll(".rv-month")[+e.target.value];  // Gruppe

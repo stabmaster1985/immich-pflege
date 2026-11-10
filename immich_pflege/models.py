@@ -120,6 +120,7 @@ class Asset:
             "hoehe": self.height,
             "groesse": self.file_size,
             "dauer_s": round(self.duration_ms / 1000, 1) if self.duration_ms else None,
+            "kamera": " ".join(x for x in (self.make, self.model) if x) or None,
             "thumb": f"thumb/{self.id}",
         }
 

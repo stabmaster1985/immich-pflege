@@ -601,3 +601,22 @@ dialog.review[open] { display: flex; flex-direction: column; }
 .auto-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line); }
 .auto-row input { flex: none; width: 20px; height: 20px; margin-top: 3px; }
 .auto-cta { margin: 10px 0 4px; }
+
+/* Duplikate vergleichen */
+.cmp-body { flex: 1; overflow-y: auto; padding: 10px 14px calc(env(safe-area-inset-bottom) + 14px); display: flex; flex-direction: column; gap: 10px; }
+.cmp-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: flex-end; }
+.cmp-tools select { max-width: 15em; }
+.cmp-stack { position: relative; background: var(--chip); border-radius: 10px; overflow: hidden; touch-action: pan-y; }
+.cmp-stack img { display: block; width: 100%; max-height: 62dvh; object-fit: contain; }
+.cmp-stack .cmp-top { position: absolute; inset: 0; height: 100%; }
+.cmp-line { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.4); pointer-events: none; }
+.cmp-lab { position: absolute; top: 6px; font-size: .7rem; padding: 2px 6px; border-radius: 6px; background: rgba(0,0,0,.55); color: #fff; }
+.cmp-lab.l { left: 6px; } .cmp-lab.r { right: 6px; }
+.cmp-body input[type=range] { width: 100%; margin: 8px 0 0; }
+.cmp-side { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.cmp-side figure { margin: 0; text-align: center; }
+.cmp-side img { width: 100%; max-height: 55dvh; object-fit: contain; background: var(--chip); border-radius: 8px; }
+.cmp-tbl td, .cmp-tbl th { font-size: .8rem; word-break: break-word; }
+.cmp-tbl tbody th { white-space: nowrap; word-break: normal; }
+.cmp-tbl tr.diff td { background: var(--warn-bg); color: var(--warn-fg); }
+.cmp-actions { justify-content: space-between; }
