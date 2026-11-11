@@ -160,6 +160,8 @@ class CleanupStage(BaseModel):
     ids: Optional[list[str]] = None
     kategorie: Optional[str] = None
     keep: Optional[dict[str, str]] = None
+    ohne: Optional[dict[str, list[str]]] = None  # nur „stapel“: diese Bilder je Eintrag nicht in den Stapel …
+    weg: Literal["album", "papierkorb"] = "album"  # … sondern dorthin
 
 
 class CleanupKeep(BaseModel):
@@ -716,7 +718,7 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
     @app.post("/api/staged/cleanup")
     def stage_cleanup(body: CleanupStage):
         if body.action == "stapel":
-            return svc().stage_burst_stacks(body.ids or [], body.keep)
+            return svc().stage_burst_stacks(body.ids or [], body.keep, body.ohne, body.weg)
         return svc().stage_cleanup(body.action, body.ids, body.kategorie, body.keep)
 
     @app.get("/api/timefix")

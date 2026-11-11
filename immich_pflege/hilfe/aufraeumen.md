@@ -54,6 +54,15 @@ Fotos **derselben Kamera** desselben Benutzers mit höchstens **2 Sekunden** Abs
 
 **Behalten wird:** ein Favorit, sonst ein Foto, das in einem Album liegt, sonst das **schärfste**, sonst das erste. Tippe auf ein anderes Bild, um es stattdessen zu behalten.
 
+An jeder Serie wählst du unter **Was tun?**:
+
+- **Eins behalten** (wie bisher): Ein Bild bleibt, der Rest geht ins Prüf-Album oder in den Papierkorb. Tippe auf ein anderes Bild, um es stattdessen zu behalten.
+- **Stapeln:** Alle Bilder kommen in einen Immich-**Stapel**; in der Zeitleiste sieht man nur das obere, die anderen beim Aufklappen. **Antippen** nimmt ein Bild aus dem Stapel (**weg**) oder wieder hinein, **★** legt es **oben** auf den Stapel. Dann:
+  - **Stapel vormerken** – wenn alle bleiben, oder
+  - **Vormerken, Rest ins Prüf-Album / in den Papierkorb** – die aussortierten gehen dorthin, der Rest wird gestapelt. Bleibt nur ein Bild, wird nichts gestapelt.
+
+Die Wahl „Eins behalten“ oder „Stapeln“ merkt sich das Tool für die nächsten Serien. **Stapeln** unten in der Leiste stapelt alle angehakten (bzw. alle angezeigten) Serien auf einmal und berücksichtigt dabei, was du an den Karten aussortiert hast.
+
 ## Unscharf & dunkel
 
 Aus demselben kleinen Vorschaubild wie der Fingerabdruck berechnet das Tool zwei Werte:

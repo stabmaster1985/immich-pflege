@@ -2697,6 +2697,43 @@ async function stageTimeFixes(items, btn) {
   } finally { busy(btn, false); }
 }
 
+// Serie stapeln: Antippen nimmt ein Bild aus dem Stapel (aussortiert) oder wieder hinein, ★ legt es oben
+function seriesMode(it) {
+  const c = S.cln;
+  if (!c.mode) c.mode = {};
+  if (!c.mode[it.id]) { try { c.mode[it.id] = localStorage.getItem("pflege-serien-modus") || "eins"; } catch (_) { c.mode[it.id] = "eins"; } }
+  return c.mode[it.id];
+}
+
+function renderSeriesStack(it, card) {
+  const c = S.cln;
+  c.ohne = c.ohne || {};
+  const out = c.ohne[it.id] || (c.ohne[it.id] = new Set());
+  const members = it.medien.filter((m) => !out.has(m.id));
+  const top = members.some((m) => m.id === c.keep[it.id]) ? c.keep[it.id]
+    : (members.find((m) => m.aktion !== "weg") || members[0] || {}).id;
+  const redraw = () => { card.replaceWith(renderCleanupItem(it)); updateActionbar(); };
+  const grid = h("div", { class: "grid" });
+  for (const m of it.medien) {
+    const gone = out.has(m.id), isTop = m.id === top;
+    grid.append(tile({
+      class: "tile " + (gone ? "drop" : "keep"), title: gone ? "Antippen: doch in den Stapel" : "Antippen: aussortieren",
+      onclick: () => { gone ? out.delete(m.id) : out.add(m.id); c.sel.add(it.id); redraw(); },
+    }, thumb(m), h("span", { class: "badge" }, gone ? "weg" : isTop ? "★ oben" : "im Stapel"),
+    !gone && !isTop ? h("button", { type: "button", class: "star-btn", title: "Dieses Bild oben auf den Stapel", "aria-label": "Nach oben",
+      onclick: (e) => { e.stopPropagation(); c.keep[it.id] = m.id; c.sel.add(it.id); redraw(); } }, "★") : null,
+    h("div", { class: "meta" }, h("div", { class: "name" }, m.dateiname), h("div", {}, fmtTaken(m.aufnahme)), openLinks(m))));
+  }
+  const nOut = out.size, nIn = it.medien.length - nOut;
+  const go = (weg) => stageBurstStacks([it], null, weg);
+  return [grid, h("div", { class: "muted small" }, nIn > 1 ? `${nIn} Bilder werden gestapelt (★ oben)` + (nOut ? `, ${nOut} aussortiert` : "")
+    : nIn === 1 ? `Nur ein Bild bleibt – kein Stapel${nOut ? `, ${nOut} aussortiert` : ""}` : "Mindestens ein Bild muss bleiben"),
+  h("div", { class: "row-gap" },
+    !nOut ? h("button", { type: "button", class: "btn small primary", onclick: () => go("album") }, "Stapel vormerken")
+      : nIn ? [h("button", { type: "button", class: "btn small primary", onclick: () => go("album") }, "Vormerken, Rest ins Prüf-Album"),
+        h("button", { type: "button", class: "btn small danger", onclick: () => go("papierkorb") }, "Vormerken, Rest in den Papierkorb")] : null)];
+}
+
 function renderCleanupItem(it) {
   const c = S.cln;
   const card = h("article", { class: "card" + (c.sel.has(it.id) ? " selected" : "") });
@@ -2709,6 +2746,14 @@ function renderCleanupItem(it) {
     it.groesse ? h("b", {}, fmtBig(it.groesse)) : null,
     h("button", { type: "button", class: "btn small edit", onclick: () => keepCleanup(it, c.ignored) }, c.ignored ? "Wieder zeigen" : "Behalten")),
     h("div", { class: "muted small" }, it.grund));
+  if (it.kategorie === "serien" && !c.ignored) {
+    const mode = seriesMode(it);
+    card.append(h("div", { class: "row-gap series-mode" }, h("span", { class: "muted small" }, "Was tun?"),
+      ...[["eins", "Eins behalten"], ["stapel", "Stapeln"]].map(([k, l]) => h("button", { type: "button", class: "chip-btn" + (mode === k ? " on" : ""),
+        onclick: () => { c.mode[it.id] = k; try { localStorage.setItem("pflege-serien-modus", k); } catch (_) { /* egal */ }
+          card.replaceWith(renderCleanupItem(it)); updateActionbar(); } }, l))));
+    if (mode === "stapel") { card.append(...renderSeriesStack(it, card).flat().filter(Boolean)); return card; }
+  }
   const grid = h("div", { class: "grid" });
   for (const m of it.medien) {
     const drop = isDrop(m);
@@ -3085,12 +3130,21 @@ async function stageStacks(props, btn) {
   } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
 }
 
-async function stageBurstStacks(items, btn) {
+async function stageBurstStacks(items, btn, weg = "album") {
+  const c = S.cln;
+  const ohne = Object.fromEntries(items.filter((it) => c.ohne && c.ohne[it.id] && c.ohne[it.id].size).map((it) => [it.id, [...c.ohne[it.id]]]));
+  const out = Object.values(ohne).reduce((a, x) => a + x.length, 0);
+  if (out && weg === "papierkorb") {
+    const ok = await confirmDialog({ title: "Aussortierte in den Papierkorb?", danger: true, okLabel: "Vormerken",
+      body: h("p", {}, `${n(out, "Bild geht", "Bilder gehen")} beim Übertragen in den Papierkorb (externe ins Prüf-Album). Der Rest wird gestapelt.`) });
+    if (!ok) return;
+  }
   busy(btn, true);
   try {
-    const keep = Object.fromEntries(items.filter((it) => S.cln.keep[it.id]).map((it) => [it.id, S.cln.keep[it.id]]));
-    const r = await api("api/staged/cleanup", { method: "POST", body: { action: "stapel", ids: items.map((it) => it.id), keep } });
-    toast(`${n(r.vorgemerkt, "Stapel", "Stapel")} vorgemerkt – nichts wird gelöscht`);
+    const keep = Object.fromEntries(items.filter((it) => c.keep[it.id]).map((it) => [it.id, c.keep[it.id]]));
+    const r = await api("api/staged/cleanup", { method: "POST", body: { action: "stapel", ids: items.map((it) => it.id), keep, ohne, weg } });
+    toast(`${n(r.vorgemerkt, "Stapel", "Stapel")} vorgemerkt` + (r.aussortiert ? `, ${r.aussortiert} aussortiert` : " – nichts wird gelöscht"));
+    for (const it of items) if (c.ohne) delete c.ohne[it.id];
     await afterStage("cln");
   } catch (e) { toast(e.message, true); } finally { busy(btn, false); }
 }

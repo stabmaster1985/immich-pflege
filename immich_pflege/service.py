@@ -1684,23 +1684,50 @@ class Pflege:
                              [{**lib.assets[s["ids"][0]].summary(), "oben": True} for s in stacks[:8]], n)
             return {"vorgemerkt": len(stacks), "medien": n}
 
-    def stage_burst_stacks(self, ids: list[str], keep: dict[str, str] | None = None) -> dict[str, Any]:
-        """Serienbilder aus „Aufräumen“ stapeln statt wegräumen."""
+    def stage_burst_stacks(self, ids: list[str], keep: dict[str, str] | None = None,
+                           without: dict[str, list[str]] | None = None, drop_action: str = "album") -> dict[str, Any]:
+        """Serienbilder aus „Aufräumen“ stapeln statt wegräumen. ``keep``: {Eintrag: Bild oben};
+        ``without``: {Eintrag: Bilder, die nicht in den Stapel sollen} – die gehen ins Prüf-Album bzw. in den
+        Papierkorb (``drop_action``, externe nie in den Papierkorb). Bleibt nur ein Bild, wird nichts gestapelt."""
+        if drop_action not in ("album", "papierkorb"):
+            raise ActionError("Aussortierte: album oder papierkorb")
+        keep, without = keep or {}, without or {}
         with self._lock:
             chosen = self._cleanup_selection(ids, None)
-            stacks = []
+            stacks, steps, touched = [], [], set()
             for item in chosen:
                 if item.kategorie != "serien":
                     raise ActionError("Stapeln geht nur für Serienbilder")
-                top = (keep or {}).get(item.id) or next(a.id for a in item.assets if a.id not in item.drop)
-                ordered = [a for a in item.assets if a.id == top] + [a for a in item.assets if a.id != top]
-                stacks.append({"user": ordered[0].owner, "ids": [a.id for a in ordered]})
-            n = sum(len(s["ids"]) for s in stacks)
-            self.staging.add("stapel", f"📚 Serienbilder: {len(stacks)} Stapel aus {n} Medien",
-                             {"stapel": stacks, "album": None, "aus_album": False,
-                              "alle_medien": [i for s in stacks for i in s["ids"]]},
-                             [{**self.library().assets[s["ids"][0]].summary(), "oben": True} for s in stacks[:8]], n)
-            return {"vorgemerkt": len(stacks), "medien": n}
+                out = set(without.get(item.id) or [])
+                if out - item.ids:
+                    raise ActionError(f"Bild gehört nicht zu Eintrag {item.id}")
+                members = [a for a in item.assets if a.id not in out]
+                if not members:
+                    raise ActionError("Mindestens ein Bild muss bleiben")
+                top = keep.get(item.id) if keep.get(item.id) in {a.id for a in members} else \
+                    next((a.id for a in members if a.id not in item.drop), members[0].id)
+                ordered = [a for a in members if a.id == top] + [a for a in members if a.id != top]
+                if len(ordered) > 1:
+                    stacks.append({"user": ordered[0].owner, "ids": [a.id for a in ordered]})
+                for a in item.assets:
+                    if a.id in out:
+                        act = "album" if drop_action == "papierkorb" and a.is_external and not a.offline else drop_action
+                        steps.append(PlannedStep(a, act, "Serienbild aussortiert"))
+                touched |= item.ids
+            if stacks:
+                n = sum(len(s["ids"]) for s in stacks)
+                self.staging.add("stapel", f"📚 Serienbilder: {len(stacks)} Stapel aus {n} Medien",
+                                 {"stapel": stacks, "album": None, "aus_album": False,
+                                  "alle_medien": sorted(touched)},
+                                 [{**self.library().assets[s["ids"][0]].summary(), "oben": True} for s in stacks[:8]], n)
+            if steps:
+                target = "Papierkorb" if drop_action == "papierkorb" else "Prüf-Album"
+                self.staging.add("aufraeumen", f"🧹 Serienbilder: {len(steps)} aussortiert → {target}", {
+                    "aktion": drop_action, "eintraege": [i.id for i in chosen], "alle_medien": sorted(touched),
+                    "schritte": [s.to_dict() for s in steps]}, [{**s.asset.summary(), "aktion": s.action} for s in steps], len(steps))
+            if not stacks and not steps:
+                raise ActionError("Nichts zu tun – je Serie bleibt nur ein Bild und nichts geht weg")
+            return {"vorgemerkt": len(stacks), "medien": sum(len(s["ids"]) for s in stacks), "aussortiert": len(steps)}
 
     # -------------------------------------------------------- Aufnahmezeit
     def time_fixes(self):

@@ -162,3 +162,23 @@ def test_orientation_refresh_starts_immich_jobs(env, http, state):
         jobs = [c[3]["name"] for c in state.calls if c[1] == "/api/assets/jobs"]
         assert jobs == ["refresh-metadata", "regenerate-thumbnail"]
         assert web.post("/api/orientation/refresh", json={"ids": ["x"]}).status_code == 400
+
+
+def test_stack_series_keep_some(web, state):
+    """Serie stapeln, einzelne Bilder aussortieren: Stapel aus dem Rest, Aussortierte ins Prüf-Album/Papierkorb."""
+    item = web.get("/api/cleanup", params={"kategorie": "serien"}).json()["eintraege"][0]
+    ids = state.ids["serie"]
+    r = web.post("/api/staged/cleanup", json={"action": "stapel", "ids": [item["id"]], "keep": {item["id"]: ids[1]},
+                                               "ohne": {item["id"]: [ids[3]]}, "weg": "papierkorb"}).json()
+    assert r == {"vorgemerkt": 1, "medien": len(ids) - 1, "aussortiert": 1}
+    entries = {e["typ"]: e for e in web.get("/api/staged").json()["eintraege"]}
+    assert entries["stapel"]["daten"]["stapel"][0]["ids"][0] == ids[1] and ids[3] not in entries["stapel"]["daten"]["stapel"][0]["ids"]
+    assert [(s["id"], s["aktion"]) for s in entries["aufraeumen"]["daten"]["schritte"]] == [(ids[3], "papierkorb")]
+    assert web.get("/api/cleanup", params={"kategorie": "serien"}).json()["gesamt"] == 0  # vorgemerkt -> weg
+    # nur eins bleibt: kein Stapel, nur aussortieren
+    for e in entries.values():
+        web.delete(f"/api/staged/{e['id']}")
+    r = web.post("/api/staged/cleanup", json={"action": "stapel", "ids": [item["id"]], "ohne": {item["id"]: ids[1:]}}).json()
+    assert r["vorgemerkt"] == 0 and r["aussortiert"] == len(ids) - 1
+    bad = web.post("/api/staged/cleanup", json={"action": "stapel", "ids": [item["id"]], "ohne": {item["id"]: ids}})
+    assert bad.status_code == 400
