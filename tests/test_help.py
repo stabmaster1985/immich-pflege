@@ -47,7 +47,7 @@ def test_help_matches_code():
     tags = (HELP / "tags.md").read_text()
     assert suggestions.MIN_COUNTRY == 10 and "ab 10 Fotos" in tags and suggestions.MIN_CAMERA == 30 and "ab 30 Medien" in tags
     # die Oberfläche holt für die Prüf-Ansicht standardmäßig 400 KI-Treffer je Benutzer, wählbar bis SMART_MAX
-    app_js = (Path(__file__).parent.parent / "immich_pflege/web/static/app.js").read_text(encoding="utf-8")
+    app_js = "".join(p.read_text(encoding="utf-8") for p in (Path(__file__).parent.parent / "immich_pflege/web/static").glob("app-*.js"))
     assert "const SMART_REVIEW = 400;" in app_js and "Standard 400" in tags
     assert suggestions.SMART_MAX == 5000 and "200 bis 5.000" in tags
     assert all(name in tags for name, _, _ in suggestions.BEGRIFFE)

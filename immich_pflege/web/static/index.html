@@ -524,6 +524,17 @@
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="static/app.js"></script>
+  <!-- Oberfläche in Teilen; gemeinsamer Namensraum, app-shell.js startet sie und kommt deshalb zuletzt -->
+  <script src="static/app-core.js"></script>
+  <script src="static/app-review.js"></script>
+  <script src="static/app-dup.js"></script>
+  <script src="static/app-orte.js"></script>
+  <script src="static/app-tags.js"></script>
+  <script src="static/app-aufraeumen.js"></script>
+  <script src="static/app-alben.js"></script>
+  <script src="static/app-start.js"></script>
+  <script src="static/app-stage.js"></script>
+  <script src="static/app-settings.js"></script>
+  <script src="static/app-shell.js"></script>
 </body>
 </html>

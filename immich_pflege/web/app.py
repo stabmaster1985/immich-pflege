@@ -259,7 +259,7 @@ class RulesSave(BaseModel):
     yaml: Optional[str] = None
 
 
-ASSET_RE = re.compile(r'((?:/|)static/(app\.css|app\.js))"')
+ASSET_RE = re.compile(r'((?:/|)static/(app(?:-[a-z]+)?\.(?:css|js)))"')
 
 
 def asset_version(name: str) -> str:

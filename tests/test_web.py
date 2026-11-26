@@ -17,9 +17,12 @@ def test_healthz_and_ui(web):
     assert web.get("/healthz").json()["ok"] is True
     r = web.get("/")
     assert r.status_code == 200 and "Immich-Pflege" in r.text
-    assert web.get("/static/app.js").status_code == 200
+    html = web.get("/").text
+    scripts = re.findall(r'src="static/(app-[a-z]+\.js)\?v=[0-9a-f]{10}"', html)
+    assert scripts[0] == "app-core.js" and scripts[-1] == "app-shell.js" and len(scripts) == 11  # mit Versions-Hash
+    assert all(web.get(f"/static/{f}").status_code == 200 for f in scripts)
     # keine externen Ressourcen
-    for f in ("/", "/static/app.js", "/static/app.css", "/sw.js", "/static/manifest.webmanifest"):
+    for f in ("/", *(f"/static/{s}" for s in scripts), "/static/app.css", "/sw.js", "/static/manifest.webmanifest"):
         text = web.get(f).text
         assert not re.search(r'(src|href)\s*=\s*["\']https?://', text), f
         assert "url(http" not in text and "@import" not in text
@@ -305,7 +308,7 @@ def test_assets_are_versioned(web):
     import re as _re
     html = web.get("/").text
     css = _re.search(r'static/app\.css\?v=(\w+)"', html)
-    js = _re.search(r'static/app\.js\?v=(\w+)"', html)
+    js = _re.search(r'static/app-core\.js\?v=(\w+)"', html)
     assert css and js and css.group(1) != js.group(1)
     assert web.get(f"/static/app.css?v={css.group(1)}").status_code == 200
     assert web.get("/").headers["cache-control"] == "no-cache"
