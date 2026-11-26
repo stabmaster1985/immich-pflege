@@ -23,6 +23,7 @@ import math
 import re
 import threading
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
@@ -187,7 +188,7 @@ class Candidate:
     def applicable(self) -> bool:
         return self.editable and self.suggestion is not None
 
-    @property
+    @cached_property  # Texterkennung und Medium ändern sich innerhalb einer Auswertung nicht
     def origin(self) -> str:
         return origin(self.asset, self.text)
 
@@ -518,8 +519,13 @@ def place_label(s: Series) -> str:
 
 
 def month_key(s: Series) -> str:
+    cached = s.__dict__.get("_month")
+    if cached and cached[0] == len(s.members):  # Mitglieder kommen beim Zusammenfassen noch dazu
+        return cached[1]
     days = [c.asset.local_day for c in s.members if c.asset.local_day]
-    return min(days).strftime("%Y-%m") if days else "ohne-datum"
+    key = min(days).strftime("%Y-%m") if days else "ohne-datum"
+    s.__dict__["_month"] = (len(s.members), key)
+    return key
 
 
 def month_label(key: str) -> str:

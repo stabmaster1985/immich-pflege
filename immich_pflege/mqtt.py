@@ -74,7 +74,7 @@ def build_state(svc, version: str, update_available: bool) -> dict[str, Any]:
             return None
 
     dup = safe(svc.duplicate_savings)
-    loc = safe(lambda: svc.no_location_view(overview=True))
+    loc = safe(svc.location_counts)
     state.update(
         medien_gesamt=len(lib.assets),
         duplikate_gruppen=dup[0] if dup else None,

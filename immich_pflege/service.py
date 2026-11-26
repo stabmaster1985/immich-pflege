@@ -6,6 +6,7 @@ import logging
 import re
 import threading
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timedelta
 import time
@@ -127,6 +128,8 @@ def check_server(clients: dict[str, ImmichClient]) -> dict[str, Any]:
 
 BROWSER_IMAGES = {"jpg", "jpeg", "png", "webp", "gif", "avif"}  # zeigt jeder Browser direkt an
 ORIGINAL_MAX = 25 * 1024 * 1024  # größer nicht als Ersatz-Vorschau laden
+STORAGE_CACHE_S = 600  # Speicherplatz höchstens alle 10 min bei Immich abfragen
+PEOPLE_PARALLEL = 6  # gleichzeitige Anfragen bei Personen
 THUMB_PARALLEL = 6  # gleichzeitige Vorschau-Anfragen an Immich
 THUMB_RETRY_S = (0.5, 2.0)  # Wartezeiten vor dem 2. und 3. Versuch
 
@@ -145,6 +148,9 @@ class Pflege:
         self._key_warnings: list[dict[str, Any]] | None = None
         self._people_cache: tuple[tuple, list[dict[str, Any]]] | None = None
         self._people_view_cache: tuple[tuple, dict[str, Any]] | None = None
+        self._missing_cache: tuple[tuple, int] | None = None
+        self._stats_cache: dict[tuple, dict[str, Any]] = {}
+        self._storage_cache: tuple[float, dict[str, Any] | None] | None = None
         self._scan_lock = threading.RLock()
         self.scanning = False
         self.progress = ""  # was beim Einlesen gerade passiert (für die Oberfläche)
@@ -479,7 +485,12 @@ class Pflege:
 
     def hash_status(self) -> dict[str, Any]:
         lib = self._lib
-        missing = len(self.hash_store.missing(lib)) if lib else None
+        missing = None
+        if lib:  # zählen kostet bei großen Bibliotheken – nur neu, wenn sich etwas geändert hat
+            key = (lib.uid, lib.rev, len(self.hash_store.data))
+            if not self._missing_cache or self._missing_cache[0] != key:
+                self._missing_cache = (key, len(self.hash_store.missing(lib)))
+            missing = self._missing_cache[1]
         return {"aktiv": self.settings.dup_image_hash, **self.hash_progress.to_dict(),
                 "vorhanden": len(self.hash_store.data), "fehlend": missing}
 
@@ -762,6 +773,13 @@ class Pflege:
             page = series[offset: offset + limit] if limit > 0 else series[offset:]
             out["serien"] = [s.to_dict() for s in page]
         return out
+
+    def location_counts(self) -> dict[str, Any]:
+        """Nur die Zahlen von „Ohne Ort“ (für Menü, Startseite, MQTT) – ohne Orte und Monate zu gruppieren."""
+        _, an = self._analysis()
+        applicable = [c for c in an.candidates if c.applicable]
+        return {"medien": len(an.candidates), "mit_vorschlag": len(applicable),
+                "nach_sicherheit": {lvl: sum(1 for c in applicable if c.suggestion.confidence == lvl) for lvl in reversed(LEVELS)}}
 
     def _select_locations(self, ids=None, max_hours=None, min_confidence=None, series=None, place=None,
                           ort=None, monat=None, herkunft=None, benutzer=None, sicherheit=None):
@@ -1605,7 +1623,7 @@ class Pflege:
     def auto_stage_preview(self, action: str = "album") -> dict[str, Any]:
         """Was „Eindeutiges vormerken“ jetzt erfassen würde – je Art Einträge und Medien."""
         out: dict[str, Any] = {}
-        loc = self.no_location_view(overview=True)
+        loc = self.location_counts()
         out["orte"] = {"anzahl": loc["nach_sicherheit"]["hoch"], "medien": loc["nach_sicherheit"]["hoch"]}
         for kind in ("identisch", "messenger", "bearbeitung"):
             groups = self._auto_dup_groups(kind)
@@ -2112,6 +2130,16 @@ class Pflege:
         """Statistik: Jahre (je Benutzer), mit ``year`` dessen Monate, dazu Kameras, Länder, Orte, Formate,
         Wochentage und Uhrzeiten – für alle Jahre oder nur das gewählte."""
         lib = self.library()
+        key = (lib.uid, lib.rev, year, len(self.history.entries))
+        cached = self._stats_cache.get(key)
+        if cached is None:
+            cached = self._stats(lib, year)
+            self._stats_cache = {k: v for k, v in self._stats_cache.items() if k[:2] == key[:2]}  # alte Stände weg
+            self._stats_cache[key] = cached
+        # Personen und Speicher haben eigene Zwischenspeicher (Abfragen bei Immich)
+        return {**cached, "personen": self.top_people(), "speicher": self.storage_forecast()}
+
+    def _stats(self, lib: Library, year: str | None) -> dict[str, Any]:
         owners = sorted({a.owner for a in lib.assets.values()})
 
         def bucket() -> dict[str, Any]:
@@ -2175,8 +2203,6 @@ class Pflege:
             "wochentage": weekdays,  # Montag zuerst
             "stunden": hours,
             "heatmap": heat,
-            "personen": self.top_people(),
-            "speicher": self.storage_forecast(),
         }
 
     # ------------------------------------------------------------- Personen
@@ -2201,9 +2227,14 @@ class Pflege:
                 totals["anzahl_benannt"] += len(named)
                 totals["anzahl_unbenannt"] += len(nameless)
                 try:
-                    named_sets = {p["name"].strip(): client.search_ids(personIds=[p["id"]]) for p in named[:named_per_user]}
+                    # viele kleine Anfragen: parallel statt nacheinander
+                    asked = named[:named_per_user] + nameless[:unnamed_per_user]
+                    with ThreadPoolExecutor(max_workers=PEOPLE_PARALLEL) as pool:
+                        found = dict(zip((p["id"] for p in asked),
+                                         pool.map(lambda p: client.search_ids(personIds=[p["id"]]), asked)))
+                    named_sets = {p["name"].strip(): found[p["id"]] for p in named[:named_per_user]}
                     for p in nameless[:unnamed_per_user]:
-                        ids = client.search_ids(personIds=[p["id"]])
+                        ids = found[p["id"]]
                         if not ids:
                             continue
                         best = max(((n, len(ids & s)) for n, s in named_sets.items()), key=lambda x: x[1], default=None)
@@ -2215,7 +2246,8 @@ class Pflege:
                     for same in groups.values():
                         if len(same) < 2:
                             continue
-                        members = sorted(({"id": p["id"], "name": p["name"].strip(), "anzahl": client.person_statistics(p["id"])}
+                        members = sorted(({"id": p["id"], "name": p["name"].strip(),
+                                           "anzahl": len(found[p["id"]]) if p["id"] in found else client.person_statistics(p["id"])}
                                           for p in same), key=lambda m: -m["anzahl"])
                         doubles.append({"benutzer": user, "name": members[0]["name"], "personen": members,
                                         "behalten": members[0]["id"]})
@@ -2269,10 +2301,11 @@ class Pflege:
         for user, client in self.clients.items():
             try:
                 named = [p for p in client.people() if (p.get("name") or "").strip() and not p.get("isHidden")][:per_user]
-                for p in named:
+                with ThreadPoolExecutor(max_workers=PEOPLE_PARALLEL) as pool:
+                    counts = list(pool.map(lambda p: client.person_statistics(p["id"]), named))
+                for p, count in zip(named, counts):
                     n = p["name"].strip()
                     e = names.setdefault(n.lower(), {"name": n, "anzahl": 0, "je_benutzer": {}})
-                    count = client.person_statistics(p["id"])
                     e["anzahl"] += count
                     e["je_benutzer"][user] = e["je_benutzer"].get(user, 0) + count
             except ImmichError as exc:
@@ -2286,6 +2319,8 @@ class Pflege:
         letzten 12 vollen Monate nach dem Datum, an dem die Medien in Immich kamen (sonst Aufnahmedatum)."""
         if not self.clients:
             return None
+        if self._storage_cache and time.monotonic() - self._storage_cache[0] < STORAGE_CACHE_S:
+            return self._storage_cache[1]
         try:
             st = next(iter(self.clients.values())).server_storage()
         except ImmichError as exc:
@@ -2314,6 +2349,7 @@ class Pflege:
             left = free / per_month
             out["monate_bis_voll"] = round(left, 1)
             out["voll_am"] = (datetime.now() + timedelta(days=left * 30.44)).date().isoformat() if left < 1200 else None
+        self._storage_cache = (time.monotonic(), out)
         return out
 
     def stats_media(self, month: str, user: str | None = None) -> dict[str, Any]:
@@ -2341,7 +2377,7 @@ class Pflege:
                 y["medien"] += 1
                 y["groesse"] += a.file_size or 0
         dup = self.duplicates_view(limit=1)
-        loc = self.no_location_view(overview=True)
+        loc = self.location_counts()
         cln = self.cleanup_view(limit=1)
         tf = self.timefix_view(limit=1)
         alb = self.albums_view(limit=1) if not self.albums_pending() else None
@@ -2402,7 +2438,7 @@ class Pflege:
             "ausrichtung": cln["ausrichtung"]["anzahl"],
             "qualitaet": cln["qualitaet"]["anzahl"],
             "verwaist": cln["verwaist"]["anzahl"],
-            "ort": self.no_location_view(overview=True)["mit_vorschlag"],
+            "ort": self.location_counts()["mit_vorschlag"],
             "zeit": sum(self.timefix_view(limit=1)["arten"].values()),
             "tags": len(self.suggestions_view()["vorschlaege"]),
             "reisen": self.albums_view(limit=1)["offen"] if albums_ready else None,

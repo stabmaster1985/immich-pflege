@@ -42,10 +42,14 @@ def folder_key(owner: str, folder: str) -> str:
 
 
 def folder_groups(lib: Library) -> dict[tuple[str, str], list[Asset]]:
+    cached = lib.__dict__.get("_folder_groups")  # je Stand der Bibliothek nur einmal gruppieren
+    if cached and cached[0] == lib.rev:
+        return cached[1]
     groups: dict[tuple[str, str], list[Asset]] = {}
     for a in lib.assets.values():
         if a.is_external and a.path:
             groups.setdefault((a.owner, posixpath.dirname(a.path)), []).append(a)
+    lib.__dict__["_folder_groups"] = (lib.rev, groups)
     return groups
 
 
