@@ -508,6 +508,10 @@ def create_app(env: Mapping[str, str] | None = None, http: httpx.Client | None =
             set_session_cookie(response, request, new, True)
         return response
 
+    @app.post("/api/selftest")
+    def self_test():
+        return {**svc().self_test(), "mqtt": app.state.mqtt.info()}
+
     @app.post("/api/settings/test")
     def test_settings(body: dict[str, Any] = Body(default_factory=dict)):
         current = svc().settings

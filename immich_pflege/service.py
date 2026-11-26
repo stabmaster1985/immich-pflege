@@ -409,6 +409,13 @@ class Pflege:
             out["warnungen"] += out["server"].get("warnungen", [])
         return out
 
+    def self_test(self) -> dict[str, Any]:
+        """Alle genutzten Immich-Schnittstellen nur lesend prüfen (siehe selftest.py)."""
+        from . import selftest
+        if not self.clients:
+            raise NotConfigured()
+        return selftest.run(self.clients, self.cached_library(), key_permissions)
+
     def check_server(self) -> dict[str, Any]:
         if not self.clients:
             raise NotConfigured()

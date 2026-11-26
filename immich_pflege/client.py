@@ -308,6 +308,17 @@ class ImmichClient:
             raise ImmichError(f"Original {asset_id}: HTTP {resp.status_code} {_error_text(resp)}", resp.status_code)
         return resp.content, resp.headers.get("content-type", "application/octet-stream")
 
+    def probe(self, path: str, params: dict | None = None) -> tuple[int, str]:
+        """GET nur bis zu den Kopfzeilen (für den Selbsttest, lädt keine Bilder herunter): (Status, Fehlertext)."""
+        try:
+            with self._http.stream("GET", f"{self.api_url}{path}", params=params, headers={"x-api-key": self._key}) as resp:
+                if resp.status_code < 400:
+                    return resp.status_code, ""
+                resp.read()
+                return resp.status_code, _error_text(resp)
+        except httpx.HTTPError as exc:
+            raise ImmichError(f"Immich nicht erreichbar: {exc}") from exc
+
     def my_api_key(self) -> dict:
         """Der benutzte API-Key mit Name und Rechten (``permissions``, „all“ = alles)."""
         return self.request("GET", "/api-keys/me") or {}

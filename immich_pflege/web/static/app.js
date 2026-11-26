@@ -2225,6 +2225,32 @@ function readSettingsForm() {
   return body;
 }
 
+// Selbsttest: jede genutzte Immich-Schnittstelle einmal nur lesend; schreibende nur anhand der Key-Rechte
+async function runSelfTest(btn) {
+  const box = $("#set-test-result");
+  busy(btn, true);
+  box.replaceChildren(h("p", { class: "muted small" }, "Prüfe alle Immich-Funktionen (nur lesend) …"));
+  try {
+    const r = await api("api/selftest", { method: "POST" });
+    const mark = (ok) => (ok === true ? "✓" : ok === false ? "✗" : "–");
+    const cls = (ok) => (ok === true ? "test-ok" : ok === false ? "test-bad" : "muted");
+    const users = Object.entries(r.benutzer).map(([u, t]) => h("details", { class: "selftest", open: t.fehler > 0 },
+      h("summary", {}, `${cap(u)}: ` + (t.fehler ? `${n(t.fehler, "Problem", "Probleme")}` : "alles in Ordnung ✓")),
+      h("table", { class: "tbl selftest-tbl" }, h("tbody", {},
+        ...t.lesen.map((c) => h("tr", { class: cls(c.ok) }, h("td", {}, mark(c.ok)), h("td", {}, h("b", {}, c.name), h("div", { class: "muted small" }, c.zweck)),
+          h("td", { class: "small" }, c.detail + (c.ok ? ` · ${c.ms} ms` : "")))))),
+      h("p", { class: "small" }, h("b", {}, "Schreiben"), t.rechte_bekannt ? " (geprüft anhand der Rechte des API-Keys, nicht ausprobiert):" : " – Immich verrät die Rechte dieses Keys nicht; nicht prüfbar."),
+      t.rechte_bekannt ? h("ul", { class: "small" }, ...t.schreiben.map((w) => h("li", { class: cls(w.ok) }, `${mark(w.ok)} ${w.zweck} `, h("code", {}, w.recht)))) : null));
+    const m = r.mqtt;
+    box.replaceChildren(h("div", { class: "banner " + (r.fehler ? "warn" : "ok") }, r.fehler
+      ? `${n(r.fehler, "Problem", "Probleme")} gefunden – Details unten. ✗ = Immich lehnt ab oder antwortet anders als erwartet, – = nicht prüfbar.`
+      : "Alle genutzten Immich-Funktionen antworten wie erwartet ✓"), ...users,
+    h("p", { class: "small muted" }, "Home Assistant (MQTT): " + (!m.aktiv ? "aus" : m.verbunden ? `verbunden mit ${m.broker}` : `nicht verbunden (${m.fehler || "verbinde …"})`)));
+  } catch (e) {
+    box.replaceChildren(h("div", { class: "banner err" }, e.message));
+  } finally { busy(btn, false); }
+}
+
 async function testConnection(btn) {
   const box = $("#set-test-result");
   const body = {};
@@ -4411,6 +4437,7 @@ $("#rule-delete").addEventListener("click", deleteRule);
 $("#yaml-save").addEventListener("click", (e) => saveYaml(e.currentTarget));
 $("#set-add-user").addEventListener("click", () => $("#set-users").append(userRow({ name: "", key_gesetzt: false })));
 $("#set-test").addEventListener("click", (e) => testConnection(e.currentTarget));
+$("#set-selftest").addEventListener("click", (e) => runSelfTest(e.currentTarget));
 $("#set-mqtt-on").addEventListener("change", updateMqttFields);
 $("#set-mqtt-send").addEventListener("click", async (e) => {
   const btn = e.currentTarget;
